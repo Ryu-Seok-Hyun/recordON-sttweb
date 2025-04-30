@@ -1,0 +1,85 @@
+package com.sttweb.sttweb.entity;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+
+@Entity
+@Setter
+@Getter
+@Table(name = "tbranch")
+public class TbranchEntity {
+
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  @Column(name = "branch_seq")
+  private Integer branchSeq;
+
+  @Column(name = "companyid", nullable = false)
+  private Integer companyId;
+
+  @Column(name = "phone", length = 15)
+  private String phone;
+
+  @Column(name = "companyname", length = 30)
+  private String companyName;
+
+  @Column(name = "ip_type")
+  private Integer ipType;
+
+  @Column(name = "pb_ip", length = 20)
+  private String pbIp;
+
+  @Column(name = "pb_port", length = 10)
+  private String pbPort;
+
+  @Column(name = "p_ip", length = 20)
+  private String pIp;
+
+  @Column(name = "p_port", length = 10)
+  private String pPort;
+
+  @Column(name = "hq_yn", length = 1)
+  private String hqYn;
+
+  @Column(name = "discd")
+  private Integer discd;
+
+  @Column(name = "db_type")
+  private Integer dbType;
+
+  @Column(name = "db_ip", length = 20)
+  private String dbIp;
+
+  @Column(name = "db_port", length = 10)
+  private String dbPort;
+
+  @Column(name = "db_name", length = 20)
+  private String dbName;
+
+  @Column(name = "db_user", length = 30)
+  private String dbUser;
+
+  @Column(name = "db_pass", length = 30)
+  private String dbPass;
+
+  @Column(name = "db_flag", length = 1)
+  private String dbFlag;
+
+  @Column(name = "db_discd")
+  private Integer dbDiscd;
+
+  @Column(name = "mail_discd")
+  private Integer mailDiscd;
+
+  @Column(name = "mail_manager", length = 20)
+  private String mailManager;
+
+  @Column(name = "mail_address", length = 30)
+  private String mailAddress;
+}
