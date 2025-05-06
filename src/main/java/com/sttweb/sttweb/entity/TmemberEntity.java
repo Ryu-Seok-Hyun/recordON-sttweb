@@ -7,8 +7,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
@@ -26,7 +29,7 @@ public class TmemberEntity {
   @Column(name = "branch_seq")
   private Integer branchSeq;
 
-  @Column(name = "employeeid")
+  @Column(name = "employeeid", nullable = true)
   private Integer employeeId;
 
   @Column(name = "user_id", nullable = false, length = 30)
@@ -35,17 +38,29 @@ public class TmemberEntity {
   @Column(name = "user_pass", nullable = false, length = 30)
   private String userPass;
 
-  @Column(name = "admin_yn", length = 1)
-  private String adminYn;
+  @Column(
+      name = "user_level",
+      nullable = false,
+      length = 1,
+      columnDefinition = "CHAR(1) DEFAULT '1'"
+  )
+  private String userLevel = "1";
 
   @Column(name = "number", nullable = false, length = 15)
   private String number;
 
-  @Column(name = "discd")
-  private Integer discd;
+  @Column(
+      name = "discd",
+      nullable = false,
+      columnDefinition = "INT DEFAULT 0"
+  )
+  private Integer discd = 0;
 
   @Column(name = "crtime", length = 19)
   private String crtime;
+
+  @Column(name = "udtime", length = 19)
+  private String udtime;
 
   @Column(name = "reguser_id", length = 30)
   private String reguserId;
