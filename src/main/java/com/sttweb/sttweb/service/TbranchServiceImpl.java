@@ -27,17 +27,17 @@ public class TbranchServiceImpl implements TbranchService {
         .pPort(e.getPPort())
         .hqYn(e.getHqYn())
         .discd(e.getDiscd())
-        .dbType(e.getDbType())
-        .dbIp(e.getDbIp())
-        .dbPort(e.getDbPort())
-        .dbName(e.getDbName())
-        .dbUser(e.getDbUser())
-        .dbPass(e.getDbPass())
-        .dbFlag(e.getDbFlag())
-        .dbDiscd(e.getDbDiscd())
-        .mailDiscd(e.getMailDiscd())
-        .mailManager(e.getMailManager())
-        .mailAddress(e.getMailAddress())
+//        .dbType(e.getDbType())
+//        .dbIp(e.getDbIp())
+//        .dbPort(e.getDbPort())
+//        .dbName(e.getDbName())
+//        .dbUser(e.getDbUser())
+//        .dbPass(e.getDbPass())
+//        .dbFlag(e.getDbFlag())
+//        .dbDiscd(e.getDbDiscd())
+//        .mailDiscd(e.getMailDiscd())
+//        .mailManager(e.getMailManager())
+//        .mailAddress(e.getMailAddress())
         .build();
   }
 
@@ -54,17 +54,17 @@ public class TbranchServiceImpl implements TbranchService {
     e.setPPort(dto.getPPort());
     e.setHqYn(dto.getHqYn());
     e.setDiscd(dto.getDiscd());
-    e.setDbType(dto.getDbType());
-    e.setDbIp(dto.getDbIp());
-    e.setDbPort(dto.getDbPort());
-    e.setDbName(dto.getDbName());
-    e.setDbUser(dto.getDbUser());
-    e.setDbPass(dto.getDbPass());
-    e.setDbFlag(dto.getDbFlag());
-    e.setDbDiscd(dto.getDbDiscd());
-    e.setMailDiscd(dto.getMailDiscd());
-    e.setMailManager(dto.getMailManager());
-    e.setMailAddress(dto.getMailAddress());
+//    e.setDbType(dto.getDbType());
+//    e.setDbIp(dto.getDbIp());
+//    e.setDbPort(dto.getDbPort());
+//    e.setDbName(dto.getDbName());
+//    e.setDbUser(dto.getDbUser());
+//    e.setDbPass(dto.getDbPass());
+//    e.setDbFlag(dto.getDbFlag());
+//    e.setDbDiscd(dto.getDbDiscd());
+//    e.setMailDiscd(dto.getMailDiscd());
+//    e.setMailManager(dto.getMailManager());
+//    e.setMailAddress(dto.getMailAddress());
     return e;
   }
 
@@ -106,17 +106,17 @@ public class TbranchServiceImpl implements TbranchService {
     e.setPIp(dto.getPIp());
     e.setPPort(dto.getPPort());
     e.setHqYn(dto.getHqYn());
-    e.setDbType(dto.getDbType());
-    e.setDbIp(dto.getDbIp());
-    e.setDbPort(dto.getDbPort());
-    e.setDbName(dto.getDbName());
-    e.setDbUser(dto.getDbUser());
-    e.setDbPass(dto.getDbPass());
-    e.setDbFlag(dto.getDbFlag());
-    e.setDbDiscd(dto.getDbDiscd());
-    e.setMailDiscd(dto.getMailDiscd());
-    e.setMailManager(dto.getMailManager());
-    e.setMailAddress(dto.getMailAddress());
+//    e.setDbType(dto.getDbType());
+//    e.setDbIp(dto.getDbIp());
+//    e.setDbPort(dto.getDbPort());
+//    e.setDbName(dto.getDbName());
+//    e.setDbUser(dto.getDbUser());
+//    e.setDbPass(dto.getDbPass());
+//    e.setDbFlag(dto.getDbFlag());
+//    e.setDbDiscd(dto.getDbDiscd());
+//    e.setMailDiscd(dto.getMailDiscd());
+//    e.setMailManager(dto.getMailManager());
+//    e.setMailAddress(dto.getMailAddress());
     return toDto(repo.save(e));
   }
 

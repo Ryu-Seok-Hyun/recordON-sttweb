@@ -23,16 +23,16 @@ public class TbranchDto {
   private String pPort; //P포트
   private String hqYn; // 본사 여부
   private Integer discd; // 삭제 여부
-  private Integer dbType; // DB 타입
-  private String dbIp; // DB IP 주소
-  private String dbPort; // DB 포트
-  private String dbName; //DB 이름
-  private String dbUser; //DB 사용자명
-  private String dbPass; // DB 비밀번호
-  private String dbFlag; // DB 플래그 (활성/비활성)
-  private Integer dbDiscd; // DB 삭제 여부
-  private Integer mailDiscd; // 메일 전송 여부
-  private String mailManager; // 메일 관리자ID
-  private String mailAddress; // 메일주소
+//  private Integer dbType; // DB 타입
+//  private String dbIp; // DB IP 주소
+//  private String dbPort; // DB 포트
+//  private String dbName; //DB 이름
+//  private String dbUser; //DB 사용자명
+//  private String dbPass; // DB 비밀번호
+//  private String dbFlag; // DB 플래그 (활성/비활성)
+//  private Integer dbDiscd; // DB 삭제 여부
+//  private Integer mailDiscd; // 메일 전송 여부
+//  private String mailManager; // 메일 관리자ID
+//  private String mailAddress; // 메일주소
 }
 

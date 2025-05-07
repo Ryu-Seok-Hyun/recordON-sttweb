@@ -55,7 +55,6 @@ public class TbranchController {
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-
     List<TbranchDto> all = svc.findAll();
     return ResponseEntity.ok(all);
   }
@@ -68,9 +67,22 @@ public class TbranchController {
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-
     TbranchDto dto = svc.findById(id);
     return ResponseEntity.ok(dto);
+  }
+
+  /** 지점 등록 (관리자만) */
+  @PostMapping
+  public ResponseEntity<?> createBranch(
+      @RequestHeader(value = "Authorization", required = false) String authHeader,
+      @RequestBody TbranchDto reqDto
+  ) {
+    ResponseEntity<String> err = checkAdmin(authHeader);
+    if (err != null) return err;
+    TbranchDto created = svc.createBranch(reqDto);
+    return ResponseEntity
+        .status(HttpStatus.CREATED)
+        .body(created);
   }
 
   /** 지점 수정 (관리자만) */
@@ -82,7 +94,6 @@ public class TbranchController {
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-
     TbranchDto updated = svc.update(id, dto);
     return ResponseEntity.ok(updated);
   }
@@ -95,7 +106,6 @@ public class TbranchController {
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-
     svc.changeStatus(id, false);
     return ResponseEntity.noContent().build();
   }
@@ -108,7 +118,6 @@ public class TbranchController {
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-
     svc.changeStatus(id, true);
     return ResponseEntity.ok().build();
   }

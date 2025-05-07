@@ -52,36 +52,36 @@ public class TbranchEntity {
   @Column(name = "discd", columnDefinition = "INT default 0")
   private Integer discd;
 
-  @Column(name = "db_type")
-  private Integer dbType;
-
-  @Column(name = "db_ip", length = 20)
-  private String dbIp;
-
-  @Column(name = "db_port", length = 10)
-  private String dbPort;
-
-  @Column(name = "db_name", length = 20)
-  private String dbName;
-
-  @Column(name = "db_user", length = 30)
-  private String dbUser;
-
-  @Column(name = "db_pass", length = 30)
-  private String dbPass;
-
-  @Column(name = "db_flag", length = 1)
-  private String dbFlag;
-
-  @Column(name = "db_discd")
-  private Integer dbDiscd;
-
-  @Column(name = "mail_discd")
-  private Integer mailDiscd;
-
-  @Column(name = "mail_manager", length = 20)
-  private String mailManager;
-
-  @Column(name = "mail_address", length = 30)
-  private String mailAddress;
+//  @Column(name = "db_type")
+//  private Integer dbType;
+//
+//  @Column(name = "db_ip", length = 20)
+//  private String dbIp;
+//
+//  @Column(name = "db_port", length = 10)
+//  private String dbPort;
+//
+//  @Column(name = "db_name", length = 20)
+//  private String dbName;
+//
+//  @Column(name = "db_user", length = 30)
+//  private String dbUser;
+//
+//  @Column(name = "db_pass", length = 30)
+//  private String dbPass;
+//
+//  @Column(name = "db_flag", length = 1)
+//  private String dbFlag;
+//
+//  @Column(name = "db_discd")
+//  private Integer dbDiscd;
+//
+//  @Column(name = "mail_discd")
+//  private Integer mailDiscd;
+//
+//  @Column(name = "mail_manager", length = 20)
+//  private String mailManager;
+//
+//  @Column(name = "mail_address", length = 30)
+//  private String mailAddress;
 }
