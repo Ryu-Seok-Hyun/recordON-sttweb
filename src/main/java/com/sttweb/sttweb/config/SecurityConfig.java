@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -18,36 +19,55 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
-
   private final JwtTokenProvider jwtTokenProvider;
 
+  // SecurityConfig.java
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
         .csrf(csrf -> csrf.disable())
-        // 1) 로그인/회원가입/로그아웃은 모두 열어두고
+        .sessionManagement(sm ->
+            sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+        )
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/members/signup", "/api/members/login", "/api/members/logout").permitAll()
+            // 회원 REST는 누구나
+            .requestMatchers("/api/members/signup", "/api/members/login", "/api/members/logout")
+            .permitAll()
+            // branches/** 은 ADMIN 권한만
+            .requestMatchers(HttpMethod.GET,  "/api/branches/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.POST, "/api/branches").     hasRole("ADMIN")
+            .requestMatchers(HttpMethod.PUT,  "/api/branches/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.DELETE,"/api/branches/**").hasRole("ADMIN")
+            // 그 외는 인증만
             .anyRequest().authenticated()
         )
-        // 2) 세션 대신 Stateless JWT 사용
-        .sessionManagement(sm -> sm
-            .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+        // JWT 파싱 필터
+        .addFilterBefore(
+            new JwtAuthenticationFilter(jwtTokenProvider),
+            UsernamePasswordAuthenticationFilter.class
         )
-        // 3) JWT 토큰 파싱 필터를 UsernamePasswordAuthenticationFilter 앞에 등록
-        .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider),
-            UsernamePasswordAuthenticationFilter.class)
-        // 4) (선택) 로그아웃 URL을 지정 — 기본은 /logout 이지만, 필요시 바꿀 수 있습니다.
+        // 401/403 메시지 직접 제어
+        .exceptionHandling(ex -> ex
+            .authenticationEntryPoint((req, res, e) -> {
+              res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+              res.setContentType("text/plain;charset=UTF-8");
+              res.getWriter().write("토큰이 없습니다.");
+            })
+            .accessDeniedHandler((req, res, e) -> {
+              res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+              res.setContentType("text/plain;charset=UTF-8");
+              res.getWriter().write("권한이 없습니다.");
+            })
+        )
+        // 로그아웃
         .logout(logout -> logout
             .logoutUrl("/api/members/logout")
-            .logoutSuccessHandler((req, res, auth) -> {
-              // 클라이언트에 성공 응답만 보내고, 서버에선 추가 작업이 없으면 이 부분만으로 충분합니다.
-              res.setStatus(HttpServletResponse.SC_OK);
-            })
+            .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
         );
 
     return http.build();
   }
+
 
   @Bean
   public PasswordEncoder passwordEncoder() {

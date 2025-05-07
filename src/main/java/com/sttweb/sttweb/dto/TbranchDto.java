@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -34,3 +35,4 @@ public class TbranchDto {
   private String mailManager; // 메일 관리자ID
   private String mailAddress; // 메일주소
 }
+

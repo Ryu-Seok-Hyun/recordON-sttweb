@@ -8,10 +8,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.DynamicInsert;
 
 @Entity
 @Setter
 @Getter
+@DynamicInsert
 @Table(name = "tbranch")
 public class TbranchEntity {
 
@@ -47,7 +49,7 @@ public class TbranchEntity {
   @Column(name = "hq_yn", length = 1)
   private String hqYn;
 
-  @Column(name = "discd")
+  @Column(name = "discd", columnDefinition = "INT default 0")
   private Integer discd;
 
   @Column(name = "db_type")
