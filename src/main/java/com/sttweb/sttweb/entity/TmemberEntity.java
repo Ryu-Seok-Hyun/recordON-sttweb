@@ -1,24 +1,15 @@
 package com.sttweb.sttweb.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import java.time.LocalDateTime;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
+@Table(name = "tmember")
+@EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
-@Table(name = "tmember")
-@EntityListeners(AuditingEntityListener.class) //  자동으로 생성일, 수정일" 같은 값을 넣어주는 기능을 활성화하는 어노테이션
 public class TmemberEntity {
 
   @Id
@@ -29,20 +20,24 @@ public class TmemberEntity {
   @Column(name = "branch_seq")
   private Integer branchSeq;
 
-  @Column(name = "employeeid", nullable = true)
+  @Column(name = "employeeid")
   private Integer employeeId;
 
   @Column(name = "user_id", nullable = false, length = 30)
   private String userId;
 
-  @Column(name = "user_pass", nullable = false, length = 30)
+  @Column(name = "user_pass", nullable = false, length = 100)
   private String userPass;
 
+  /**
+   * "0" = 관리자, "1" = 일반
+   * 필드 기본값과 DDL DEFAULT 까지 설정
+   */
   @Column(
       name = "user_level",
       nullable = false,
       length = 1,
-      columnDefinition = "CHAR(1) DEFAULT '1'"
+      columnDefinition = "CHAR(1) NOT NULL DEFAULT '1'"
   )
   private String userLevel = "1";
 
@@ -52,7 +47,7 @@ public class TmemberEntity {
   @Column(
       name = "discd",
       nullable = false,
-      columnDefinition = "INT DEFAULT 0"
+      columnDefinition = "INT NOT NULL DEFAULT 0"
   )
   private Integer discd = 0;
 
@@ -65,5 +60,13 @@ public class TmemberEntity {
   @Column(name = "reguser_id", length = 30)
   private String reguserId;
 
-
+  /**
+   * 1=조회만, 2=조회+청취, 3=조회+청취+다운로드
+   */
+  @Column(
+      name = "role_seq",
+      nullable = false,
+      columnDefinition = "INT NOT NULL DEFAULT 1"
+  )
+  private Integer roleSeq = 1;
 }

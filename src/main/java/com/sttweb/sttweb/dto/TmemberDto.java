@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-
 public class TmemberDto {
 
   @Data
@@ -14,17 +13,16 @@ public class TmemberDto {
   @AllArgsConstructor
   @Builder
   public static class Info {
-    private Integer memberSeq;   // 회원 일련번호(PK)
-    private Integer branchSeq;   // 지점 일련번호(FK)
-    private Integer employeeId;  // 사원 아이디
-    private String userId;       // 사용자 아이디
-    private String userLevel;      // 관리자여부(0/1) 관리자는 0 그외 1
-    private String number;       // 내선번호
-    private Integer discd;       // 사용 여부 , 0은 활성 1은 비활성
-    private String crtime;       // 생성시간(YYYY-MM-DD HH:mm:ss)
-    private String udtime;   // 업데이트 시간(YYYY-MM-DD HH:mm:ss)
-    private String reguserId;    // 등록자 아이디
-
+    private Integer memberSeq;
+    private Integer branchSeq;
+    private Integer employeeId;
+    private String userId;
+    private String userLevel;
+    private String number;
+    private Integer discd;
+    private String crtime;
+    private String udtime;
+    private String reguserId;
     private String token;
     private String tokenType = "Bearer";
 
@@ -42,21 +40,6 @@ public class TmemberDto {
           .reguserId(e.getReguserId())
           .build();
     }
-
-    public TmemberEntity toEntity() {
-      TmemberEntity e = new TmemberEntity();
-      e.setMemberSeq(this.memberSeq);
-      e.setBranchSeq(this.branchSeq);
-      e.setEmployeeId(this.employeeId);
-      e.setUserId(this.userId);
-      e.setUserLevel(this.userLevel);
-      e.setNumber(this.number);
-      e.setDiscd(this.discd);
-      e.setCrtime(this.crtime);
-      e.setUdtime(this.udtime);
-      e.setReguserId(this.reguserId);
-      return e;
-    }
   }
 
   @Data
@@ -68,7 +51,12 @@ public class TmemberDto {
     private Integer branchSeq;
     private Integer employeeId;
     private String number;
+
+    /** 선택: "0"=관리자, 아니면 일반 */
     private String userLevel;
+
+    /** 선택: 1~3 */
+    private Integer roleSeq;
   }
 
   @Data

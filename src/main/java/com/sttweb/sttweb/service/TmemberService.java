@@ -17,4 +17,7 @@ public interface TmemberService {
   void changePassword(Integer memberSeq, PasswordChangeRequest req);
   List<Info> listAllUsers();
   void changeStatus(Integer memberSeq, StatusChangeRequest req);
+
+  Integer getRoleSeqOf(Integer memberSeq);
+  void changeRole(Integer memberSeq, Integer newRoleSeq);
 }

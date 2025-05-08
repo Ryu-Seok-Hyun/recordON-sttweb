@@ -1,3 +1,4 @@
+// src/main/java/com/sttweb/sttweb/jwt/JwtAuthenticationFilter.java
 package com.sttweb.sttweb.jwt;
 
 import jakarta.servlet.FilterChain;
@@ -11,9 +12,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
   private final JwtTokenProvider jwtTokenProvider;
 
   public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {
@@ -21,28 +24,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   }
 
   @Override
-  protected void doFilterInternal(HttpServletRequest req,
-      HttpServletResponse res,
+  protected void doFilterInternal(HttpServletRequest request,
+      HttpServletResponse response,
       FilterChain chain)
       throws ServletException, IOException {
 
-    String header = req.getHeader(HttpHeaders.AUTHORIZATION);
+    String header = request.getHeader(HttpHeaders.AUTHORIZATION);
     if (header != null && header.startsWith("Bearer ")) {
       String token = header.substring(7);
       if (jwtTokenProvider.validateToken(token)) {
-        String userId = jwtTokenProvider.getUserId(token);
-        String roles = jwtTokenProvider.getRoles(token);
+        String userId   = jwtTokenProvider.getUserId(token);
+        String roleCode = jwtTokenProvider.getRoles(token);  // "0" or "1"
 
-        var authorities = List.<SimpleGrantedAuthority>of();
-        if ("0".equals(roles)) {
-          // 관리자는 userLevel == "0"
-          authorities = List.of(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        if ("0".equals(roleCode)) {
+          authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        } else {
+          authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
         }
 
         var auth = new UsernamePasswordAuthenticationToken(userId, null, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);
       }
     }
-    chain.doFilter(req, res);
+
+    chain.doFilter(request, response);
   }
 }
