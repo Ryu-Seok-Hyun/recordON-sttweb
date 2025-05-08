@@ -62,7 +62,7 @@ public class RoleController {
   public ResponseEntity<String> changeUserRole(
       @RequestHeader(value="Authorization", required=false) String header,
       @PathVariable("memberSeq") Integer memberSeq,
-      @RequestBody Map<String,Integer> body  // { "roleSeq": 3 }
+      @RequestBody Map<String,Integer> body
   ) {
     ResponseEntity<String> err = checkAdmin(header);
     if (err != null) return err;

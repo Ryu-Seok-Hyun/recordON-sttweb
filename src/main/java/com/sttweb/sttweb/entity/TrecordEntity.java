@@ -1,21 +1,20 @@
+// src/main/java/com/sttweb/sttweb/entity/TrecordEntity.java
 package com.sttweb.sttweb.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import jakarta.persistence.Id;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "trecord", uniqueConstraints = {
-    @UniqueConstraint(name = "uk_call_start_number", columnNames = {"callStartDateTime", "number1"})
-})
+@Table(
+    name = "trecord",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_call_start_number",
+        columnNames = {"callStartDateTime", "number1"}
+    )
+)
 public class TrecordEntity {
 
   @Id
