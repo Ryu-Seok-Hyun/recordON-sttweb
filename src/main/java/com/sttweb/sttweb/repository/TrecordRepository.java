@@ -3,7 +3,6 @@ package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TrecordEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.List;
 
 public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer> {

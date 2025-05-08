@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/controller/TrecordController.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TrecordDto;
@@ -7,7 +6,8 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,10 +21,7 @@ public class TrecordController {
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
 
-  /**
-   * 단순 인증 검사: 토큰 유무/유효성만 확인
-   * @return null 이면 통과, 아니면 즉시 반환할 ResponseEntity<String>
-   */
+
   private ResponseEntity<String> checkAuth(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       return ResponseEntity
@@ -40,12 +37,12 @@ public class TrecordController {
     return null;
   }
 
-  /**
-   * 관리자 권한 검사: 인증 후 userLevel == "0" 체크
-   */
+
   private ResponseEntity<String> checkAdmin(String authHeader) {
     ResponseEntity<String> err = checkAuth(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     String token = authHeader.substring(7);
     String userId = jwtTokenProvider.getUserId(token);
     Info me = memberSvc.getMyInfoByUserId(userId);
@@ -63,7 +60,9 @@ public class TrecordController {
       @RequestHeader(value="Authorization", required=false) String authHeader
   ) {
     ResponseEntity<String> err = checkAuth(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     List<TrecordDto> all = recordSvc.findAll();
     return ResponseEntity.ok(all);
   }
@@ -76,7 +75,9 @@ public class TrecordController {
       @RequestParam(required=false) String number2
   ) {
     ResponseEntity<String> err = checkAuth(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     List<TrecordDto> results = recordSvc.searchByNumber(number1, number2);
     return ResponseEntity.ok(results);
   }
@@ -88,7 +89,9 @@ public class TrecordController {
       @PathVariable("id") Integer id
   ) {
     ResponseEntity<String> err = checkAuth(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     TrecordDto dto = recordSvc.findById(id);
     return ResponseEntity.ok(dto);
   }
@@ -100,7 +103,9 @@ public class TrecordController {
       @RequestBody TrecordDto dto
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     TrecordDto created = recordSvc.create(dto);
     return ResponseEntity
         .status(HttpStatus.CREATED)
@@ -115,7 +120,9 @@ public class TrecordController {
       @RequestBody TrecordDto dto
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     TrecordDto updated = recordSvc.update(id, dto);
     return ResponseEntity.ok(updated);
   }
@@ -127,7 +134,9 @@ public class TrecordController {
       @PathVariable("id") Integer id
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;
+    }
     recordSvc.delete(id);
     return ResponseEntity.noContent().build();
   }

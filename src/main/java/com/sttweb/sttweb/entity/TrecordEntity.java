@@ -5,6 +5,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.sql.Time;
+import java.sql.Timestamp;
+
 @Getter
 @Setter
 @Entity
@@ -22,14 +25,16 @@ public class TrecordEntity {
   @Column(name = "record_seq")
   private Integer recordSeq;
 
-  @Column(name = "callStartDateTime", length = 19)
-  private String callStartDateTime;
 
-  @Column(name = "callEndDateTime", length = 19)
-  private String callEndDateTime;
+  @Column(name = "callStartDateTime", columnDefinition = "DATETIME")
+  private Timestamp callStartDateTime;
 
-  @Column(name = "audioPlayTime", length = 8)
-  private String audioPlayTime;
+  @Column(name = "callEndDateTime", columnDefinition = "DATETIME")
+  private Timestamp callEndDateTime;
+
+  @Column(name = "audioPlayTime", columnDefinition = "TIME")
+  private Time audioPlayTime;
+
 
   @Column(name = "IO_discd_val", length = 2)
   private String ioDiscdVal;
@@ -46,6 +51,6 @@ public class TrecordEntity {
   @Column(name = "call_status", length = 10)
   private String callStatus;
 
-  @Column(name = "reg_date", length = 19)
-  private String regDate;
+  @Column(name = "reg_date", columnDefinition = "DATETIME")
+  private Timestamp regDate;
 }
