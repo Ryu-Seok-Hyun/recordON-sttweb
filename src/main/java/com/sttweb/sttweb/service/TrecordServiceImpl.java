@@ -26,14 +26,12 @@ public class TrecordServiceImpl implements TrecordService {
   private TrecordDto toDto(TrecordEntity e) {
     return TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
-        // Timestamp → String
         .callStartDateTime(e.getCallStartDateTime() != null
             ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT)
             : null)
         .callEndDateTime(e.getCallEndDateTime() != null
             ? e.getCallEndDateTime().toLocalDateTime().format(DT_FMT)
             : null)
-        // Time → String
         .audioPlayTime(e.getAudioPlayTime() != null
             ? e.getAudioPlayTime().toString()
             : null)
@@ -42,7 +40,6 @@ public class TrecordServiceImpl implements TrecordService {
         .number2(e.getNumber2())
         .audioFileDir(e.getAudioFileDir())
         .callStatus(e.getCallStatus())
-        // Timestamp → String
         .regDate(e.getRegDate() != null
             ? e.getRegDate().toLocalDateTime().format(DT_FMT)
             : null)
@@ -88,26 +85,28 @@ public class TrecordServiceImpl implements TrecordService {
   @Override
   @Transactional
   public TrecordDto create(TrecordDto dto) {
-    // 엔티티로 변환해서 저장
     TrecordEntity e = new TrecordEntity();
-    // leave recordSeq null (auto-generated)
-    e.setCallStartDateTime(dto.getCallStartDateTime() != null
-        ? Timestamp.valueOf(dto.getCallStartDateTime().replace(" ", "T"))
-        : null);
-    e.setCallEndDateTime(dto.getCallEndDateTime() != null
-        ? Timestamp.valueOf(dto.getCallEndDateTime().replace(" ", "T"))
-        : null);
-    e.setAudioPlayTime(dto.getAudioPlayTime() != null
-        ? Time.valueOf(dto.getAudioPlayTime())
-        : null);
+
+    // 공백 그대로 Timestamp.valueOf에 넘깁니다
+    if (dto.getCallStartDateTime() != null) {
+      e.setCallStartDateTime(Timestamp.valueOf(dto.getCallStartDateTime()));
+    }
+    if (dto.getCallEndDateTime() != null) {
+      e.setCallEndDateTime(Timestamp.valueOf(dto.getCallEndDateTime()));
+    }
+    if (dto.getAudioPlayTime() != null) {
+      e.setAudioPlayTime(Time.valueOf(dto.getAudioPlayTime()));
+    }
+
     e.setIoDiscdVal(dto.getIoDiscdVal());
     e.setNumber1(dto.getNumber1());
     e.setNumber2(dto.getNumber2());
     e.setAudioFileDir(dto.getAudioFileDir());
     e.setCallStatus(dto.getCallStatus());
-    e.setRegDate(dto.getRegDate() != null
-        ? Timestamp.valueOf(dto.getRegDate().replace(" ", "T"))
-        : null);
+
+    if (dto.getRegDate() != null) {
+      e.setRegDate(Timestamp.valueOf(dto.getRegDate()));
+    }
 
     TrecordEntity saved = repo.save(e);
     return toDto(saved);
@@ -120,21 +119,23 @@ public class TrecordServiceImpl implements TrecordService {
         .orElseThrow(() -> new IllegalArgumentException("녹취를 찾을 수 없습니다: " + recordSeq));
 
     if (dto.getCallStartDateTime() != null) {
-      e.setCallStartDateTime(Timestamp.valueOf(dto.getCallStartDateTime().replace(" ", "T")));
+      e.setCallStartDateTime(Timestamp.valueOf(dto.getCallStartDateTime()));
     }
     if (dto.getCallEndDateTime() != null) {
-      e.setCallEndDateTime(Timestamp.valueOf(dto.getCallEndDateTime().replace(" ", "T")));
+      e.setCallEndDateTime(Timestamp.valueOf(dto.getCallEndDateTime()));
     }
     if (dto.getAudioPlayTime() != null) {
       e.setAudioPlayTime(Time.valueOf(dto.getAudioPlayTime()));
     }
+
     e.setIoDiscdVal(dto.getIoDiscdVal());
     e.setNumber1(dto.getNumber1());
     e.setNumber2(dto.getNumber2());
     e.setAudioFileDir(dto.getAudioFileDir());
     e.setCallStatus(dto.getCallStatus());
+
     if (dto.getRegDate() != null) {
-      e.setRegDate(Timestamp.valueOf(dto.getRegDate().replace(" ", "T")));
+      e.setRegDate(Timestamp.valueOf(dto.getRegDate()));
     }
 
     TrecordEntity saved = repo.save(e);

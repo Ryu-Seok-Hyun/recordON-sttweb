@@ -24,49 +24,54 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-        // CSRF 끄고
+        // CSRF 끄기, 세션 없이 stateless
         .csrf(csrf -> csrf.disable())
-        // 세션 사용하지 않음
-        .sessionManagement(sm -> sm
-            .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-        )
+        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
         // URL별 권한 설정
         .authorizeHttpRequests(auth -> auth
-            // 1) 회원가입/로그인/로그아웃은 모두 허용
+            // 1) 회원가입/로그인/로그아웃 → 모두 허용
             .requestMatchers(
                 "/api/members/signup",
                 "/api/members/login",
                 "/api/members/logout"
             ).permitAll()
 
-            // 2) 권한 리스트 조회는 누구나 허용
+            // 2) 권한 목록 조회 → 모두 허용
             .requestMatchers(HttpMethod.GET, "/api/roles", "/api/roles/**")
             .permitAll()
 
-            // 3) branches/** 는 ADMIN 권한만
+            // 3) branches/** → ADMIN 권한만
             .requestMatchers("/api/branches/**")
             .hasRole("ADMIN")
 
-            // 4) 내 권한 조회는 로그인만 하면 OK
+            // 4) 내 권한 조회 → 인증만 있으면 OK
             .requestMatchers(HttpMethod.GET, "/api/members/me/role")
             .authenticated()
 
-            // 5) 다른 사용자 권한 변경은 ADMIN 만
+            // 5) 다른 사용자 권한 변경 → ADMIN 권한만
             .requestMatchers(HttpMethod.PUT, "/api/members/*/role")
             .hasRole("ADMIN")
 
-            // 6) 나머지 요청은 토큰만 있으면 OK
+            // ───────────────────────────────────────
+            // 6) 녹취 API 전체 → 스프링 시큐리티 단계에선 열어두고,
+            //    컨트롤러 내부에서 401/403 직접 처리
+            .requestMatchers("/api/records", "/api/records/**")
+            .permitAll()
+            // ───────────────────────────────────────
+
+            // 7) 그 외 모든 요청 → 토큰만 있으면 OK
             .anyRequest()
             .authenticated()
         )
 
-        // JWT 필터를 스프링 시큐리티 필터 체인에 등록
+        // JWT 필터 등록
         .addFilterBefore(
             new JwtAuthenticationFilter(jwtTokenProvider),
             UsernamePasswordAuthenticationFilter.class
         )
 
-        // 401/403 예외 메시지 모두 직접 내려줌
+        // 401/403 응답 메시지 커스터마이징
         .exceptionHandling(ex -> ex
             .authenticationEntryPoint((req, res, ex2) -> {
               res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -80,15 +85,13 @@ public class SecurityConfig {
             })
         )
 
-        // 로그아웃 엔드포인트 커스터마이징
+        // 로그아웃 커스터마이징
         .logout(logout -> logout
             .logoutUrl("/api/members/logout")
             .logoutSuccessHandler((req, res, auth) ->
-                res.setStatus(HttpServletResponse.SC_OK)
-            )
+                res.setStatus(HttpServletResponse.SC_OK))
         )
     ;
-
     return http.build();
   }
 

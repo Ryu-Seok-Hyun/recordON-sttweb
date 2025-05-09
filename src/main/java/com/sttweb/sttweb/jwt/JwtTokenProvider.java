@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/jwt/JwtTokenProvider.java
 package com.sttweb.sttweb.jwt;
 
 import io.jsonwebtoken.*;
@@ -11,7 +10,6 @@ import java.util.Date;
 
 @Component
 public class JwtTokenProvider {
-
   @Value("${jwt.secret}")
   private String secretKey;
 
@@ -20,13 +18,14 @@ public class JwtTokenProvider {
 
   @PostConstruct
   protected void init() {
+    // Base64로 인코딩
     secretKey = Base64.getEncoder().encodeToString(secretKey.getBytes());
   }
 
   public String createToken(String userId, String roles) {
     Claims claims = Jwts.claims().setSubject(userId);
-    claims.put("roles", roles);  // roles 클레임에 "0" or "1" 저장
-    Date now = new Date();
+    claims.put("roles", roles);
+    Date now    = new Date();
     Date expiry = new Date(now.getTime() + validityInMs);
 
     return Jwts.builder()
@@ -45,7 +44,6 @@ public class JwtTokenProvider {
         .getSubject();
   }
 
-  /** 토큰에서 roles 클레임 꺼내기 */
   public String getRoles(String token) {
     return Jwts.parser()
         .setSigningKey(secretKey)

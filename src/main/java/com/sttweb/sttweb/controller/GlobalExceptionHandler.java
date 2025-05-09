@@ -1,6 +1,9 @@
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.controller.TrecordController.ForbiddenException;
+import com.sttweb.sttweb.controller.TrecordController.UnauthorizedException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -18,5 +21,21 @@ public class GlobalExceptionHandler {
   public ResponseEntity<String> handleDisabledUser(IllegalStateException ex) {
     // 비활성 계정 차단
     return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ex.getMessage());
+  }
+
+  @ExceptionHandler(UnauthorizedException.class)
+  public ResponseEntity<String> handle401(UnauthorizedException ex) {
+    return ResponseEntity
+        .status(HttpStatus.UNAUTHORIZED)
+        .contentType(MediaType.TEXT_PLAIN)
+        .body(ex.getMessage());
+  }
+
+  @ExceptionHandler(ForbiddenException.class)
+  public ResponseEntity<String> handle403(ForbiddenException ex) {
+    return ResponseEntity
+        .status(HttpStatus.FORBIDDEN)
+        .contentType(MediaType.TEXT_PLAIN)
+        .body(ex.getMessage());
   }
 }

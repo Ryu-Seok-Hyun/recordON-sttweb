@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/jwt/JwtAuthenticationFilter.java
 package com.sttweb.sttweb.jwt;
 
 import jakarta.servlet.FilterChain;
@@ -16,7 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
-
   private final JwtTokenProvider jwtTokenProvider;
 
   public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {

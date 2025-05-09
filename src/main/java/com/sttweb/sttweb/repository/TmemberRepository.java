@@ -16,6 +16,10 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
   Optional<TmemberEntity> findByEmployeeId(Integer employeeId);
 
   @Modifying
+  @Transactional
   @Query("UPDATE TmemberEntity m SET m.roleSeq = :roleSeq WHERE m.memberSeq = :memberSeq")
-  int updateRole(Integer memberSeq, Integer roleSeq);
+  int updateRole(
+      @Param("memberSeq") Integer memberSeq,
+      @Param("roleSeq")   Integer roleSeq
+  );
 }
