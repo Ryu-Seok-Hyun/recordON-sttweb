@@ -1,12 +1,15 @@
+// src/main/java/com/sttweb/sttweb/service/TbranchServiceImpl.java
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.repository.TbranchRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
+
 import java.util.stream.Collectors;
 
 @Service
@@ -27,55 +30,19 @@ public class TbranchServiceImpl implements TbranchService {
         .pPort(e.getPPort())
         .hqYn(e.getHqYn())
         .discd(e.getDiscd())
-//        .dbType(e.getDbType())
-//        .dbIp(e.getDbIp())
-//        .dbPort(e.getDbPort())
-//        .dbName(e.getDbName())
-//        .dbUser(e.getDbUser())
-//        .dbPass(e.getDbPass())
-//        .dbFlag(e.getDbFlag())
-//        .dbDiscd(e.getDbDiscd())
-//        .mailDiscd(e.getMailDiscd())
-//        .mailManager(e.getMailManager())
-//        .mailAddress(e.getMailAddress())
         .build();
   }
 
-  private TbranchEntity toEntity(TbranchDto dto) {
-    TbranchEntity e = new TbranchEntity();
-    e.setBranchSeq(dto.getBranchSeq());
-    e.setCompanyId(dto.getCompanyId());
-    e.setPhone(dto.getPhone());
-    e.setCompanyName(dto.getCompanyName());
-    e.setIpType(dto.getIpType());
-    e.setPbIp(dto.getPbIp());
-    e.setPbPort(dto.getPbPort());
-    e.setPIp(dto.getPIp());
-    e.setPPort(dto.getPPort());
-    e.setHqYn(dto.getHqYn());
-    e.setDiscd(dto.getDiscd());
-//    e.setDbType(dto.getDbType());
-//    e.setDbIp(dto.getDbIp());
-//    e.setDbPort(dto.getDbPort());
-//    e.setDbName(dto.getDbName());
-//    e.setDbUser(dto.getDbUser());
-//    e.setDbPass(dto.getDbPass());
-//    e.setDbFlag(dto.getDbFlag());
-//    e.setDbDiscd(dto.getDbDiscd());
-//    e.setMailDiscd(dto.getMailDiscd());
-//    e.setMailManager(dto.getMailManager());
-//    e.setMailAddress(dto.getMailAddress());
-    return e;
+  /** 페이징 처리된 전체 조회 구현 */
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TbranchDto> findAll(Pageable pageable) {
+    return repo.findAll(pageable)
+        .map(this::toDto);
   }
 
   @Override
-  public List<TbranchDto> findAll() {
-    return repo.findAll().stream()
-        .map(this::toDto)
-        .collect(Collectors.toList());
-  }
-
-  @Override
+  @Transactional(readOnly = true)
   public TbranchDto findById(Integer branchSeq) {
     TbranchEntity e = repo.findById(branchSeq)
         .orElseThrow(() -> new IllegalArgumentException("지점을 찾을 수 없습니다: " + branchSeq));
@@ -85,18 +52,7 @@ public class TbranchServiceImpl implements TbranchService {
   @Override
   @Transactional
   public TbranchDto createBranch(TbranchDto dto) {
-    TbranchEntity e = toEntity(dto);
-    e.setDiscd(0);  // 기본 활성
-    TbranchEntity saved = repo.save(e);
-    return toDto(saved);
-  }
-
-  @Override
-  @Transactional
-  public TbranchDto update(Integer branchSeq, TbranchDto dto) {
-    TbranchEntity e = repo.findById(branchSeq)
-        .orElseThrow(() -> new IllegalArgumentException("지점을 찾을 수 없습니다: " + branchSeq));
-    // 수정할 필드들만 덮어쓰기
+    TbranchEntity e = new TbranchEntity();
     e.setCompanyId(dto.getCompanyId());
     e.setPhone(dto.getPhone());
     e.setCompanyName(dto.getCompanyName());
@@ -106,17 +62,24 @@ public class TbranchServiceImpl implements TbranchService {
     e.setPIp(dto.getPIp());
     e.setPPort(dto.getPPort());
     e.setHqYn(dto.getHqYn());
-//    e.setDbType(dto.getDbType());
-//    e.setDbIp(dto.getDbIp());
-//    e.setDbPort(dto.getDbPort());
-//    e.setDbName(dto.getDbName());
-//    e.setDbUser(dto.getDbUser());
-//    e.setDbPass(dto.getDbPass());
-//    e.setDbFlag(dto.getDbFlag());
-//    e.setDbDiscd(dto.getDbDiscd());
-//    e.setMailDiscd(dto.getMailDiscd());
-//    e.setMailManager(dto.getMailManager());
-//    e.setMailAddress(dto.getMailAddress());
+    e.setDiscd(0);
+    return toDto(repo.save(e));
+  }
+
+  @Override
+  @Transactional
+  public TbranchDto update(Integer branchSeq, TbranchDto dto) {
+    TbranchEntity e = repo.findById(branchSeq)
+        .orElseThrow(() -> new IllegalArgumentException("지점을 찾을 수 없습니다: " + branchSeq));
+    e.setCompanyId(dto.getCompanyId());
+    e.setPhone(dto.getPhone());
+    e.setCompanyName(dto.getCompanyName());
+    e.setIpType(dto.getIpType());
+    e.setPbIp(dto.getPbIp());
+    e.setPbPort(dto.getPbPort());
+    e.setPIp(dto.getPIp());
+    e.setPPort(dto.getPPort());
+    e.setHqYn(dto.getHqYn());
     return toDto(repo.save(e));
   }
 

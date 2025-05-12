@@ -1,3 +1,4 @@
+// src/main/java/com/sttweb/sttweb/controller/TbranchController.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.ListResponse;
@@ -6,14 +7,16 @@ import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
-import java.util.Comparator;
-import java.util.Optional;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/branches")
@@ -24,24 +27,24 @@ public class TbranchController {
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
 
-  /**
-   * 1) 헤더에 토큰이 있는지
-   * 2) 토큰이 유효한지
-   * 3) userLevel == "0"(관리자) 인지
-   * 를 모두 검사하는 헬퍼
-   */
   private ResponseEntity<String> checkAdmin(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("토큰이 없습니다.");
+      return ResponseEntity
+          .status(HttpStatus.UNAUTHORIZED)
+          .body("토큰이 없습니다.");
     }
     String token = authHeader.substring(7);
     if (!jwtTokenProvider.validateToken(token)) {
-      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰입니다.");
+      return ResponseEntity
+          .status(HttpStatus.UNAUTHORIZED)
+          .body("유효하지 않은 토큰입니다.");
     }
     String userId = jwtTokenProvider.getUserId(token);
     Info me = memberSvc.getMyInfoByUserId(userId);
     if (!"0".equals(me.getUserLevel())) {
-      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("권한이 없습니다.");
+      return ResponseEntity
+          .status(HttpStatus.FORBIDDEN)
+          .body("권한이 없습니다.");
     }
     return null;
   }
@@ -49,18 +52,17 @@ public class TbranchController {
   /** 지점 전체 조회 (관리자만) */
   @GetMapping
   public ResponseEntity<?> listAll(
-      @RequestHeader(value = "Authorization", required = false) String authHeader
+      @RequestHeader(value = "Authorization", required = false) String authHeader,
+      Pageable pageable
   ) {
+    // 토큰/관리자 체크
     ResponseEntity<String> err = checkAdmin(authHeader);
-    if (err != null) return err;
+    if (err != null) {
+      return err;  // 여기서 String body 리턴해도 OK
+    }
 
-    List<TbranchDto> sorted = svc.findAll().stream()
-        .sorted(Comparator.comparing(
-            b -> Optional.ofNullable(b.getCompanyId()).orElse(Integer.MAX_VALUE)
-        ))
-        .collect(Collectors.toList());
-
-    return ResponseEntity.ok(new ListResponse<>(sorted.size(), sorted));
+    Page<TbranchDto> page = svc.findAll(pageable);
+    return ResponseEntity.ok(page);
   }
 
   /** 지점 단건 조회 (관리자만) */
