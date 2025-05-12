@@ -1,3 +1,4 @@
+// src/main/java/com/sttweb/sttweb/controller/TmemberController.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TmemberDto.Info;
@@ -7,6 +8,7 @@ import com.sttweb.sttweb.dto.TmemberDto.SignupRequest;
 import com.sttweb.sttweb.dto.TmemberDto.StatusChangeRequest;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TmemberService;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,12 @@ public class TmemberController {
   private final HttpSession session;
   private final JwtTokenProvider jwtTokenProvider;
 
+  /** 회원가입 (관리자만) */
+  @LogActivity(
+      type     = "member",
+      activity = "가입",
+      contents = "#req.userId"
+  )
   @PostMapping("/signup")
   public ResponseEntity<String> signup(@RequestBody SignupRequest req) {
     Info me = svc.getMyInfo();
@@ -34,8 +42,15 @@ public class TmemberController {
     return ResponseEntity.ok("가입 완료");
   }
 
-  @PostMapping("/login")
-  public ResponseEntity<Info> login(@RequestBody LoginRequest req) {
+
+    /** 로그인 */
+    @LogActivity(
+        type     = "member",
+        activity = "로그인",
+        contents = "#p0.userId"    // ← 메서드 첫 번째 인자(p0)의 userId를 참조
+        )
+    @PostMapping("/login")
+    public ResponseEntity<Info> login(@RequestBody LoginRequest req) {
     TmemberEntity user = svc.login(req);
     String token = jwtTokenProvider.createToken(user.getUserId(), user.getUserLevel());
     Info info = Info.builder()
@@ -53,16 +68,31 @@ public class TmemberController {
         .token(token)
         .tokenType("Bearer")
         .build();
-    session.setAttribute("memberSeq", info.getMemberSeq());
+    session.setAttribute("memberSeq",   info.getMemberSeq());
+    session.setAttribute("branchSeq",   info.getBranchSeq());
+    session.setAttribute("employeeId",  info.getEmployeeId());
+    session.setAttribute("userId",      info.getUserId());
+    session.setAttribute("workerSeq",   1);
+    session.setAttribute("workerId",    info.getUserId());
     return ResponseEntity.ok(info);
   }
 
+  /** 로그아웃 */
+  @LogActivity(
+      type     = "member",
+      activity = "로그아웃"
+  )
   @PostMapping("/logout")
   public ResponseEntity<String> logout() {
     svc.logout();
     return ResponseEntity.ok("로그아웃 완료");
   }
 
+  /** 내 정보 조회 */
+  @LogActivity(
+      type     = "member",
+      activity = "내정보조회"
+  )
   @GetMapping("/me")
   public ResponseEntity<?> getMyInfo(@RequestHeader("Authorization") String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -77,6 +107,11 @@ public class TmemberController {
     return ResponseEntity.ok(info);
   }
 
+  /** 비밀번호 변경 */
+  @LogActivity(
+      type     = "member",
+      activity = "비밀번호변경"
+  )
   @PutMapping("/password")
   public ResponseEntity<String> changePassword(@RequestBody PasswordChangeRequest req) {
     Info me = svc.getMyInfo();
@@ -84,23 +119,32 @@ public class TmemberController {
     return ResponseEntity.ok("비밀번호 변경 완료");
   }
 
-  /** 전체 유저 조회 (관리자만) — Page<Info> 그대로 반환 */
+  /** 전체 유저 조회 (관리자만) */
+  @LogActivity(
+      type     = "member",
+      activity = "전체조회",
+      contents = "'page=' + #page + ',size=' + #size"
+  )
   @GetMapping
   public ResponseEntity<Page<Info>> listAll(
       @RequestParam(name = "page", defaultValue = "0") int page,
       @RequestParam(name = "size", defaultValue = "10") int size,
       @RequestHeader("Authorization") String authHeader
   ) {
-    // 관리자 검증
     if (!jwtTokenProvider.validateToken(authHeader.substring(7)) ||
         !"0".equals(svc.getMyInfoByUserId(jwtTokenProvider.getUserId(authHeader.substring(7))).getUserLevel())) {
       return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
-    PageRequest pr = PageRequest.of(page, size);
-    Page<Info> paged = svc.listAllUsers(pr);
+    Page<Info> paged = svc.listAllUsers(PageRequest.of(page, size));
     return ResponseEntity.ok(paged);
   }
 
+  /** 상태 변경 (관리자만) */
+  @LogActivity(
+      type     = "member",
+      activity = "상태변경",
+      contents = "#id.toString()"
+  )
   @PutMapping("/{id}/status")
   public ResponseEntity<String> changeStatus(
       @PathVariable("id") Integer id,

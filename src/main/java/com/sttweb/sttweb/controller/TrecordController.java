@@ -1,20 +1,19 @@
+// src/main/java/com/sttweb/sttweb/controller/TrecordController.java
 package com.sttweb.sttweb.controller;
 
-import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
+import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import com.sttweb.sttweb.logging.LogActivity;
+import com.sttweb.sttweb.service.TmemberRoleService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
-import com.sttweb.sttweb.service.TmemberRoleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.stream.Collectors;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -36,56 +35,12 @@ public class TrecordController {
     }
   }
 
-  private static class AuthInfo {
-    final String userId;
-    final Integer memberSeq;
-    final Integer roleSeq;    // 1=NONE,2=READ,3=LISTEN,4=DOWNLOAD
-    final String userLevel;   // "0"=관리자, "1"=일반
-    final String myNumber;    // 내선번호
-
-    AuthInfo(String userId, Integer memberSeq, String userLevel, Integer roleSeq, String myNumber) {
-      this.userId    = userId;
-      this.memberSeq = memberSeq;
-      this.userLevel = userLevel;
-      this.roleSeq   = roleSeq;
-      this.myNumber  = myNumber;
-    }
-  }
-
-  private AuthInfo authenticate(String authHeader) {
-    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      throw new UnauthorizedException("토큰이 없습니다.");
-    }
-    String token = authHeader.substring(7);
-    if (!jwtTokenProvider.validateToken(token)) {
-      throw new UnauthorizedException("유효하지 않은 토큰입니다.");
-    }
-    String userId = jwtTokenProvider.getUserId(token);
-    Info me = memberSvc.getMyInfoByUserId(userId);
-    Integer roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    return new AuthInfo(
-        userId,
-        me.getMemberSeq(),
-        me.getUserLevel(),
-        roleSeq,
-        me.getNumber()
-    );
-  }
-
-  private void requireMinimumRole(AuthInfo ai, int minRole) {
-    if (ai.roleSeq < minRole) {
-      throw new ForbiddenException("권한이 없습니다.");
-    }
-  }
-
-  private void requireAdmin(AuthInfo ai) {
-    if (ai.roleSeq < 4) {
-      throw new ForbiddenException("관리자 권한이 필요합니다.");
-    }
-  }
-
-  /** 1) 전체 녹취 조회 (READ 이상) — 페이징 적용 */
-  /** 1) 전체 녹취 조회 (READ 이상) — Page<TrecordDto> 반환 */
+  /** 전체 녹취 조회 */
+  @LogActivity(
+      type     = "record",
+      activity = "전체조회",
+      contents = "'page=' + #page + ',size=' + #size"
+  )
   @GetMapping
   public ResponseEntity<Page<TrecordDto>> listAll(
       @RequestHeader("Authorization") String authHeader,
@@ -93,12 +48,16 @@ public class TrecordController {
       @RequestParam(name="size", defaultValue="10") int size
   ) {
     requireRole(authHeader, 2);
-    PageRequest pr = PageRequest.of(page, size);
-    Page<TrecordDto> paged = recordSvc.findAll(pr);
+    Page<TrecordDto> paged = recordSvc.findAll(PageRequest.of(page, size));
     return ResponseEntity.ok(paged);
   }
 
-  /** 2) 번호 검색 (READ 이상) — Page<TrecordDto> 반환 */
+  /** 번호 검색 */
+  @LogActivity(
+      type     = "record",
+      activity = "검색",
+      contents = "'number1=' + #number1 + ',number2=' + #number2"
+  )
   @GetMapping("/search")
   public ResponseEntity<Page<TrecordDto>> searchByNumber(
       @RequestHeader("Authorization") String authHeader,
@@ -108,73 +67,97 @@ public class TrecordController {
       @RequestParam(name="size", defaultValue="10") int size
   ) {
     requireRole(authHeader, 2);
-    PageRequest pr = PageRequest.of(page, size);
-    Page<TrecordDto> paged = recordSvc.searchByNumber(number1, number2, pr);
+    Page<TrecordDto> paged = recordSvc.searchByNumber(number1, number2, PageRequest.of(page, size));
     return ResponseEntity.ok(paged);
   }
 
-  /** 3) 단건 조회 (READ 이상) */
+  /** 단건 조회 */
+  @LogActivity(
+      type     = "record",
+      activity = "단건조회",
+      contents = "#id.toString()"
+  )
   @GetMapping("/{id}")
   public ResponseEntity<TrecordDto> getById(
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @PathVariable("id") Integer id
   ) {
-    AuthInfo ai = authenticate(authHeader);
-    requireMinimumRole(ai, 2);
-
-    TrecordDto dto = recordSvc.findById(id);
-    if ((ai.roleSeq == 2 || ai.roleSeq == 3)
-        && !ai.myNumber.equals(dto.getNumber1())) {
-      throw new ForbiddenException("본인자료 외에 검색할 수 없습니다.");
+    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
     }
+    String token = authHeader.substring(7);
+    if (!jwtTokenProvider.validateToken(token)) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
+    }
+    Info me = memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
+    Integer roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
+    if ((roleSeq == 2 || roleSeq == 3)
+        && !me.getNumber().equals(recordSvc.findById(id).getNumber1())) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인자료 외에 검색할 수 없습니다.");
+    }
+    TrecordDto dto = recordSvc.findById(id);
     return ResponseEntity.ok(dto);
   }
 
-  /** 4) 녹취 등록 (관리자만) */
+  /** 녹취 등록 */
+  @LogActivity(
+      type     = "record",
+      activity = "등록",
+      contents = "#dto.toString()"
+  )
   @PostMapping
   public ResponseEntity<TrecordDto> create(
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @RequestBody TrecordDto dto
   ) {
-    AuthInfo ai = authenticate(authHeader);
-    requireAdmin(ai);
-    return ResponseEntity.status(HttpStatus.CREATED)
-        .body(recordSvc.create(dto));
+    String token = authHeader.substring(7);
+    Info me = memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
+    if (memberSvc.getRoleSeqOf(me.getMemberSeq()) < 4) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 권한이 필요합니다.");
+    }
+    TrecordDto created = recordSvc.create(dto);
+    return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
-  /** 5) 녹취 수정 (관리자만) */
+  /** 녹취 수정 */
+  @LogActivity(
+      type     = "record",
+      activity = "수정",
+      contents = "#id.toString()"
+  )
   @PutMapping("/{id}")
   public ResponseEntity<TrecordDto> update(
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @PathVariable("id") Integer id,
       @RequestBody TrecordDto dto
   ) {
-    AuthInfo ai = authenticate(authHeader);
-    requireAdmin(ai);
+    String token = authHeader.substring(7);
+    Info me = memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
+    if (memberSvc.getRoleSeqOf(me.getMemberSeq()) < 4) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 권한이 필요합니다.");
+    }
     TrecordDto updated = recordSvc.update(id, dto);
     return ResponseEntity.ok(updated);
   }
 
-  /** 6) 녹취 삭제 (관리자만) */
+  /** 녹취 삭제 */
+  @LogActivity(
+      type     = "record",
+      activity = "삭제",
+      contents = "#id.toString()"
+  )
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @PathVariable("id") Integer id
   ) {
-    AuthInfo ai = authenticate(authHeader);
-    requireAdmin(ai);
+    String token = authHeader.substring(7);
+    Info me = memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
+    if (memberSvc.getRoleSeqOf(me.getMemberSeq()) < 4) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 권한이 필요합니다.");
+    }
     recordSvc.delete(id);
     return ResponseEntity.noContent().build();
-  }
-
-  @ResponseStatus(HttpStatus.UNAUTHORIZED)
-  static class UnauthorizedException extends RuntimeException {
-    UnauthorizedException(String msg){ super(msg); }
-  }
-
-  @ResponseStatus(HttpStatus.FORBIDDEN)
-  static class ForbiddenException extends RuntimeException {
-    ForbiddenException(String msg){ super(msg); }
   }
 
 }

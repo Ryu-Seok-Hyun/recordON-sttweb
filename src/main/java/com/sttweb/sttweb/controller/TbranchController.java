@@ -4,6 +4,7 @@ package com.sttweb.sttweb.controller;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import lombok.RequiredArgsConstructor;
@@ -23,43 +24,43 @@ public class TbranchController {
 
   private ResponseEntity<String> checkAdmin(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      return ResponseEntity
-          .status(HttpStatus.UNAUTHORIZED)
-          .body("토큰이 없습니다.");
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("토큰이 없습니다.");
     }
     String token = authHeader.substring(7);
     if (!jwtTokenProvider.validateToken(token)) {
-      return ResponseEntity
-          .status(HttpStatus.UNAUTHORIZED)
-          .body("유효하지 않은 토큰입니다.");
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰입니다.");
     }
     String userId = jwtTokenProvider.getUserId(token);
     Info me = memberSvc.getMyInfoByUserId(userId);
     if (!"0".equals(me.getUserLevel())) {
-      return ResponseEntity
-          .status(HttpStatus.FORBIDDEN)
-          .body("권한이 없습니다.");
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("권한이 없습니다.");
     }
     return null;
   }
 
   /** 지점 전체 조회 (관리자만) */
+  @LogActivity(
+      type     = "branch",
+      activity = "지점전체조회",
+      contents = "'page=' + #pageable.pageNumber + ',size=' + #pageable.pageSize"
+  )
   @GetMapping
   public ResponseEntity<?> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
       Pageable pageable
   ) {
-    // 토큰/관리자 체크
     ResponseEntity<String> err = checkAdmin(authHeader);
-    if (err != null) {
-      return err;  // 여기서 String body 리턴해도 OK
-    }
-
+    if (err != null) return err;
     Page<TbranchDto> page = svc.findAll(pageable);
     return ResponseEntity.ok(page);
   }
 
   /** 지점 단건 조회 (관리자만) */
+  @LogActivity(
+      type     = "branch",
+      activity = "지점단건조회",
+      contents = "#id.toString()"
+  )
   @GetMapping("/{id}")
   public ResponseEntity<?> getById(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -72,6 +73,11 @@ public class TbranchController {
   }
 
   /** 지점 등록 (관리자만) */
+  @LogActivity(
+      type     = "branch",
+      activity = "지점등록",
+      contents = "#reqDto.toString()"
+  )
   @PostMapping
   public ResponseEntity<?> createBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -80,12 +86,15 @@ public class TbranchController {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
     TbranchDto created = svc.createBranch(reqDto);
-    return ResponseEntity
-        .status(HttpStatus.CREATED)
-        .body(created);
+    return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
   /** 지점 수정 (관리자만) */
+  @LogActivity(
+      type     = "branch",
+      activity = "지점수정",
+      contents = "'id=' + #id + ',dto=' + #dto.toString()"
+  )
   @PutMapping("/{id}")
   public ResponseEntity<?> update(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -99,6 +108,11 @@ public class TbranchController {
   }
 
   /** 지점 비활성화 (관리자만) */
+  @LogActivity(
+      type     = "branch",
+      activity = "지점비활성화",
+      contents = "#id.toString()"
+  )
   @DeleteMapping("/{id}")
   public ResponseEntity<?> deleteBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -111,6 +125,11 @@ public class TbranchController {
   }
 
   /** 지점 활성화 (관리자만) */
+  @LogActivity(
+      type     = "branch",
+      activity = "지점활성화",
+      contents = "#id.toString()"
+  )
   @PutMapping("/{id}/activate")
   public ResponseEntity<?> activateBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,

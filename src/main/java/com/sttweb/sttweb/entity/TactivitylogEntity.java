@@ -1,18 +1,17 @@
 package com.sttweb.sttweb.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.Setter;
+import jakarta.persistence.*;
+import lombok.*;
 
-@Getter
-@Setter
+/**
+ * Entity mapping for activity logs.
+ */
 @Entity
 @Table(name = "tactivitylog")
+@Getter @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class TactivitylogEntity {
 
   @Id
@@ -53,6 +52,7 @@ public class TactivitylogEntity {
   @Column(name = "pv_ip", length = 20)
   private String pvIp;
 
+
   @Column(name = "crtime", nullable = false, length = 19)
   private String crtime;
 
@@ -61,4 +61,5 @@ public class TactivitylogEntity {
 
   @Column(name = "worker_id", nullable = false, length = 30)
   private String workerId;
+
 }
