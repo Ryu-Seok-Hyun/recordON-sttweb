@@ -1,15 +1,15 @@
-// src/main/java/com/sttweb/sttweb/service/TrecordService.java
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TrecordDto;
-import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface TrecordService {
-  /** 전체 조회 */
-  List<TrecordDto> findAll();
+  /** 전체 조회 (페이징) */
+  Page<TrecordDto> findAll(Pageable pageable);
 
-  /** number1 또는 number2 로 검색 */
-  List<TrecordDto> searchByNumber(String number1, String number2);
+  /** 번호 검색 (페이징) */
+  Page<TrecordDto> searchByNumber(String number1, String number2, Pageable pageable);
 
   /** 단건 조회 */
   TrecordDto findById(Integer recordSeq);

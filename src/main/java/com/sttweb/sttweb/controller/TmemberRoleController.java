@@ -1,19 +1,21 @@
-// src/main/java/com/sttweb/sttweb/controller/RoleController.java
+// src/main/java/com/sttweb/sttweb/controller/TmemberRoleController.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TmemberRoleDto;
-import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.service.TmemberRoleService;
 import com.sttweb.sttweb.service.TmemberService;
-import java.util.Comparator;
-import java.util.stream.Collectors;
+import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
@@ -48,13 +50,23 @@ public class TmemberRoleController {
     List<TmemberRoleDto> sorted = roleSvc.listAllRoles().stream()
         .sorted(Comparator.comparing(TmemberRoleDto::getRoleSeq))
         .collect(Collectors.toList());
-    return ResponseEntity.ok(new ListResponse<>(sorted.size(), sorted));
+
+    // 페이징 없이 전체 반환: page=0, size=전체 개수, totalPages=1
+    ListResponse<TmemberRoleDto> resp = new ListResponse<>(
+        sorted.size(),   // count
+        sorted,          // items
+        0,               // page
+        sorted.size(),   // size
+        1                // totalPages
+    );
+    return ResponseEntity.ok(resp);
   }
 
   /** 2) 내 권한 조회 (로그인만 하면 OK) */
   @GetMapping("/members/me/role")
   public ResponseEntity<TmemberRoleDto> getMyRole(
-      @RequestHeader("Authorization") String header) {
+      @RequestHeader("Authorization") String header
+  ) {
     String token = header.substring(7);
     String userId = jwtTokenProvider.getUserId(token);
     TmemberRoleDto dto = roleSvc.getRoleByUserId(userId);

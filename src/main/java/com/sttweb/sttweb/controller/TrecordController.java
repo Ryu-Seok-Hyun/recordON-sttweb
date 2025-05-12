@@ -7,14 +7,15 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.service.TmemberRoleService;
-import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.http.MediaType;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/records")
@@ -25,6 +26,15 @@ public class TrecordController {
   private final TmemberService memberSvc;
   private final TmemberRoleService roleSvc;
   private final JwtTokenProvider jwtTokenProvider;
+
+  private void requireRole(String authHeader, int minRole) {
+    String token = authHeader.substring(7);
+    Integer roleSeq = memberSvc.getRoleSeqOf(
+        memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token)).getMemberSeq());
+    if (roleSeq < minRole) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
+    }
+  }
 
   private static class AuthInfo {
     final String userId;
@@ -42,9 +52,7 @@ public class TrecordController {
     }
   }
 
-  private AuthInfo authenticate(
-      @RequestHeader(value="Authorization", required=false) String authHeader
-  ) {
+  private AuthInfo authenticate(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       throw new UnauthorizedException("토큰이 없습니다.");
     }
@@ -76,43 +84,33 @@ public class TrecordController {
     }
   }
 
-  /** 1) 전체 녹취 조회 (READ 이상) */
+  /** 1) 전체 녹취 조회 (READ 이상) — 페이징 적용 */
+  /** 1) 전체 녹취 조회 (READ 이상) — Page<TrecordDto> 반환 */
   @GetMapping
-  public ResponseEntity<ListResponse<TrecordDto>> listAll(
-      @RequestHeader(value="Authorization", required=false) String authHeader
+  public ResponseEntity<Page<TrecordDto>> listAll(
+      @RequestHeader("Authorization") String authHeader,
+      @RequestParam(name="page", defaultValue="0") int page,
+      @RequestParam(name="size", defaultValue="10") int size
   ) {
-    AuthInfo ai = authenticate(authHeader);
-    requireMinimumRole(ai, 2);
-
-    List<TrecordDto> sorted = recordSvc.findAll().stream()
-        .filter(r -> ai.roleSeq > 3 || ai.myNumber.equals(r.getNumber1()))
-        .sorted(Comparator.comparing(TrecordDto::getRecordSeq))
-        .collect(Collectors.toList());
-
-    return ResponseEntity.ok(new ListResponse<>(sorted.size(), sorted));
+    requireRole(authHeader, 2);
+    PageRequest pr = PageRequest.of(page, size);
+    Page<TrecordDto> paged = recordSvc.findAll(pr);
+    return ResponseEntity.ok(paged);
   }
 
-  /** 2) 번호로 검색 (READ 이상) */
+  /** 2) 번호 검색 (READ 이상) — Page<TrecordDto> 반환 */
   @GetMapping("/search")
-  public ResponseEntity<?> searchByNumber(
-      @RequestHeader(value="Authorization", required=false) String authHeader,
+  public ResponseEntity<Page<TrecordDto>> searchByNumber(
+      @RequestHeader("Authorization") String authHeader,
       @RequestParam(value="number1", required=false) String number1,
-      @RequestParam(value="number2", required=false) String number2
+      @RequestParam(value="number2", required=false) String number2,
+      @RequestParam(name="page", defaultValue="0") int page,
+      @RequestParam(name="size", defaultValue="10") int size
   ) {
-    AuthInfo ai = authenticate(authHeader);
-    requireMinimumRole(ai, 2);
-
-    List<TrecordDto> filtered = recordSvc.searchByNumber(number1, number2).stream()
-        .filter(r -> ai.roleSeq > 3 || ai.myNumber.equals(r.getNumber1()))
-        .sorted(Comparator.comparing(TrecordDto::getRecordSeq))
-        .collect(Collectors.toList());
-
-    if (filtered.isEmpty()) {
-      return ResponseEntity.status(HttpStatus.NOT_FOUND)
-          .contentType(MediaType.TEXT_PLAIN)
-          .body("조건에 부합하는 데이터가 없습니다.");
-    }
-    return ResponseEntity.ok(new ListResponse<>(filtered.size(), filtered));
+    requireRole(authHeader, 2);
+    PageRequest pr = PageRequest.of(page, size);
+    Page<TrecordDto> paged = recordSvc.searchByNumber(number1, number2, pr);
+    return ResponseEntity.ok(paged);
   }
 
   /** 3) 단건 조회 (READ 이상) */
@@ -173,8 +171,10 @@ public class TrecordController {
   static class UnauthorizedException extends RuntimeException {
     UnauthorizedException(String msg){ super(msg); }
   }
+
   @ResponseStatus(HttpStatus.FORBIDDEN)
   static class ForbiddenException extends RuntimeException {
     ForbiddenException(String msg){ super(msg); }
   }
+
 }

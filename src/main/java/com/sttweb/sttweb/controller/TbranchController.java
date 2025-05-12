@@ -1,7 +1,6 @@
 // src/main/java/com/sttweb/sttweb/controller/TbranchController.java
 package com.sttweb.sttweb.controller;
 
-import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
@@ -12,11 +11,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/branches")
