@@ -1,14 +1,17 @@
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.service.RoleService;
+import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -75,24 +78,23 @@ public class TrecordController {
 
   /** 1) 전체 녹취 조회 (READ 이상) */
   @GetMapping
-  public ResponseEntity<List<TrecordDto>> listAll(
+  public ResponseEntity<ListResponse<TrecordDto>> listAll(
       @RequestHeader(value="Authorization", required=false) String authHeader
   ) {
     AuthInfo ai = authenticate(authHeader);
     requireMinimumRole(ai, 2);
 
-    List<TrecordDto> all = recordSvc.findAll();
-    if (ai.roleSeq == 2 || ai.roleSeq == 3) {
-      all = all.stream()
-          .filter(r -> ai.myNumber.equals(r.getNumber1()))
-          .collect(Collectors.toList());
-    }
-    return ResponseEntity.ok(all);
+    List<TrecordDto> sorted = recordSvc.findAll().stream()
+        .filter(r -> ai.roleSeq > 3 || ai.myNumber.equals(r.getNumber1()))
+        .sorted(Comparator.comparing(TrecordDto::getRecordSeq))
+        .collect(Collectors.toList());
+
+    return ResponseEntity.ok(new ListResponse<>(sorted.size(), sorted));
   }
 
   /** 2) 번호로 검색 (READ 이상) */
   @GetMapping("/search")
-  public ResponseEntity<List<TrecordDto>> searchByNumber(
+  public ResponseEntity<?> searchByNumber(
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @RequestParam(value="number1", required=false) String number1,
       @RequestParam(value="number2", required=false) String number2
@@ -100,17 +102,17 @@ public class TrecordController {
     AuthInfo ai = authenticate(authHeader);
     requireMinimumRole(ai, 2);
 
-    // 먼저 서비스에서 결과를 받아온다
-    List<TrecordDto> results = recordSvc.searchByNumber(number1, number2);
+    List<TrecordDto> filtered = recordSvc.searchByNumber(number1, number2).stream()
+        .filter(r -> ai.roleSeq > 3 || ai.myNumber.equals(r.getNumber1()))
+        .sorted(Comparator.comparing(TrecordDto::getRecordSeq))
+        .collect(Collectors.toList());
 
-    // READ(2)·LISTEN(3) 권한자는 본인 내선번호만 볼 수 있도록 필터링
-    if (ai.roleSeq == 2 || ai.roleSeq == 3) {
-      results = results.stream()
-          .filter(r -> ai.myNumber.equals(r.getNumber1()))
-          .collect(Collectors.toList());
+    if (filtered.isEmpty()) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND)
+          .contentType(MediaType.TEXT_PLAIN)
+          .body("조건에 부합하는 데이터가 없습니다.");
     }
-
-    return ResponseEntity.ok(results);
+    return ResponseEntity.ok(new ListResponse<>(filtered.size(), filtered));
   }
 
   /** 3) 단건 조회 (READ 이상) */
@@ -123,14 +125,10 @@ public class TrecordController {
     requireMinimumRole(ai, 2);
 
     TrecordDto dto = recordSvc.findById(id);
-
-    // READ(2)·LISTEN(3) 권한자는 본인 내선번호가 아니면 금지
-    if (ai.roleSeq == 2 || ai.roleSeq == 3) {
-      if (!ai.myNumber.equals(dto.getNumber1())) {
-        throw new ForbiddenException("본인자료 외에 검색할 수 없습니다.");
-      }
+    if ((ai.roleSeq == 2 || ai.roleSeq == 3)
+        && !ai.myNumber.equals(dto.getNumber1())) {
+      throw new ForbiddenException("본인자료 외에 검색할 수 없습니다.");
     }
-
     return ResponseEntity.ok(dto);
   }
 

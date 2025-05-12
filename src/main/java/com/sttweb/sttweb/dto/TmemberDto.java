@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,8 +24,13 @@ public class TmemberDto {
     private String crtime;
     private String udtime;
     private String reguserId;
+    private Integer role_seq;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private String token;
-    private String tokenType = "Bearer";
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String tokenType;
 
     public static Info fromEntity(TmemberEntity e) {
       return Info.builder()
@@ -38,6 +44,7 @@ public class TmemberDto {
           .crtime(e.getCrtime())
           .udtime(e.getUdtime())
           .reguserId(e.getReguserId())
+          .role_seq(e.getRoleSeq())
           .build();
     }
   }

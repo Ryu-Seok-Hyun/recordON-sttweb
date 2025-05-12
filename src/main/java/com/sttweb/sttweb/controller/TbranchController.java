@@ -1,10 +1,14 @@
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
+import java.util.Comparator;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -28,22 +32,16 @@ public class TbranchController {
    */
   private ResponseEntity<String> checkAdmin(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      return ResponseEntity
-          .status(HttpStatus.UNAUTHORIZED)
-          .body("토큰이 없습니다.");
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("토큰이 없습니다.");
     }
     String token = authHeader.substring(7);
     if (!jwtTokenProvider.validateToken(token)) {
-      return ResponseEntity
-          .status(HttpStatus.UNAUTHORIZED)
-          .body("유효하지 않은 토큰입니다.");
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰입니다.");
     }
     String userId = jwtTokenProvider.getUserId(token);
     Info me = memberSvc.getMyInfoByUserId(userId);
     if (!"0".equals(me.getUserLevel())) {
-      return ResponseEntity
-          .status(HttpStatus.FORBIDDEN)
-          .body("권한이 없습니다.");
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("권한이 없습니다.");
     }
     return null;
   }
@@ -55,8 +53,14 @@ public class TbranchController {
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-    List<TbranchDto> all = svc.findAll();
-    return ResponseEntity.ok(all);
+
+    List<TbranchDto> sorted = svc.findAll().stream()
+        .sorted(Comparator.comparing(
+            b -> Optional.ofNullable(b.getCompanyId()).orElse(Integer.MAX_VALUE)
+        ))
+        .collect(Collectors.toList());
+
+    return ResponseEntity.ok(new ListResponse<>(sorted.size(), sorted));
   }
 
   /** 지점 단건 조회 (관리자만) */

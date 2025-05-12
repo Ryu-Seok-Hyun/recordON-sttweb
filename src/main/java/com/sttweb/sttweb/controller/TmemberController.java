@@ -1,6 +1,9 @@
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TmemberDto;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
@@ -64,6 +67,7 @@ public class TmemberController {
         .crtime(user.getCrtime())
         .udtime(user.getUdtime())
         .reguserId(user.getReguserId())
+        .role_seq(user.getRoleSeq())
         .token(token)
         .tokenType("Bearer")
         .build();
@@ -113,21 +117,19 @@ public class TmemberController {
     return ResponseEntity.ok("비밀번호 변경 완료");
   }
 
-  // 전체유저 조회(관리자만)
+  /** 전체유저 조회(관리자만) */
   @GetMapping
   public ResponseEntity<?> listAll() {
     Info me = svc.getMyInfo();
-
-    // 2) 관리자(userLevel == "0")가 아니면 접근 차단
     if (!"0".equals(me.getUserLevel())) {
-      return ResponseEntity
-          .status(HttpStatus.FORBIDDEN)
-          .body("권한이 없습니다.");
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("권한이 없습니다.");
     }
 
+    List<Info> all = svc.listAllUsers().stream()
+        .sorted(Comparator.comparing(Info::getMemberSeq))
+        .collect(Collectors.toList());
 
-    List<Info> all = svc.listAllUsers();
-    return ResponseEntity.ok(all);
+    return ResponseEntity.ok(new ListResponse<>(all.size(), all));
   }
 
   /** 사용자 활성/비활성 */

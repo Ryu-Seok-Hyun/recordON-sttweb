@@ -1,10 +1,13 @@
 // src/main/java/com/sttweb/sttweb/controller/RoleController.java
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TmemberRoleDto;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.RoleService;
 import com.sttweb.sttweb.service.TmemberService;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -31,11 +34,9 @@ public class RoleController {
     String token = header.substring(7);
     if (!jwtTokenProvider.validateToken(token))
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("유효하지 않은 토큰입니다.");
-    String userId = jwtTokenProvider.getUserId(token);
-    // 세션 대신 토큰을 기반으로 pull 해서...
-    // UserService 에서 정보 꺼내오도록 구현했다고 가정
-    // 아래는 가독성 위해 간단화
-    String userLevel = memberSvc.getMyInfoByUserId(userId).getUserLevel();
+    String userLevel = memberSvc
+        .getMyInfoByUserId(jwtTokenProvider.getUserId(token))
+        .getUserLevel();
     if (!"0".equals(userLevel))
       return ResponseEntity.status(HttpStatus.FORBIDDEN).body("권한이 없습니다.");
     return null;
@@ -43,8 +44,11 @@ public class RoleController {
 
   /** 1) 역할 목록 조회 (모두 허용) */
   @GetMapping("/roles")
-  public ResponseEntity<List<TmemberRoleDto>> listRoles() {
-    return ResponseEntity.ok(roleSvc.listAllRoles());
+  public ResponseEntity<ListResponse<TmemberRoleDto>> listRoles() {
+    List<TmemberRoleDto> sorted = roleSvc.listAllRoles().stream()
+        .sorted(Comparator.comparing(TmemberRoleDto::getRoleSeq))
+        .collect(Collectors.toList());
+    return ResponseEntity.ok(new ListResponse<>(sorted.size(), sorted));
   }
 
   /** 2) 내 권한 조회 (로그인만 하면 OK) */
