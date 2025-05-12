@@ -6,7 +6,7 @@ import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
-import com.sttweb.sttweb.service.RoleService;
+import com.sttweb.sttweb.service.TmemberRoleService;
 import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
@@ -23,7 +23,7 @@ public class TrecordController {
 
   private final TrecordService recordSvc;
   private final TmemberService memberSvc;
-  private final RoleService roleSvc;
+  private final TmemberRoleService roleSvc;
   private final JwtTokenProvider jwtTokenProvider;
 
   private static class AuthInfo {

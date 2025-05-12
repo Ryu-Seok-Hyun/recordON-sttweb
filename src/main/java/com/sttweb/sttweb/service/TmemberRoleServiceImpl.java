@@ -4,7 +4,6 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TmemberRoleDto;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TmemberRoleEntity;
-import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TmemberRoleRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +14,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class RoleServiceImpl implements RoleService {
+public class TmemberRoleServiceImpl implements TmemberRoleService {
   private final TmemberRoleRepository roleRepo;
   private final TmemberRepository memberRepo;
 

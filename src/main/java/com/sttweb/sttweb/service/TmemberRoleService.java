@@ -3,7 +3,7 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TmemberRoleDto;
 import java.util.List;
 
-public interface RoleService {
+public interface TmemberRoleService {
   /** DB 에 저장된 모든 역할 목록 조회 */
   List<TmemberRoleDto> listAllRoles();
 

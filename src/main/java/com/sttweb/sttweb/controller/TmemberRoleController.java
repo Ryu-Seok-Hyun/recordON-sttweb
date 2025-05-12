@@ -4,7 +4,7 @@ package com.sttweb.sttweb.controller;
 import com.sttweb.sttweb.dto.ListResponse;
 import com.sttweb.sttweb.dto.TmemberRoleDto;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
-import com.sttweb.sttweb.service.RoleService;
+import com.sttweb.sttweb.service.TmemberRoleService;
 import com.sttweb.sttweb.service.TmemberService;
 import java.util.Comparator;
 import java.util.stream.Collectors;
@@ -18,9 +18,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
-public class RoleController {
+public class TmemberRoleController {
 
-  private final RoleService roleSvc;
+  private final TmemberRoleService roleSvc;
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
 
