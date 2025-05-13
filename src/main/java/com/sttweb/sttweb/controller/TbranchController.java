@@ -41,8 +41,8 @@ public class TbranchController {
   /** 지점 전체 조회 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "지점전체조회",
-      contents = "'page=' + #pageable.pageNumber + ',size=' + #pageable.pageSize"
+      activity = "조회",
+      contents = "지점 전체 조회"
   )
   @GetMapping
   public ResponseEntity<?> listAll(
@@ -58,8 +58,8 @@ public class TbranchController {
   /** 지점 단건 조회 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "지점단건조회",
-      contents = "#id.toString()"
+      activity = "조회",
+      contents = "#지점 단건 조회"
   )
   @GetMapping("/{id}")
   public ResponseEntity<?> getById(
@@ -75,8 +75,8 @@ public class TbranchController {
   /** 지점 등록 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "지점등록",
-      contents = "#reqDto.toString()"
+      activity = "등록",
+      contents = "#지점 등록"
   )
   @PostMapping
   public ResponseEntity<?> createBranch(
@@ -92,8 +92,8 @@ public class TbranchController {
   /** 지점 수정 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "지점수정",
-      contents = "'id=' + #id + ',dto=' + #dto.toString()"
+      activity = "수정",
+      contents = "'지점 수정"
   )
   @PutMapping("/{id}")
   public ResponseEntity<?> update(
@@ -110,8 +110,8 @@ public class TbranchController {
   /** 지점 비활성화 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "지점비활성화",
-      contents = "#id.toString()"
+      activity = "비활성화",
+      contents = "지점 비활성 함"
   )
   @DeleteMapping("/{id}")
   public ResponseEntity<?> deleteBranch(
@@ -127,8 +127,8 @@ public class TbranchController {
   /** 지점 활성화 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "지점활성화",
-      contents = "#id.toString()"
+      activity = "활성화",
+      contents = "지점 활성화 함"
   )
   @PutMapping("/{id}/activate")
   public ResponseEntity<?> activateBranch(

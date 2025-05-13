@@ -20,4 +20,6 @@ public interface TactivitylogService {
 
   /** 삭제 */
   void deleteLog(Integer activitySeq);
+
+  Page<TactivitylogDto> getLogsByUserId(String userId, Pageable pageable);
 }

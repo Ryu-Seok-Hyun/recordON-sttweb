@@ -29,8 +29,8 @@ public class TmemberController {
   /** 회원가입 (관리자만) */
   @LogActivity(
       type     = "member",
-      activity = "가입",
-      contents = "#req.userId"
+      activity = "등록",
+      contents = "사용자 등록"
   )
   @PostMapping("/signup")
   public ResponseEntity<String> signup(@RequestBody SignupRequest req) {
@@ -46,8 +46,8 @@ public class TmemberController {
     /** 로그인 */
     @LogActivity(
         type     = "member",
-        activity = "로그인",
-        contents = "#p0.userId"    // ← 메서드 첫 번째 인자(p0)의 userId를 참조
+        activity = "로그인"
+//        contents = ""
         )
     @PostMapping("/login")
     public ResponseEntity<Info> login(@RequestBody LoginRequest req) {
@@ -91,7 +91,8 @@ public class TmemberController {
   /** 내 정보 조회 */
   @LogActivity(
       type     = "member",
-      activity = "내정보조회"
+      activity = "조회",
+      contents = "내 정보 조회"
   )
   @GetMapping("/me")
   public ResponseEntity<?> getMyInfo(@RequestHeader("Authorization") String authHeader) {
@@ -110,7 +111,8 @@ public class TmemberController {
   /** 비밀번호 변경 */
   @LogActivity(
       type     = "member",
-      activity = "비밀번호변경"
+      activity = "수정",
+      contents = "PW변경"
   )
   @PutMapping("/password")
   public ResponseEntity<String> changePassword(@RequestBody PasswordChangeRequest req) {
@@ -122,8 +124,8 @@ public class TmemberController {
   /** 전체 유저 조회 (관리자만) */
   @LogActivity(
       type     = "member",
-      activity = "전체조회",
-      contents = "'page=' + #page + ',size=' + #size"
+      activity = "조회",
+      contents = "전체 유저 조회"
   )
   @GetMapping
   public ResponseEntity<Page<Info>> listAll(
@@ -142,8 +144,8 @@ public class TmemberController {
   /** 상태 변경 (관리자만) */
   @LogActivity(
       type     = "member",
-      activity = "상태변경",
-      contents = "#id.toString()"
+      activity = "수정",
+      contents = "상태 변경"
   )
   @PutMapping("/{id}/status")
   public ResponseEntity<String> changeStatus(

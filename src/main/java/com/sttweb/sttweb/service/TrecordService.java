@@ -1,3 +1,5 @@
+// ───────────────────────────────────────────────────────────────
+// com.sttweb.sttweb.service.TrecordService
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TrecordDto;
@@ -22,4 +24,7 @@ public interface TrecordService {
 
   /** 삭제 */
   void delete(Integer recordSeq);
+
+  /** 본인 번호만 조회 (페이징) */
+  Page<TrecordDto> findByUserNumber(String number, Pageable pageable);
 }

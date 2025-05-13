@@ -1,3 +1,5 @@
+// ───────────────────────────────────────────────────────────────
+// com.sttweb.sttweb.service.TrecordServiceImpl
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TrecordDto;
@@ -18,8 +20,6 @@ import java.time.format.DateTimeFormatter;
 public class TrecordServiceImpl implements TrecordService {
 
   private final TrecordRepository repo;
-
-  // 날짜/시간 포맷터
   private static final DateTimeFormatter DT_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -46,15 +46,12 @@ public class TrecordServiceImpl implements TrecordService {
         .build();
   }
 
-  /** 페이징된 전체 조회 */
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> findAll(Pageable pageable) {
-    return repo.findAll(pageable)
-        .map(this::toDto);
+    return repo.findAll(pageable).map(this::toDto);
   }
 
-  /** 페이징된 번호 검색 */
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> searchByNumber(String number1, String number2, Pageable pageable) {
@@ -69,7 +66,6 @@ public class TrecordServiceImpl implements TrecordService {
     }
   }
 
-  /** 단건 조회 */
   @Override
   @Transactional(readOnly = true)
   public TrecordDto findById(Integer recordSeq) {
@@ -78,7 +74,6 @@ public class TrecordServiceImpl implements TrecordService {
     return toDto(e);
   }
 
-  /** 생성 */
   @Override
   @Transactional
   public TrecordDto create(TrecordDto dto) {
@@ -104,7 +99,6 @@ public class TrecordServiceImpl implements TrecordService {
     return toDto(saved);
   }
 
-  /** 수정 */
   @Override
   @Transactional
   public TrecordDto update(Integer recordSeq, TrecordDto dto) {
@@ -131,10 +125,18 @@ public class TrecordServiceImpl implements TrecordService {
     return toDto(saved);
   }
 
-  /** 삭제 */
   @Override
   @Transactional
   public void delete(Integer recordSeq) {
     repo.deleteById(recordSeq);
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> findByUserNumber(String number, Pageable pageable) {
+    // number1 == number OR number2 == number 인 페이지만 조회
+    return repo.findByNumber1OrNumber2(number, number, pageable)
+        .map(this::toDto);
   }
 }

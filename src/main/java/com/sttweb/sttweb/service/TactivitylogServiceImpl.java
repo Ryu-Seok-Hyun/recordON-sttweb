@@ -18,6 +18,26 @@ public class TactivitylogServiceImpl implements TactivitylogService {
 
   private final TactivitylogRepository repository;
 
+  @Override
+  public Page<TactivitylogDto> getLogs(Pageable pageable) {
+    return repository.findAll(pageable)
+        .map(entity -> {
+          TactivitylogDto dto = new TactivitylogDto();
+          BeanUtils.copyProperties(entity, dto);
+          return dto;
+        });
+  }
+
+  @Override
+  public Page<TactivitylogDto> getLogsByUserId(String userId, Pageable pageable) {
+    return repository.findAllByUserId(userId, pageable)
+        .map(entity -> {
+          TactivitylogDto dto = new TactivitylogDto();
+          BeanUtils.copyProperties(entity, dto);
+          return dto;
+        });
+  }
+
 
   @Override
   public TactivitylogDto createLog(TactivitylogDto dto) {
@@ -39,15 +59,6 @@ public class TactivitylogServiceImpl implements TactivitylogService {
     return dto;
   }
 
-  @Override
-  public Page<TactivitylogDto> getLogs(Pageable pageable) {
-    return repository.findAll(pageable)
-        .map(entity -> {
-          TactivitylogDto dto = new TactivitylogDto();
-          BeanUtils.copyProperties(entity, dto);
-          return dto;
-        });
-  }
 
   @Override
   public void deleteLog(Integer activitySeq) {

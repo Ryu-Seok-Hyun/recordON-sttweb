@@ -44,8 +44,10 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-// JavaCompile 태스크에 –parameters 옵션 추가
+// 모든 Java 컴파일 작업에 -parameters 플래그를 추가
 tasks.withType(JavaCompile) {
 	options.encoding = 'UTF-8'
-	options.compilerArgs << '-parameters'
+	options.compilerArgs += ['-parameters']
 }
+
+
