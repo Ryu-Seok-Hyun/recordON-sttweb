@@ -43,7 +43,7 @@ public class TmemberRoleController {
   }
 
   /** 1) 역할 목록 조회 (모두 허용) */
-  @LogActivity(type = "role", activity = "조회", contents = "역할 목록 조회")
+  @LogActivity(type = "role", activity = "'조회'", contents = "역할 목록 조회")
   @GetMapping("/roles")
   public ResponseEntity<ListResponse<TmemberRoleDto>> listRoles() {
     List<TmemberRoleDto> sorted = roleSvc.listAllRoles().stream()
@@ -55,7 +55,7 @@ public class TmemberRoleController {
   }
 
   /** 2) 내 권한 조회 (로그인만 하면 OK) */
-  @LogActivity(type = "role", activity = "조회", contents = "내 역할 조회")
+  @LogActivity(type = "role", activity = "'조회'", contents = "내 역할 조회")
   @GetMapping("/members/me/role")
   public ResponseEntity<TmemberRoleDto> getMyRole(
       @RequestHeader("Authorization") String header
@@ -73,7 +73,7 @@ public class TmemberRoleController {
   /** 3) 다른 사용자의 권한 변경 (관리자만) */
   @LogActivity(
       type     = "role",
-      activity = "수정",
+      activity = "'수정'",
       contents = "다른 사용자 권한 변경"
   )
   @PutMapping("/members/{memberSeq}/role")

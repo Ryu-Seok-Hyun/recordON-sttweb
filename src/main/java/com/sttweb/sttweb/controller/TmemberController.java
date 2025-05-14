@@ -29,7 +29,7 @@ public class TmemberController {
   /** 회원가입 (관리자만) */
   @LogActivity(
       type     = "member",
-      activity = "등록",
+      activity = "'등록'",
       contents = "사용자 등록"
   )
   @PostMapping("/signup")
@@ -46,7 +46,7 @@ public class TmemberController {
     /** 로그인 */
     @LogActivity(
         type     = "member",
-        activity = "로그인"
+        activity = "'로그인'"
 //        contents = ""
         )
     @PostMapping("/login")
@@ -80,7 +80,7 @@ public class TmemberController {
   /** 로그아웃 */
   @LogActivity(
       type     = "member",
-      activity = "로그아웃"
+      activity = "'로그아웃'"
   )
   @PostMapping("/logout")
   public ResponseEntity<String> logout() {
@@ -91,8 +91,8 @@ public class TmemberController {
   /** 내 정보 조회 */
   @LogActivity(
       type     = "member",
-      activity = "조회",
-      contents = "내 정보 조회"
+      activity = "'조회'",
+      contents = "'내 정보 조회'"
   )
   @GetMapping("/me")
   public ResponseEntity<?> getMyInfo(@RequestHeader("Authorization") String authHeader) {
@@ -111,7 +111,7 @@ public class TmemberController {
   /** 비밀번호 변경 */
   @LogActivity(
       type     = "member",
-      activity = "수정",
+      activity = "'수정'",
       contents = "PW변경"
   )
   @PutMapping("/password")
@@ -124,7 +124,7 @@ public class TmemberController {
   /** 전체 유저 조회 (관리자만) */
   @LogActivity(
       type     = "member",
-      activity = "조회",
+      activity = "'조회'",
       contents = "전체 유저 조회"
   )
   @GetMapping
@@ -144,7 +144,7 @@ public class TmemberController {
   /** 상태 변경 (관리자만) */
   @LogActivity(
       type     = "member",
-      activity = "수정",
+      activity = "'수정'",
       contents = "상태 변경"
   )
   @PutMapping("/{id}/status")

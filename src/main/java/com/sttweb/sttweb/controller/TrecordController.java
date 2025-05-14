@@ -50,7 +50,7 @@ public class TrecordController {
   }
 
   /** 전체 녹취 조회 (관리자는 전체, 그 외는 본인 자료만) */
-  @LogActivity(type = "record", activity = "조회", contents = "'전체 녹취 조회'")
+  @LogActivity(type = "record", activity = "'조회'", contents = "'전체 녹취 조회'")
   @GetMapping
   public ResponseEntity<Page<TrecordDto>> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -69,7 +69,7 @@ public class TrecordController {
   }
 
   /** 번호 검색 (관리자는 전체, 그 외는 본인 번호만) */
-  @LogActivity(type = "record", activity = "조회", contents = "'number1=' + #number1 + ',number2=' + #number2")
+  @LogActivity(type = "record", activity = "'조회'", contents = "'number1=' + #number1 + ',number2=' + #number2")
   @GetMapping("/search")
   public ResponseEntity<Page<TrecordDto>> searchByNumber(
       @RequestParam(name = "number1") String number1,
@@ -101,7 +101,7 @@ public class TrecordController {
   }
 
   /** 단건 조회 (관리자는 전체, 그 외는 본인 자료만) */
-  @LogActivity(type = "record", activity = "조회", contents = "'단건 조회'")
+  @LogActivity(type = "record", activity = "'조회'", contents = "'단건 조회'")
   @GetMapping("/{id}")
   public ResponseEntity<TrecordDto> getById(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -122,7 +122,7 @@ public class TrecordController {
   }
 
   /** 녹취 등록 (관리자 전용) */
-  @LogActivity(type = "record", activity = "등록", contents = "녹취 등록")
+  @LogActivity(type = "record", activity = "'등록'", contents = "녹취 등록")
   @PostMapping
   public ResponseEntity<TrecordDto> create(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -138,7 +138,7 @@ public class TrecordController {
   }
 
   /** 녹취 수정 (관리자 전용) */
-  @LogActivity(type = "record", activity = "수정", contents = "녹취 수정")
+  @LogActivity(type = "record", activity = "'수정'", contents = "녹취 수정")
   @PutMapping("/{id}")
   public ResponseEntity<TrecordDto> update(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -154,7 +154,7 @@ public class TrecordController {
   }
 
   /** 녹취 삭제 (관리자 전용) */
-  @LogActivity(type = "record", activity = "삭제", contents = "녹취 삭제")
+  @LogActivity(type = "record", activity = "'삭제'", contents = "녹취 삭제")
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> delete(
       @RequestHeader(value = "Authorization", required = false) String authHeader,

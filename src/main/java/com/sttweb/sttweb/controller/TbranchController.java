@@ -41,7 +41,7 @@ public class TbranchController {
   /** 지점 전체 조회 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "조회",
+      activity = "'조회'",
       contents = "지점 전체 조회"
   )
   @GetMapping
@@ -58,7 +58,7 @@ public class TbranchController {
   /** 지점 단건 조회 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "조회",
+      activity = "'조회'",
       contents = "#지점 단건 조회"
   )
   @GetMapping("/{id}")
@@ -75,7 +75,7 @@ public class TbranchController {
   /** 지점 등록 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "등록",
+      activity = "'등록'",
       contents = "#지점 등록"
   )
   @PostMapping
@@ -92,7 +92,7 @@ public class TbranchController {
   /** 지점 수정 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "수정",
+      activity = "'수정'",
       contents = "'지점 수정"
   )
   @PutMapping("/{id}")
@@ -110,7 +110,7 @@ public class TbranchController {
   /** 지점 비활성화 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "비활성화",
+      activity = "'비활성화'",
       contents = "지점 비활성 함"
   )
   @DeleteMapping("/{id}")
@@ -127,7 +127,7 @@ public class TbranchController {
   /** 지점 활성화 (관리자만) */
   @LogActivity(
       type     = "branch",
-      activity = "활성화",
+      activity = "'활성화'",
       contents = "지점 활성화 함"
   )
   @PutMapping("/{id}/activate")
