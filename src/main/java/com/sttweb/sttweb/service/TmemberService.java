@@ -23,4 +23,7 @@ public interface TmemberService {
   void changeStatus(Integer memberSeq, StatusChangeRequest req);
   Integer getRoleSeqOf(Integer memberSeq);
   void changeRole(Integer memberSeq, Integer newRoleSeq);
+
+  Info getMyInfoByMemberSeq(Integer memberSeq);
+
 }

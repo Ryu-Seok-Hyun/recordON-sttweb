@@ -20,19 +20,17 @@ public class TmemberDto {
   public static class Info {
     private Integer memberSeq;
     private Integer branchSeq;
+    private String  branchName;    // ★ 추가
     private Integer employeeId;
-    private String userId;
-    private String userLevel;
-    private String number;
+    private String  userId;
+    private String  userLevel;
+    private String  number;
     private Integer discd;
-    private String crtime;
-    private String udtime;
-    private String reguserId;
+    private String  crtime;
+    private String  udtime;
+    private String  reguserId;
 
-    /**
-     * Java 코드 상에서는 CamelCase 로 쓰고,
-     * JSON 직렬화/역직렬화 시에는 "role_seq" 로 매핑
-     */
+    /** JSON에는 role_seq로 직렬화 */
     @JsonProperty("role_seq")
     private Integer roleSeq;
 
@@ -43,7 +41,7 @@ public class TmemberDto {
     private String tokenType;
 
     /**
-     * Entity → DTO 변환 헬퍼
+     * Entity → DTO 변환 헬퍼 (branchName은 서비스/컨트롤러에서 채워 줌)
      */
     public static Info fromEntity(TmemberEntity e) {
       return Info.builder()
@@ -57,7 +55,7 @@ public class TmemberDto {
           .crtime(e.getCrtime())
           .udtime(e.getUdtime())
           .reguserId(e.getReguserId())
-          .roleSeq(e.getRoleSeq())    // Lombok Builder 에서 .roleSeq(...) 메서드 사용
+          .roleSeq(e.getRoleSeq())
           .build();
     }
   }
@@ -112,6 +110,14 @@ public class TmemberDto {
   @AllArgsConstructor
   public static class StatusChangeRequest {
     private boolean active;
+  }
+
+
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class RoleChangeRequest {
+    private Integer roleSeq;
   }
 
 }

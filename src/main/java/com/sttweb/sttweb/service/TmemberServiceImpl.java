@@ -7,6 +7,8 @@ import com.sttweb.sttweb.dto.TmemberDto.SignupRequest;
 import com.sttweb.sttweb.dto.TmemberDto.StatusChangeRequest;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.repository.TmemberRepository;
+import com.sttweb.sttweb.dto.TbranchDto;
+import com.sttweb.sttweb.service.TbranchService;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -25,17 +27,16 @@ public class TmemberServiceImpl implements TmemberService {
   private final TmemberRepository repo;
   private final PasswordEncoder passwordEncoder;
   private final HttpSession session;
+  private final TbranchService branchSvc;  // ★ 추가
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   /** 회원가입 */
   @Override
   @Transactional
   public void signup(SignupRequest req, Integer regMemberSeq, String regUserId) {
-    // 1) 중복 체크
     repo.findByUserId(req.getUserId())
         .ifPresent(u -> { throw new IllegalArgumentException("이미 존재하는 사용자 ID입니다."); });
 
-    // 2) 요청자 정보는 파라미터로 받고, 세션 의존은 제거
     TmemberEntity e = new TmemberEntity();
     e.setUserId(req.getUserId());
     e.setUserPass(passwordEncoder.encode(req.getUserPass()));
@@ -45,7 +46,6 @@ public class TmemberServiceImpl implements TmemberService {
     e.setUserLevel("0".equals(req.getUserLevel()) ? "0" : "1");
     e.setRoleSeq(req.getRoleSeq() != null && req.getRoleSeq() >= 1 && req.getRoleSeq() <= 3
         ? req.getRoleSeq() : 1);
-
     String now = LocalDateTime.now().format(FMT);
     e.setCrtime(now);
     e.setUdtime(now);
@@ -84,6 +84,20 @@ public class TmemberServiceImpl implements TmemberService {
     }
     TmemberEntity e = repo.findById(me)
         .orElseThrow(() -> new IllegalStateException("사용자 정보를 찾을 수 없습니다."));
+    Info dto = Info.fromEntity(e);
+
+    // ★ branchSeq > 0 인 경우에만 지점명 조회
+    if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
+      TbranchDto b = branchSvc.findById(dto.getBranchSeq());
+      dto.setBranchName(b.getCompanyName());
+    }
+    return dto;
+  }
+
+  @Override
+  public Info getMyInfoByMemberSeq(Integer memberSeq) {
+    TmemberEntity e = repo.findById(memberSeq)
+        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + memberSeq));
     return Info.fromEntity(e);
   }
 
@@ -92,7 +106,13 @@ public class TmemberServiceImpl implements TmemberService {
   public Info getMyInfoByUserId(String userId) {
     TmemberEntity e = repo.findByUserId(userId)
         .orElseThrow(() -> new IllegalStateException("사용자 정보를 찾을 수 없습니다."));
-    return Info.fromEntity(e);
+    Info dto = Info.fromEntity(e);
+
+    if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
+      TbranchDto b = branchSvc.findById(dto.getBranchSeq());
+      dto.setBranchName(b.getCompanyName());
+    }
+    return dto;
   }
 
   /** 비밀번호 변경 */
@@ -112,7 +132,15 @@ public class TmemberServiceImpl implements TmemberService {
   @Override
   public Page<Info> listAllUsers(Pageable pageable) {
     return repo.findAll(pageable)
-        .map(Info::fromEntity);
+        .map(e -> {
+          Info dto = Info.fromEntity(e);
+          // ★ 여기에도 반드시 > 0 체크
+          if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
+            TbranchDto b = branchSvc.findById(dto.getBranchSeq());
+            dto.setBranchName(b.getCompanyName());
+          }
+          return dto;
+        });
   }
 
   /** 활성/비활성 상태 변경 */

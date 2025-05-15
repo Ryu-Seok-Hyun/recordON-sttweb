@@ -9,12 +9,13 @@ import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TmemberService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/members")
@@ -61,14 +62,10 @@ public class TmemberController {
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @Valid @RequestBody SignupRequest req
   ) {
-    // 1) 토큰+관리자 여부 체크
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
 
-    // 2) 토큰 → 관리자 정보(Info)
     Info me = getMeFromToken(authHeader);
-
-    // 3) 서비스에 관리자 memberSeq, userId 함께 전달
     svc.signup(req, me.getMemberSeq(), me.getUserId());
     return ResponseEntity.ok("가입 완료");
   }
@@ -81,6 +78,11 @@ public class TmemberController {
     String token = jwtTokenProvider.createToken(user.getUserId(), user.getUserLevel());
 
     Info info = Info.fromEntity(user);
+    // 로그인 시에도 branchName 채워 주기
+    if (info.getBranchSeq() != null) {
+      // branchSvc를 직접 쓰지 않고, 서비스에서 getMyInfoByUserId를 쓰도록 해도 됩니다
+      info.setBranchName(svc.getMyInfoByUserId(user.getUserId()).getBranchName());
+    }
     info.setToken(token);
     info.setTokenType("Bearer");
     return ResponseEntity.ok(info);
@@ -98,7 +100,7 @@ public class TmemberController {
   @LogActivity(type = "member", activity = "조회", contents = "내 정보 조회")
   @GetMapping("/me")
   public ResponseEntity<?> getMyInfo(
-      @RequestHeader(value = "Authorization", required = false) String authHeader
+      @RequestHeader(value="Authorization", required=false) String authHeader
   ) {
     ResponseEntity<String> err = checkToken(authHeader);
     if (err != null) return err;
@@ -111,7 +113,7 @@ public class TmemberController {
   @PutMapping("/password")
   public ResponseEntity<String> changePassword(
       @Valid @RequestBody PasswordChangeRequest req,
-      @RequestHeader(value = "Authorization", required = false) String authHeader
+      @RequestHeader(value="Authorization", required=false) String authHeader
   ) {
     ResponseEntity<String> err = checkToken(authHeader);
     if (err != null) return err;
@@ -124,13 +126,12 @@ public class TmemberController {
   @LogActivity(type = "member", activity = "조회", contents = "전체 유저 조회")
   @GetMapping
   public ResponseEntity<?> listAllUsers(
-      @RequestParam(name = "page", defaultValue = "0") int page,
-      @RequestParam(name = "size", defaultValue = "10") int size,
-      @RequestHeader(value = "Authorization", required = false) String authHeader
+      @RequestParam(name="page", defaultValue="0") int page,
+      @RequestParam(name="size", defaultValue="10") int size,
+      @RequestHeader(value="Authorization", required=false) String authHeader
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;
-
     Page<Info> paged = svc.listAllUsers(PageRequest.of(page, size));
     return ResponseEntity.ok(paged);
   }
@@ -141,7 +142,7 @@ public class TmemberController {
   public ResponseEntity<String> changeStatus(
       @PathVariable("id") Integer id,
       @Valid @RequestBody StatusChangeRequest req,
-      @RequestHeader(value = "Authorization", required = false) String authHeader
+      @RequestHeader(value="Authorization", required=false) String authHeader
   ) {
     ResponseEntity<String> err = checkAdmin(authHeader);
     if (err != null) return err;

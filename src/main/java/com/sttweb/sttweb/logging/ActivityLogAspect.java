@@ -27,7 +27,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
 
@@ -37,18 +36,23 @@ import java.lang.reflect.Method;
 public class ActivityLogAspect {
 
   private static final Logger log = LoggerFactory.getLogger(ActivityLogAspect.class);
+
+  // SpEL 평가기 & 파라미터 이름 추출기
   private final SpelExpressionParser parser = new SpelExpressionParser();
   private final ParameterNameDiscoverer pd = new DefaultParameterNameDiscoverer();
+
   private final TactivitylogService logService;
   private final TmemberService memberSvc;
-  private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+  private static final DateTimeFormatter FMT =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   @Around("@annotation(logActivity)")
   public Object around(ProceedingJoinPoint jp, LogActivity logActivity) throws Throwable {
-    // 1) 비즈니스 로직 실행
+    // 1) 실제 비즈니스 로직 수행
     Object result = jp.proceed();
 
-    // 2) HTTP 요청 정보
+    // 2) HTTP 요청이 아닐 경우 로깅 생략
     ServletRequestAttributes sa =
         (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
     if (sa == null) {
@@ -56,28 +60,28 @@ public class ActivityLogAspect {
     }
     HttpServletRequest req = sa.getRequest();
 
-    // 3) SecurityContext에서 인증 정보 꺼내기
+    // 3) 현재 인증 정보
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
-    // operator = 실제 로그인한 사람 정보
-    String operatorUserId   = "";       // auth.getName()
+    // --- operator (로그 남기는 주체) 정보 추출 ---
+    String operatorUserId   = "";        // JWT 인증 시 auth.getName()
     String operatorWorkerId = "anonymous";
     int    operatorSeq      = 0;
 
     if (auth != null
         && auth.isAuthenticated()
         && !(auth instanceof AnonymousAuthenticationToken)) {
-      // JWT 인증된 경우
+      // JWT 인증된 사용자
       operatorUserId = auth.getName();
       Info me = memberSvc.getMyInfoByUserId(operatorUserId);
-      operatorWorkerId = me.getUserId();
-      operatorSeq      = me.getMemberSeq();
+      operatorWorkerId = me.getUserId();    // 실제 userId
+      operatorSeq      = me.getMemberSeq(); // memberSeq
     }
 
-    // 4) user_id 칼럼에 무엇을 기록할지 결정
+    // 4) 기본 user_id 로 기록할 값 결정
     String userIdToLog = operatorUserId;
 
-    // 녹취 다운로드 같은 record 타입은 첫 번째 파라미터(내선번호)를 user_id 로 기록
+    // - record 타입이면 첫 파라미터(내선번호 등) 를 user_id 로 기록
     if ("record".equals(logActivity.type())) {
       Object[] args = jp.getArgs();
       if (args != null && args.length > 0 && args[0] != null) {
@@ -85,7 +89,8 @@ public class ActivityLogAspect {
       }
     }
 
-    // 로그인/회원가입 시에도 operatorUserId 대신 인자에서 userId 추출
+    // - 로그인/회원가입 호출 시, 로그아웃 전 세션 정보가 없으므로
+    //   파라미터(LoginRequest, SignupRequest) 에서 userId 를 꺼내도록 처리
     if (operatorUserId.isEmpty()) {
       for (Object arg : jp.getArgs()) {
         if (arg instanceof LoginRequest) {
@@ -100,36 +105,40 @@ public class ActivityLogAspect {
       operatorWorkerId = userIdToLog;
     }
 
-    // 5) 기타 필드 초기화
-    int    branchSeq  = 0;
-    int    memberSeq  = operatorSeq;
-    int    employeeId = 0;
-    String companyName= "";
+    // 5) 나머지 정보 기본값
+    int    branchSeq   = 0;
+    int    memberSeq   = operatorSeq;
+    int    employeeId  = 0;
+    String companyName = "";
 
     // 6) 클라이언트 IP
     String pbIp = req.getRemoteAddr();
     String pvIp = req.getHeader("X-Forwarded-For");
 
-    // 7) SpEL 컨텍스트 구성 (contents, dir 처리용)
+    // 7) SpEL 평가용 컨텍스트 준비
     MethodSignature sig = (MethodSignature) jp.getSignature();
     Method method = sig.getMethod();
     Object[] args = jp.getArgs();
     StandardEvaluationContext ctx = new StandardEvaluationContext();
+    // args → p0, p1, …
     for (int i = 0; i < args.length; i++) {
       ctx.setVariable("p" + i, args[i]);
     }
+    // 파라미터 이름 → 값
     String[] names = pd.getParameterNames(method);
     if (names != null) {
       for (int i = 0; i < names.length; i++) {
         ctx.setVariable(names[i], args[i]);
       }
     }
+    // principal 변수로도 사용 가능
     ctx.setVariable("principal", auth != null ? auth.getPrincipal() : null);
 
-    // contents 처리
+    // 8) contents 평가:
+    //    문자열 어디에든 #{…} 가 있으면 TemplateParserContext 로 평가
     String expr = logActivity.contents();
     String contents = "";
-    if (expr != null && expr.trim().startsWith("#{")) {
+    if (expr != null && expr.contains("#{")) {
       try {
         contents = parser
             .parseExpression(expr, new TemplateParserContext())
@@ -141,10 +150,10 @@ public class ActivityLogAspect {
       contents = expr;
     }
 
-    // dir 처리
+    // 9) dir 평가 (필요시)
     String dirExpr = logActivity.dir();
     String dir = "";
-    if (dirExpr != null && dirExpr.trim().startsWith("#{")) {
+    if (dirExpr != null && dirExpr.contains("#{")) {
       try {
         dir = parser
             .parseExpression(dirExpr, new TemplateParserContext())
@@ -156,7 +165,7 @@ public class ActivityLogAspect {
       dir = dirExpr;
     }
 
-    // 8) 로그 DTO 생성
+    // 10) DTO 생성 및 저장
     TactivitylogDto dto = TactivitylogDto.builder()
         .type(logActivity.type())
         .activity(logActivity.activity())
@@ -174,7 +183,6 @@ public class ActivityLogAspect {
         .workerId(operatorWorkerId)
         .build();
 
-    // 9) 저장
     log.info("[ActivityLog DTO] {}", dto);
     logService.createLog(dto);
 
