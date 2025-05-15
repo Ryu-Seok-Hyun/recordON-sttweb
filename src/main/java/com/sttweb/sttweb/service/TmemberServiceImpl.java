@@ -10,6 +10,8 @@ import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.service.TbranchService;
 import jakarta.servlet.http.HttpSession;
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -27,7 +29,8 @@ public class TmemberServiceImpl implements TmemberService {
   private final TmemberRepository repo;
   private final PasswordEncoder passwordEncoder;
   private final HttpSession session;
-  private final TbranchService branchSvc;  // ★ 추가
+  private final TbranchService branchSvc;
+  private final TmemberRepository memberRepo;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   /** 회원가입 */
@@ -169,5 +172,18 @@ public class TmemberServiceImpl implements TmemberService {
     if (updated == 0) {
       throw new IllegalArgumentException("사용자를 찾을 수 없습니다: " + memberSeq);
     }
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<Info> getAllMembers() {
+    return memberRepo.findAll().stream()
+        .map(e -> Info.builder()
+            .memberSeq(e.getMemberSeq())
+            .userId(e.getUserId())
+            .number(e.getNumber())
+            .build()
+        )
+        .collect(Collectors.toList());
   }
 }

@@ -6,6 +6,7 @@ import com.sttweb.sttweb.dto.TmemberDto.PasswordChangeRequest;
 import com.sttweb.sttweb.dto.TmemberDto.SignupRequest;
 import com.sttweb.sttweb.dto.TmemberDto.StatusChangeRequest;
 import com.sttweb.sttweb.entity.TmemberEntity;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -24,6 +25,8 @@ public interface TmemberService {
   Integer getRoleSeqOf(Integer memberSeq);
   void changeRole(Integer memberSeq, Integer newRoleSeq);
 
+  // 권한관련
   Info getMyInfoByMemberSeq(Integer memberSeq);
+  List<Info> getAllMembers();  // 전체 회원 목록을 Info DTO로 반환
 
 }

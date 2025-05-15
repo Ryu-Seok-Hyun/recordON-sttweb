@@ -31,12 +31,14 @@ public class TactivitylogEntity {
   @Column(name = "member_seq")
   private Integer memberSeq;
 
-  @Column(name = "user_id", length = 30)
+  @Lob
+  @Column(name = "user_id", nullable = false)
   private String userId;
 
   @Column(name = "activity", nullable = false, length = 20)
   private String activity;
 
+  @Lob
   @Column(name = "contents", length = 100)
   private String contents;
 

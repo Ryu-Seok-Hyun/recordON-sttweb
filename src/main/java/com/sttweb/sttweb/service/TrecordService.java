@@ -3,6 +3,7 @@
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TrecordDto;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -27,4 +28,9 @@ public interface TrecordService {
 
   /** 본인 번호만 조회 (페이징) */
   Page<TrecordDto> findByUserNumber(String number, Pageable pageable);
+
+  byte[] getAudioByIdAndUserSeq(Integer recordId, Integer targetUserSeq);
+
+  Resource getFileByIdAndUserSeq(Integer recordId, Integer targetUserSeq);
+
 }
