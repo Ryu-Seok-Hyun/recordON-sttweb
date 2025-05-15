@@ -1,17 +1,17 @@
 package com.sttweb.sttweb.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-
 @Entity
-@Table(name = "t_user_permission")
+@Table(
+    name = "t_user_permission",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_grantee_target",
+        columnNames = {"grantee_user_id", "target_user_id"}
+    )
+)
 @Getter
 @Setter
 public class UserPermission {
@@ -21,12 +21,12 @@ public class UserPermission {
   @Column(name = "permission_id")
   private Long permissionId;
 
-  @Column(name = "grantee_seq", nullable = false)
-  private Integer granteeSeq;
+  @Column(name = "grantee_user_id", length = 30, nullable = false)
+  private String granteeUserId;
 
-  @Column(name = "target_seq", nullable = false)
-  private Integer targetSeq;
+  @Column(name = "target_user_id", length = 30, nullable = false)
+  private String targetUserId;
 
   @Column(name = "perm_level", nullable = false)
-  private Integer permLevel;  // 1=READ, 2=LISTEN, 3=DOWNLOAD
+  private Integer permLevel;
 }

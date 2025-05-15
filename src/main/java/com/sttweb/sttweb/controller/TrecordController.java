@@ -7,6 +7,7 @@ import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import java.io.IOException;
 import org.springframework.core.io.Resource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -237,4 +238,11 @@ public class TrecordController {
             "attachment; filename=\"" + file.getFilename() + "\"")
         .body(file);
   }
+
+//  // 다운로드
+//  @GetMapping(value = "<api_url>")
+//  public ResponseEntity<Resource> fileDownloadApi() throws IOException{
+//    return trecordService.fileEownload();
+//  }
+
 }

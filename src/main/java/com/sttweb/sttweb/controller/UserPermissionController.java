@@ -7,12 +7,13 @@ import com.sttweb.sttweb.entity.UserPermission;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.repository.UserPermissionRepository;
 import com.sttweb.sttweb.service.TmemberService;
-import java.util.List;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/user-permissions")
@@ -29,19 +30,14 @@ public class UserPermissionController {
   )
   @PostMapping
   @PreAuthorize("hasRole('ADMIN')")
-  public ResponseEntity<?> grant(@RequestBody GrantDto dto) {
-    Integer granteeSeq = memberSvc
-        .getMyInfoByUserId(dto.getGranteeUserId())
-        .getMemberSeq();
-    Integer targetSeq = memberSvc
-        .getMyInfoByUserId(dto.getTargetUserId())
-        .getMemberSeq();
-
+  public ResponseEntity<Void> grant(@RequestBody GrantDto dto) {
+    // user_id 기반으로 권한 엔티티 조회 또는 새로 생성
     UserPermission up = repo
-        .findByGranteeSeqAndTargetSeq(granteeSeq, targetSeq)
+        .findByGranteeUserIdAndTargetUserId(dto.getGranteeUserId(), dto.getTargetUserId())
         .orElseGet(UserPermission::new);
-    up.setGranteeSeq(granteeSeq);
-    up.setTargetSeq(targetSeq);
+
+    up.setGranteeUserId(dto.getGranteeUserId());
+    up.setTargetUserId(dto.getTargetUserId());
     up.setPermLevel(dto.getPermLevel());
     repo.save(up);
 
@@ -55,15 +51,9 @@ public class UserPermissionController {
   )
   @DeleteMapping
   @PreAuthorize("hasRole('ADMIN')")
-  public ResponseEntity<?> revoke(@RequestBody GrantDto dto) {
-    Integer granteeSeq = memberSvc
-        .getMyInfoByUserId(dto.getGranteeUserId())
-        .getMemberSeq();
-    Integer targetSeq = memberSvc
-        .getMyInfoByUserId(dto.getTargetUserId())
-        .getMemberSeq();
-
-    repo.deleteByGranteeSeqAndTargetSeq(granteeSeq, targetSeq);
+  public ResponseEntity<Void> revoke(@RequestBody GrantDto dto) {
+    // user_id 기반으로 바로 삭제
+    repo.deleteByGranteeUserIdAndTargetUserId(dto.getGranteeUserId(), dto.getTargetUserId());
     return ResponseEntity.noContent().build();
   }
 
@@ -75,15 +65,13 @@ public class UserPermissionController {
   @GetMapping("/{granteeUserId}")
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<List<UserPermissionViewDto>> viewPermissions(
-      @PathVariable("granteeUserId") String granteeUserId
+      @PathVariable String granteeUserId
   ) {
-    Integer granteeSeq = memberSvc
-        .getMyInfoByUserId(granteeUserId)
-        .getMemberSeq();
-
+    // 전체 사용자 목록을 돌며, user_id 기반으로 권한 레벨 조회
     List<UserPermissionViewDto> list = memberSvc.getAllMembers().stream()
         .map(m -> {
-          int level = repo.findByGranteeSeqAndTargetSeq(granteeSeq, m.getMemberSeq())
+          int level = repo
+              .findByGranteeUserIdAndTargetUserId(granteeUserId, m.getUserId())
               .map(UserPermission::getPermLevel)
               .orElse(1);
           return new UserPermissionViewDto(

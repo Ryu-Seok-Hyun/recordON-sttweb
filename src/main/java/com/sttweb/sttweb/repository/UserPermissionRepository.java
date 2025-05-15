@@ -1,14 +1,22 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.UserPermission;
-import jakarta.transaction.Transactional;
-import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 
-public interface UserPermissionRepository extends JpaRepository<UserPermission,Long> {
-  Optional<UserPermission> findByGranteeSeqAndTargetSeq(Integer granteeSeq, Integer targetSeq);
+import java.util.Optional;
 
+public interface UserPermissionRepository extends JpaRepository<UserPermission, Long> {
+
+  /** 중복 체크용 */
+  boolean existsByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
+
+  /** (필요시) 단건 조회용 */
+  Optional<UserPermission> findByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
+
+  /** 삭제용 */
+  @Modifying
   @Transactional
-  void deleteByGranteeSeqAndTargetSeq(Integer granteeSeq, Integer targetSeq);
-
+  void deleteByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
 }
