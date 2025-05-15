@@ -6,7 +6,7 @@ import lombok.Setter;
 
 @Entity
 @Table(
-    name = "t_user_permission",
+    name = "tuser_permission",
     uniqueConstraints = @UniqueConstraint(
         name = "uk_grantee_target",
         columnNames = {"grantee_user_id", "target_user_id"}

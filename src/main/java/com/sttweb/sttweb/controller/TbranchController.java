@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+// 지점 파트
 @RestController
 @RequestMapping("/api/branches")
 @RequiredArgsConstructor

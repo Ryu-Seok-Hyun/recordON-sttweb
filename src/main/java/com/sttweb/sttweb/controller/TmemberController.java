@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 
+// 회원관리파트
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor

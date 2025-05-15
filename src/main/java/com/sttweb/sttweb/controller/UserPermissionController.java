@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
+// 다른 사람에 대한 권한 파트
 @RestController
 @RequestMapping("/api/user-permissions")
 @RequiredArgsConstructor
@@ -65,7 +66,7 @@ public class UserPermissionController {
   @GetMapping("/{granteeUserId}")
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<List<UserPermissionViewDto>> viewPermissions(
-      @PathVariable String granteeUserId
+      @PathVariable("granteeUserId") String granteeUserId
   ) {
     // 전체 사용자 목록을 돌며, user_id 기반으로 권한 레벨 조회
     List<UserPermissionViewDto> list = memberSvc.getAllMembers().stream()

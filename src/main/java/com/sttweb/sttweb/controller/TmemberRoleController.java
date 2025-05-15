@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+//회원 등급 파트
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor

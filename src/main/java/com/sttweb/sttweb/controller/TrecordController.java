@@ -19,6 +19,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+// 녹취 파트
 @RestController
 @RequestMapping("/api/records")
 @RequiredArgsConstructor
