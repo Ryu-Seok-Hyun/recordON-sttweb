@@ -41,26 +41,33 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.GET, "/api/roles", "/api/roles/**")
             .permitAll()
 
-            // 3) branches/** → ADMIN 권한만
+            // 3)-- 지점 조회 --
+            .requestMatchers(HttpMethod.GET, "/api/branches")
+            .hasRole("ADMIN")                       // 전체 목록 조회: ADMIN만
+            .requestMatchers(HttpMethod.GET, "/api/branches/*")
+            .hasAnyRole("ADMIN", "USER")            // 단건 조회: ADMIN·USER 모두 허용, 컨트롤러에서 추가 검증
+
+
+            // 4) branches/** → ADMIN 권한만
             .requestMatchers("/api/branches/**")
             .hasRole("ADMIN")
 
-            // 4) 내 권한 조회 → 인증만 있으면 OK
+            // 5) 내 권한 조회 → 인증만 있으면 OK
             .requestMatchers(HttpMethod.GET, "/api/members/me/role")
             .authenticated()
 
-            // 5) 다른 사용자 권한 변경 → ADMIN 권한만
+            // 6) 다른 사용자 권한 변경 → ADMIN 권한만
             .requestMatchers(HttpMethod.PUT, "/api/members/*/role")
             .hasRole("ADMIN")
 
             // ───────────────────────────────────────
-            // 6) 녹취 API 전체 → 스프링 시큐리티 단계에선 열어두고,
+            // 7) 녹취 API 전체 → 스프링 시큐리티 단계에선 열어두고,
             //    컨트롤러 내부에서 401/403 직접 처리
             .requestMatchers("/api/records", "/api/records/**")
             .permitAll()
             // ───────────────────────────────────────
 
-            // 7) 그 외 모든 요청 → 토큰만 있으면 OK
+            // 8) 그 외 모든 요청 → 토큰만 있으면 OK
             .anyRequest()
             .authenticated()
         )

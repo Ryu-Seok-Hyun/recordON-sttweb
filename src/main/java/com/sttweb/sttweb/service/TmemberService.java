@@ -10,7 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface TmemberService {
-  void signup(SignupRequest req);
+  void signup(SignupRequest req, Integer regMemberSeq, String regUserId);
   TmemberEntity login(LoginRequest req);
   void logout();
   Info getMyInfo();

@@ -30,18 +30,12 @@ public class TmemberServiceImpl implements TmemberService {
   /** 회원가입 */
   @Override
   @Transactional
-  public void signup(SignupRequest req) {
+  public void signup(SignupRequest req, Integer regMemberSeq, String regUserId) {
+    // 1) 중복 체크
     repo.findByUserId(req.getUserId())
         .ifPresent(u -> { throw new IllegalArgumentException("이미 존재하는 사용자 ID입니다."); });
 
-    Integer meSeq = (Integer) session.getAttribute("memberSeq");
-    if (meSeq == null) {
-      throw new IllegalStateException("로그인 상태가 아닙니다.");
-    }
-    TmemberEntity me = repo.findById(meSeq)
-        .orElseThrow(() -> new IllegalStateException("사용자 정보를 찾을 수 없습니다."));
-    String regUserId = me.getUserId();
-
+    // 2) 요청자 정보는 파라미터로 받고, 세션 의존은 제거
     TmemberEntity e = new TmemberEntity();
     e.setUserId(req.getUserId());
     e.setUserPass(passwordEncoder.encode(req.getUserPass()));
@@ -49,8 +43,8 @@ public class TmemberServiceImpl implements TmemberService {
     e.setEmployeeId(req.getEmployeeId());
     e.setNumber(req.getNumber());
     e.setUserLevel("0".equals(req.getUserLevel()) ? "0" : "1");
-    Integer r = req.getRoleSeq();
-    e.setRoleSeq(r != null && r >= 1 && r <= 3 ? r : 1);
+    e.setRoleSeq(req.getRoleSeq() != null && req.getRoleSeq() >= 1 && req.getRoleSeq() <= 3
+        ? req.getRoleSeq() : 1);
 
     String now = LocalDateTime.now().format(FMT);
     e.setCrtime(now);
