@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.repository;
 
+import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -17,4 +18,6 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   Page<TrecordEntity> findByNumber1(String number1, Pageable pageable);
   Page<TrecordEntity> findByNumber2(String number2, Pageable pageable);
   Page<TrecordEntity> findByNumber1OrNumber2(String number1, String number2, Pageable pageable);
+
+
 }

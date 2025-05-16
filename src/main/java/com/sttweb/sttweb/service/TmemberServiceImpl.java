@@ -166,13 +166,21 @@ public class TmemberServiceImpl implements TmemberService {
         });
   }
 
+  // ★ 새로 추가: 키워드 통합 검색
   @Override
   public Page<Info> searchUsers(String keyword, Pageable pageable) {
-    // repository에서 userId 또는 number에 keyword가 포함된 엔티티 가져오기
     return memberRepo
         .findByUserIdContainingOrNumberContaining(keyword, keyword, pageable)
-        .map(Info::fromEntity);
+        .map(entity -> {
+          Info dto = Info.fromEntity(entity);
+          if (dto.getBranchSeq()!=null && dto.getBranchSeq()>0) {
+            TbranchDto b = branchSvc.findById(dto.getBranchSeq());
+            dto.setBranchName(b.getCompanyName());
+          }
+          return dto;
+        });
   }
+
 
 
   /**

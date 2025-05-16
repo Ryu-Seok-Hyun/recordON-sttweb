@@ -13,13 +13,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
-import org.springframework.web.server.ResponseStatusException;
 
+// 회원관리파트
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
@@ -47,7 +46,7 @@ public class TmemberController {
     return svc.getMyInfoByUserId(userId);
   }
 
-  /** 3) 관리자(userLevel == "0") 여부 체크—예외 없이 ResponseEntity 반환 */
+  /** 3) 관리자(userLevel == "0") 여부 체크 */
   private ResponseEntity<String> checkAdmin(String authHeader) {
     ResponseEntity<String> err = checkToken(authHeader);
     if (err != null) return err;
@@ -56,21 +55,6 @@ public class TmemberController {
       return ResponseEntity.status(HttpStatus.FORBIDDEN).body("관리자만 접근 가능합니다.");
     }
     return null;
-  }
-
-  /** ★수정: 관리자 전용인지 검사하고, 아니면 401/403 예외 던지는 헬퍼 메서드 추가 */
-  private void ensureAdminOrThrow(String authHeader) {
-    // 1) 토큰 없거나 형식 잘못 → 401
-    ResponseEntity<String> err = checkToken(authHeader);
-    if (err != null) {
-      throw new ResponseStatusException(err.getStatusCode(), err.getBody());
-    }
-    // 2) 토큰 유효 → Info 조회
-    Info me = getMeFromToken(authHeader);
-    // 3) 관리자 아니면 403
-    if (!"0".equals(me.getUserLevel())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자만 접근 가능합니다.");
-    }
   }
 
   /** 회원가입 (관리자만) */
@@ -96,7 +80,9 @@ public class TmemberController {
     String token = jwtTokenProvider.createToken(user.getUserId(), user.getUserLevel());
 
     Info info = Info.fromEntity(user);
+    // 로그인 시에도 branchName 채워 주기
     if (info.getBranchSeq() != null) {
+      // branchSvc를 직접 쓰지 않고, 서비스에서 getMyInfoByUserId를 쓰도록 해도 됩니다
       info.setBranchName(svc.getMyInfoByUserId(user.getUserId()).getBranchName());
     }
     info.setToken(token);
@@ -138,27 +124,31 @@ public class TmemberController {
     return ResponseEntity.ok("비밀번호 변경 완료");
   }
 
-  /** ★수정: 전체 조회 또는 키워드 검색 (관리자만) */
-  @LogActivity(type = "member", activity = "조회", contents = "전체 유저 조회/검색")
+  /** ★ 전체 조회 or 키워드 검색 (관리자만) */
+  @LogActivity(type="member", activity="조회", contents="전체 유저 조회/검색")
   @GetMapping
   public ResponseEntity<Page<Info>> listOrSearchUsers(
       @RequestHeader(value="Authorization", required=false) String authHeader,
-      @RequestParam(name="keyword", required=false) String keyword,  // keyword 하나로 ID/내선번호 통합
+      @RequestParam(name="keyword", required=false) String keyword,
       @RequestParam(name="page",    defaultValue="0")  int page,
       @RequestParam(name="size",    defaultValue="10") int size
   ) {
-    // 401/403 처리
-    ensureAdminOrThrow(authHeader);
+    // 1) 401/403 처리 (토큰 유효 + 관리자 여부)
+    ResponseEntity<String> err = checkAdmin(authHeader);
+    if (err != null) return ResponseEntity
+        .status(err.getStatusCode()).body(null);
 
+    // 2) 페이징 객체 생성
     Pageable pr = PageRequest.of(page, size);
+
+    // 3) 키워드 있으면 searchUsers, 없으면 listAllUsers
     Page<Info> result;
     if (keyword != null && !keyword.isBlank()) {
-      // userId OR number 검색
       result = svc.searchUsers(keyword.trim(), pr);
     } else {
-      // 전체 조회
       result = svc.listAllUsers(pr);
     }
+
     return ResponseEntity.ok(result);
   }
 
@@ -175,5 +165,5 @@ public class TmemberController {
     svc.changeStatus(id, req);
     return ResponseEntity.ok("상태 변경 완료");
   }
-
 }
+

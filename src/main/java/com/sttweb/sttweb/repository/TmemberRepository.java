@@ -25,6 +25,7 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
       @Param("roleSeq")   Integer roleSeq
   );
 
+  // userId 또는 number 컬럼에 keyword가 포함된 레코드 페이징 조회
   Page<TmemberEntity> findByUserIdContainingOrNumberContaining(
       String userIdKeyword,
       String numberKeyword,
@@ -32,4 +33,6 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
   );
 
   Optional<TmemberEntity> findByNumber(String number);
+
+
 }
