@@ -8,15 +8,23 @@ import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 // 녹취 파트
@@ -240,10 +248,79 @@ public class TrecordController {
         .body(file);
   }
 
-//  // 다운로드
-//  @GetMapping(value = "<api_url>")
-//  public ResponseEntity<Resource> fileDownloadApi() throws IOException{
-//    return trecordService.fileEownload();
-//  }
+  // ─── 수정: application.properties 의 app.audio.base-dir 값을 주입 받도록 변경 ───
+  @Value("${app.audio.base-dir:/projects/audio}")
+  private String audioBaseDir;
+
+  /**
+   * 1) 파일 업로드 + DB 저장
+   *    Multipart/form-data: file + dto(JSON)
+   */
+  @LogActivity(type = "record", activity = "업로드", contents = "파일 업로드")
+  @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<TrecordDto> uploadFile(
+      @RequestHeader(value = HttpHeaders.AUTHORIZATION) String authHeader,
+      @RequestPart("file") MultipartFile file,
+      @RequestPart("dto") TrecordDto dto
+  ) throws IOException {
+    Info me = requireLogin(authHeader);
+
+    // ─── 수정: base-dir을 하드코딩하지 않고 프로퍼티로부터 가져오도록 변경 ───
+    Path dir = Paths.get(audioBaseDir);
+    if (!Files.exists(dir)) {
+      Files.createDirectories(dir);
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
+    // 원본 파일명 안전하게 가져오기
+    String original = Optional.ofNullable(file.getOriginalFilename()).orElse("unknown.wav");
+    String stored   = UUID.randomUUID() + "_" + original;
+    Path target     = dir.resolve(stored);  // 수정: 절대경로가 아닌 프로퍼티 기반 경로 사용
+
+    // 2) 실제 파일 복사
+    file.transferTo(target.toFile());
+
+    // ─── 수정: DB에는 target.toString() (C:/projects/audio/…) 을 저장 ───
+    dto.setAudioFileDir(target.toString());
+    // ────────────────────────────────────────────────────────────────
+
+    TrecordDto created = recordSvc.create(dto);
+    return ResponseEntity.status(HttpStatus.CREATED).body(created);
+  }
+  /**
+   * 2) 녹취 파일 다운로드
+   *    — 관리자(role ≥ 4) / 본인(내선번호) / download 권한(level 3) 보유자만 접근 허용
+   */
+  @GetMapping("/{id}/download")
+  public ResponseEntity<Resource> downloadById(
+      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+      @PathVariable("id") Integer id
+  ) {
+    // 1) 헤더 검사 → 로그인
+    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
+    }
+    Info me = requireLogin(authHeader);
+
+    // 2) 권한 검사: 관리자(role ≥ 4) OR 본인(내선번호)만
+    int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
+    TrecordDto dto = recordService.findById(id);
+
+    boolean isAdmin = roleSeq >= 4;
+    boolean isOwner = dto.getNumber1().equals(me.getNumber());
+
+    if (!(isAdmin || isOwner)) {
+      // 더 이상 permissionService 로 level 체크하지 않습니다.
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+    }
+
+    // 3) 파일 로드 → 없으면 404
+    Resource file = recordSvc.getFile(id);
+
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"" + file.getFilename() + "\"")
+        .body(file);
+  }
 
 }

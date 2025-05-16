@@ -6,11 +6,14 @@ import com.sttweb.sttweb.entity.TrecordEntity;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import jakarta.persistence.EntityNotFoundException;
+import java.net.MalformedURLException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +23,15 @@ import java.nio.file.Paths;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.format.DateTimeFormatter;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
 public class TrecordServiceImpl implements TrecordService {
+
+  /** 기본값을 /data/audio 로 설정했습니다. */
+  @Value("${app.audio.base-dir:/data/audio}")
+  private String audioBaseDir;
 
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
@@ -147,7 +155,9 @@ public class TrecordServiceImpl implements TrecordService {
 
   // ───────────────────────────────────────────────────────────────
 
-  /** 특정 사용자가 소유한 녹취(recordSeq)의 오디오 바이트를 반환 */
+  /**
+   * 특정 사용자가 소유한 녹취(recordSeq)의 오디오 바이트를 반환
+   */
   @Override
   @Transactional(readOnly = true)
   public byte[] getAudioByIdAndUserSeq(Integer recordSeq, Integer targetUserSeq) {
@@ -168,7 +178,9 @@ public class TrecordServiceImpl implements TrecordService {
     }
   }
 
-  /** 특정 사용자가 소유한 녹취(recordSeq)의 파일(Resource)를 반환 */
+  /**
+   * 특정 사용자가 소유한 녹취(recordSeq)의 파일(Resource)를 반환
+   */
   @Override
   @Transactional(readOnly = true)
   public Resource getFileByIdAndUserSeq(Integer recordSeq, Integer targetUserSeq) {
@@ -192,4 +204,59 @@ public class TrecordServiceImpl implements TrecordService {
       throw new RuntimeException("파일 로드 중 오류가 발생했습니다.", ex);
     }
   }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Resource getFile(Integer recordSeq) {
+    TrecordEntity e = repo.findById(recordSeq)
+        .orElseThrow(() -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND, "녹취를 찾을 수 없습니다: " + recordSeq));
+
+    // 1) raw 경로 null/빈 검사
+    String raw = e.getAudioFileDir();
+    if (raw == null || raw.trim().isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "DB에 저장된 오디오 경로가 없습니다: recordSeq=" + recordSeq);
+    }
+
+    // 2) 구분자 통일
+    String unified = raw.replace("\\", "/");
+
+    // 3) base-dir 경로 준비
+    Path base = Paths.get(audioBaseDir);
+    Path path;
+
+    // 4) 절대경로 vs 상대경로 분기
+    if (Paths.get(unified).isAbsolute()) {
+      path = Paths.get(unified).normalize();
+    } else {
+      Path rel = Paths.get(unified).normalize();
+      int skip = 0;
+      while (skip < rel.getNameCount() && rel.getName(skip).toString().equals("..")) {
+        skip++;
+      }
+      Path safeSub = skip < rel.getNameCount()
+          ? rel.subpath(skip, rel.getNameCount())
+          : Paths.get("");
+      path = base.resolve(safeSub);
+    }
+
+    try {
+      UrlResource resource = new UrlResource(path.toUri());
+      if (!resource.exists() || !resource.isReadable()) {
+        throw new ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "파일을 찾을 수 없거나 읽을 수 없습니다: " + path);
+      }
+      return resource;
+    } catch (MalformedURLException ex) {
+      throw new ResponseStatusException(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "파일 URL 생성 중 오류가 발생했습니다: " + path,
+          ex);
+    }
+  }
+
+
 }

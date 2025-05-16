@@ -24,81 +24,96 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-        // CSRF 끄기, 세션 없이 stateless
+        // 1) stateless + CSRF off
         .csrf(csrf -> csrf.disable())
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-        // URL별 권한 설정
+        // 2) URL별 권한 설정
         .authorizeHttpRequests(auth -> auth
-            // 1) 회원가입/로그인/로그아웃 → 모두 허용
+
+            // -- 회원가입 / 로그인 / 로그아웃
             .requestMatchers(
                 "/api/members/signup",
                 "/api/members/login",
                 "/api/members/logout"
             ).permitAll()
 
-            // 2) 권한 목록 조회 → 모두 허용
+            // -- 권한 목록 조회
             .requestMatchers(HttpMethod.GET, "/api/roles", "/api/roles/**")
             .permitAll()
 
-            // 3)-- 지점 조회 --
+            // -- 지점
             .requestMatchers(HttpMethod.GET, "/api/branches")
-            .hasRole("ADMIN")                       // 전체 목록 조회: ADMIN만
+            .hasRole("ADMIN")
             .requestMatchers(HttpMethod.GET, "/api/branches/*")
-            .hasAnyRole("ADMIN", "USER")            // 단건 조회: ADMIN·USER 모두 허용, 컨트롤러에서 추가 검증
-
-
-            // 4) branches/** → ADMIN 권한만
+            .hasAnyRole("ADMIN","USER")
             .requestMatchers("/api/branches/**")
             .hasRole("ADMIN")
 
-            // 5) 내 권한 조회 → 인증만 있으면 OK
+            // -- 내 권한 조회
             .requestMatchers(HttpMethod.GET, "/api/members/me/role")
             .authenticated()
 
-            // 6) 다른 사용자 권한 변경 → ADMIN 권한만
+            // -- 다른 사용자 권한 변경
             .requestMatchers(HttpMethod.PUT, "/api/members/*/role")
             .hasRole("ADMIN")
 
-            // ───────────────────────────────────────
-            // 7) 녹취 API 전체 → 스프링 시큐리티 단계에선 열어두고,
-            //    컨트롤러 내부에서 401/403 직접 처리
-            .requestMatchers("/api/records", "/api/records/**")
-            .permitAll()
-            // ───────────────────────────────────────
 
-            // 8) 그 외 모든 요청 → 토큰만 있으면 OK
-            .anyRequest()
+            // ── 녹취 API ──
+
+            // 1) 검색·목록·단건 조회: 누구나
+            .requestMatchers(HttpMethod.GET,
+                "/api/records",
+                "/api/records/**"
+            ).permitAll()
+
+            // 2) 업로드·다운로드·청취: 인증된 사용자만
+            .requestMatchers(HttpMethod.POST, "/api/records/upload")
             .authenticated()
+            .requestMatchers(HttpMethod.GET, "/api/records/*/download", "/api/records/*/listen")
+            .authenticated()
+
+            // 3) 관리자 전용 CRUD
+            .requestMatchers(HttpMethod.POST,   "/api/records")
+            .hasRole("ADMIN")
+            .requestMatchers(HttpMethod.PUT,    "/api/records/**")
+            .hasRole("ADMIN")
+            .requestMatchers(HttpMethod.DELETE, "/api/records/**")
+            .hasRole("ADMIN")
+
+            // 4) 나머지 모든 요청: 토큰만 있으면 OK
+            .anyRequest().authenticated()
         )
 
-        // JWT 필터 등록
+        // 3) JWT 필터 등록
         .addFilterBefore(
             new JwtAuthenticationFilter(jwtTokenProvider),
             UsernamePasswordAuthenticationFilter.class
         )
 
-        // 401/403 응답 메시지 커스터마이징
+        // 4) 401/403 메시지 커스터마이징
         .exceptionHandling(ex -> ex
-            .authenticationEntryPoint((req, res, ex2) -> {
+            .authenticationEntryPoint((req, res, e) -> {
               res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
               res.setContentType("text/plain;charset=UTF-8");
               res.getWriter().write("토큰이 없습니다.");
             })
-            .accessDeniedHandler((req, res, ex2) -> {
+            .accessDeniedHandler((req, res, e) -> {
               res.setStatus(HttpServletResponse.SC_FORBIDDEN);
               res.setContentType("text/plain;charset=UTF-8");
               res.getWriter().write("권한이 없습니다.");
             })
         )
 
-        // 로그아웃 커스터마이징
-        .logout(logout -> logout
+        // 5) 로그아웃 처리
+        .logout(ld -> ld
             .logoutUrl("/api/members/logout")
             .logoutSuccessHandler((req, res, auth) ->
-                res.setStatus(HttpServletResponse.SC_OK))
+                res.setStatus(HttpServletResponse.SC_OK)
+            )
         )
     ;
+
     return http.build();
   }
 

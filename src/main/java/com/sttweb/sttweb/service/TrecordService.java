@@ -33,4 +33,6 @@ public interface TrecordService {
 
   Resource getFileByIdAndUserSeq(Integer recordId, Integer targetUserSeq);
 
+  /** 파일만 읽어서 Resource로 반환 (권한 체크는 Controller에서) */
+  Resource getFile(Integer recordSeq);
 }

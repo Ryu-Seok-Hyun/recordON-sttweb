@@ -18,6 +18,11 @@ public interface TmemberService {
   Info getMyInfoByUserId(String userId);
   void changePassword(Integer memberSeq, PasswordChangeRequest req);
 
+  /**
+   * userId(아이디) 또는 number(내선번호) 로 페이징 검색
+   */
+  Page<Info> searchUsers(String keyword, Pageable pageable);
+
   /** 페이징 전용 메서드 */
   Page<Info> listAllUsers(Pageable pageable);
 
@@ -29,4 +34,10 @@ public interface TmemberService {
   Info getMyInfoByMemberSeq(Integer memberSeq);
   List<Info> getAllMembers();  // 전체 회원 목록을 Info DTO로 반환
 
+  /**
+   * 내선번호(number)로 memberSeq를 조회
+   * @param number 내선번호
+   * @return memberSeq
+   */
+  Integer getMemberSeqByNumber(String number);
 }

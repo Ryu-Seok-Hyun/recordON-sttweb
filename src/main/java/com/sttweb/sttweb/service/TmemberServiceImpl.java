@@ -10,17 +10,21 @@ import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.service.TbranchService;
 import jakarta.servlet.http.HttpSession;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -33,12 +37,16 @@ public class TmemberServiceImpl implements TmemberService {
   private final TmemberRepository memberRepo;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-  /** 회원가입 */
+  /**
+   * 회원가입
+   */
   @Override
   @Transactional
   public void signup(SignupRequest req, Integer regMemberSeq, String regUserId) {
     repo.findByUserId(req.getUserId())
-        .ifPresent(u -> { throw new IllegalArgumentException("이미 존재하는 사용자 ID입니다."); });
+        .ifPresent(u -> {
+          throw new IllegalArgumentException("이미 존재하는 사용자 ID입니다.");
+        });
 
     TmemberEntity e = new TmemberEntity();
     e.setUserId(req.getUserId());
@@ -57,7 +65,9 @@ public class TmemberServiceImpl implements TmemberService {
     repo.save(e);
   }
 
-  /** 로그인 */
+  /**
+   * 로그인
+   */
   @Override
   public TmemberEntity login(LoginRequest req) {
     TmemberEntity user = repo.findByUserId(req.getUserId())
@@ -72,13 +82,17 @@ public class TmemberServiceImpl implements TmemberService {
     return user;
   }
 
-  /** 로그아웃(세션 무효화) */
+  /**
+   * 로그아웃(세션 무효화)
+   */
   @Override
   public void logout() {
     session.invalidate();
   }
 
-  /** 세션 기반 내 정보 조회 */
+  /**
+   * 세션 기반 내 정보 조회
+   */
   @Override
   public Info getMyInfo() {
     Integer me = (Integer) session.getAttribute("memberSeq");
@@ -104,7 +118,9 @@ public class TmemberServiceImpl implements TmemberService {
     return Info.fromEntity(e);
   }
 
-  /** 토큰(userId) 기반 내 정보 조회 */
+  /**
+   * 토큰(userId) 기반 내 정보 조회
+   */
   @Override
   public Info getMyInfoByUserId(String userId) {
     TmemberEntity e = repo.findByUserId(userId)
@@ -118,7 +134,9 @@ public class TmemberServiceImpl implements TmemberService {
     return dto;
   }
 
-  /** 비밀번호 변경 */
+  /**
+   * 비밀번호 변경
+   */
   @Override
   @Transactional
   public void changePassword(Integer memberSeq, PasswordChangeRequest req) {
@@ -131,7 +149,9 @@ public class TmemberServiceImpl implements TmemberService {
     repo.save(e);
   }
 
-  /** 페이징된 전체 유저 조회 */
+  /**
+   * 페이징된 전체 유저 조회
+   */
   @Override
   public Page<Info> listAllUsers(Pageable pageable) {
     return repo.findAll(pageable)
@@ -146,7 +166,18 @@ public class TmemberServiceImpl implements TmemberService {
         });
   }
 
-  /** 활성/비활성 상태 변경 */
+  @Override
+  public Page<Info> searchUsers(String keyword, Pageable pageable) {
+    // repository에서 userId 또는 number에 keyword가 포함된 엔티티 가져오기
+    return memberRepo
+        .findByUserIdContainingOrNumberContaining(keyword, keyword, pageable)
+        .map(Info::fromEntity);
+  }
+
+
+  /**
+   * 활성/비활성 상태 변경
+   */
   @Override
   @Transactional
   public void changeStatus(Integer memberSeq, StatusChangeRequest req) {
@@ -156,7 +187,9 @@ public class TmemberServiceImpl implements TmemberService {
     repo.save(e);
   }
 
-  /** 역할 번호 조회 */
+  /**
+   * 역할 번호 조회
+   */
   @Override
   public Integer getRoleSeqOf(Integer memberSeq) {
     return repo.findById(memberSeq)
@@ -164,7 +197,9 @@ public class TmemberServiceImpl implements TmemberService {
         .getRoleSeq();
   }
 
-  /** 역할 변경 */
+  /**
+   * 역할 변경
+   */
   @Override
   @Transactional
   public void changeRole(Integer memberSeq, Integer newRoleSeq) {
@@ -185,5 +220,44 @@ public class TmemberServiceImpl implements TmemberService {
             .build()
         )
         .collect(Collectors.toList());
+  }
+
+
+  @Override
+  public Integer getMemberSeqByNumber(String number) {
+    // 1) 가능한 후보 번호 목록 준비
+    List<String> candidates = new ArrayList<>();
+    candidates.add(number);  // 원본 그대로
+
+    // 2) leading zero 제거
+    String noLeading = number.replaceFirst("^0+", "");
+    if (!noLeading.equals(number)) {
+      candidates.add(noLeading);
+    }
+
+    // 3) 4자리 패딩 (예: "334" → "0334")
+    try {
+      int num = Integer.parseInt(noLeading);
+      String padded = String.format("%04d", num);
+      if (!candidates.contains(padded)) {
+        candidates.add(padded);
+      }
+    } catch (NumberFormatException ignored) {
+      // 숫자가 아닌 경우 무시
+    }
+
+    // 4) 후보들 순서대로 조회
+    for (String cand : candidates) {
+      Optional<TmemberEntity> opt = memberRepo.findByNumber(cand);
+      if (opt.isPresent()) {
+        return opt.get().getMemberSeq();
+      }
+    }
+
+    // 모두 실패 시 예외
+    throw new ResponseStatusException(
+        HttpStatus.NOT_FOUND,
+        "사용자를 찾을 수 없습니다 (number=" + number + ")"
+    );
   }
 }

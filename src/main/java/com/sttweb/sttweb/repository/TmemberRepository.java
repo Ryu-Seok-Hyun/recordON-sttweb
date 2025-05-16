@@ -2,6 +2,8 @@ package com.sttweb.sttweb.repository;
 
 import jakarta.transaction.Transactional;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import org.springframework.data.jpa.repository.Modifying;
@@ -22,4 +24,12 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
       @Param("memberSeq") Integer memberSeq,
       @Param("roleSeq")   Integer roleSeq
   );
+
+  Page<TmemberEntity> findByUserIdContainingOrNumberContaining(
+      String userIdKeyword,
+      String numberKeyword,
+      Pageable pageable
+  );
+
+  Optional<TmemberEntity> findByNumber(String number);
 }
