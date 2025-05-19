@@ -32,7 +32,7 @@ public class TactivitylogEntity {
   private Integer memberSeq;
 
   @Lob
-  @Column(name = "user_id", nullable = false)
+  @Column(name = "user_id", columnDefinition = "TEXT")
   private String userId;
 
   @Column(name = "activity", nullable = false, length = 20)
