@@ -11,16 +11,20 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -216,19 +220,39 @@ public class TrecordController {
   }
 
   @LogActivity(type = "record", activity = "청취", contents = "녹취 청취")
-  @GetMapping("/user/{targetUserSeq}/listen")
-  @PreAuthorize(
-      "hasRole('ADMIN') or principal.memberSeq == #targetUserSeq or @permService.hasLevel(principal.memberSeq, #targetUserSeq, 2)"
-  )
-  public ResponseEntity<byte[]> listenRecords(
-      @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @PathVariable Integer targetUserSeq,
-      @RequestParam(name = "recordId") Integer recordId
-  ) {
-    byte[] audio = recordService.getAudioByIdAndUserSeq(recordId, targetUserSeq);
-    return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_TYPE, "audio/mpeg")
-        .body(audio);
+  @GetMapping(value = "/{id}/listen", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+  public ResponseEntity<ResourceRegion> streamAudio(
+      @RequestHeader HttpHeaders headers,
+      @PathVariable("id") Integer id
+  ) throws IOException {
+    // 1) 파일 Resource 로드 (controller 내 권한 체크 생략)
+    Resource audio = recordService.getFile(id);
+
+    // 2) 전체 길이
+    long contentLength = audio.contentLength();
+
+    // 3) Range 헤더 파싱: 없으면 처음부터 1MB
+    List<HttpRange> ranges = headers.getRange();
+    ResourceRegion region;
+    if (ranges.isEmpty()) {
+      long chunk = Math.min(1 * 1024 * 1024, contentLength);
+      region = new ResourceRegion(audio, 0, chunk);
+    } else {
+      HttpRange range = ranges.get(0);
+      long start  = range.getRangeStart(contentLength);
+      long end    = range.getRangeEnd(contentLength);
+      long length = end - start + 1;
+      region = new ResourceRegion(audio, start, length);
+    }
+
+    // 4) 206 Partial Content 로 응답
+    return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+        .contentType(
+            MediaTypeFactory.getMediaType(audio)
+                .orElse(MediaType.APPLICATION_OCTET_STREAM)
+        )
+        .eTag("\"" + id + "-" + region.getPosition() + "\"")
+        .body(region);
   }
 
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
@@ -252,41 +276,7 @@ public class TrecordController {
   @Value("${app.audio.base-dir:/projects/audio}")
   private String audioBaseDir;
 
-  /**
-   * 1) 파일 업로드 + DB 저장
-   *    Multipart/form-data: file + dto(JSON)
-   */
-  @LogActivity(type = "record", activity = "업로드", contents = "파일 업로드")
-  @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-  public ResponseEntity<TrecordDto> uploadFile(
-      @RequestHeader(value = HttpHeaders.AUTHORIZATION) String authHeader,
-      @RequestPart("file") MultipartFile file,
-      @RequestPart("dto") TrecordDto dto
-  ) throws IOException {
-    Info me = requireLogin(authHeader);
 
-    // ─── 수정: base-dir을 하드코딩하지 않고 프로퍼티로부터 가져오도록 변경 ───
-    Path dir = Paths.get(audioBaseDir);
-    if (!Files.exists(dir)) {
-      Files.createDirectories(dir);
-    }
-    // ──────────────────────────────────────────────────────────────────────────
-
-    // 원본 파일명 안전하게 가져오기
-    String original = Optional.ofNullable(file.getOriginalFilename()).orElse("unknown.wav");
-    String stored   = UUID.randomUUID() + "_" + original;
-    Path target     = dir.resolve(stored);  // 수정: 절대경로가 아닌 프로퍼티 기반 경로 사용
-
-    // 2) 실제 파일 복사
-    file.transferTo(target.toFile());
-
-    // ─── 수정: DB에는 target.toString() (C:/projects/audio/…) 을 저장 ───
-    dto.setAudioFileDir(target.toString());
-    // ────────────────────────────────────────────────────────────────
-
-    TrecordDto created = recordSvc.create(dto);
-    return ResponseEntity.status(HttpStatus.CREATED).body(created);
-  }
   /**
    * 2) 녹취 파일 다운로드
    *    — 관리자(role ≥ 4) / 본인(내선번호) / download 권한(level 3) 보유자만 접근 허용

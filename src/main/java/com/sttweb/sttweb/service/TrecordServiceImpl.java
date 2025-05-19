@@ -205,6 +205,9 @@ public class TrecordServiceImpl implements TrecordService {
     }
   }
 
+
+
+
   @Override
   @Transactional(readOnly = true)
   public Resource getFile(Integer recordSeq) {
@@ -257,6 +260,5 @@ public class TrecordServiceImpl implements TrecordService {
           ex);
     }
   }
-
 
 }
