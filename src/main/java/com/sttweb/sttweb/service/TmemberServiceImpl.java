@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.service;
 
+import com.sttweb.sttweb.dto.GrantDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.TmemberDto.LoginRequest;
 import com.sttweb.sttweb.dto.TmemberDto.PasswordChangeRequest;
@@ -35,12 +36,9 @@ public class TmemberServiceImpl implements TmemberService {
   private final HttpSession session;
   private final TbranchService branchSvc;
   private final TmemberRepository memberRepo;
+  private final PermissionService permissionService;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-  /**
-   * 회원가입
-   */
-  @Override
   @Transactional
   public void signup(SignupRequest req, Integer regMemberSeq, String regUserId) {
     repo.findByUserId(req.getUserId())
@@ -55,14 +53,36 @@ public class TmemberServiceImpl implements TmemberService {
     e.setEmployeeId(req.getEmployeeId());
     e.setNumber(req.getNumber());
     e.setUserLevel("0".equals(req.getUserLevel()) ? "0" : "1");
-    e.setRoleSeq(req.getRoleSeq() != null && req.getRoleSeq() >= 1 && req.getRoleSeq() <= 3
-        ? req.getRoleSeq() : 1);
+    e.setRoleSeq(
+        req.getRoleSeq() != null && req.getRoleSeq() >= 1 && req.getRoleSeq() <= 3
+            ? req.getRoleSeq()
+            : 1
+    );
     String now = LocalDateTime.now().format(FMT);
     e.setCrtime(now);
     e.setUdtime(now);
     e.setReguserId(regUserId);
 
     repo.save(e);
+  }
+  /**
+   * 회원가입 + 권한 부여 (인터페이스에 선언된 메서드)
+   */
+  @Override
+  @Transactional
+  public void signupWithGrants(SignupRequest req, Integer regMemberSeq, String regUserId) {
+    // 1) 사용자 저장 (기존 signup 메서드)
+    signup(req, regMemberSeq, regUserId);
+
+    // 2) grants 가 있으면 권한 부여
+    if (req.getGrants() != null) {
+      for (GrantDto g : req.getGrants()) {
+        // signupRequest.userId 를 granteeUserId 로 채워 줌
+        g.setGranteeUserId(req.getUserId());
+        // 권한 부여
+        permissionService.grant(g);
+      }
+    }
   }
 
   /**

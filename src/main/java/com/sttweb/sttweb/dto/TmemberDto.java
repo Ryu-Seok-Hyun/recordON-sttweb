@@ -3,6 +3,7 @@ package com.sttweb.sttweb.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sttweb.sttweb.entity.TmemberEntity;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,7 +21,7 @@ public class TmemberDto {
   public static class Info {
     private Integer memberSeq;
     private Integer branchSeq;
-    private String  branchName;    // ★ 추가
+    private String  branchName;
     private Integer employeeId;
     private String  userId;
     private String  userLevel;
@@ -78,6 +79,9 @@ public class TmemberDto {
 
     /** 선택: 1~3 사이의 역할 번호 */
     private Integer roleSeq;
+
+    /** 선택: 회원가입 시 함께 부여할 권한 목록 */
+    private List<GrantDto> grants;
   }
 
   /**

@@ -8,6 +8,7 @@ import com.sttweb.sttweb.dto.TmemberDto.StatusChangeRequest;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
+import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -26,6 +27,8 @@ public class TmemberController {
 
   private final TmemberService svc;
   private final JwtTokenProvider jwtTokenProvider;
+  private final PermissionService permissionService;
+
 
   /** 1) 토큰 유효성 검사 */
   private ResponseEntity<String> checkToken(String authHeader) {
@@ -68,9 +71,11 @@ public class TmemberController {
     if (err != null) return err;
 
     Info me = getMeFromToken(authHeader);
-    svc.signup(req, me.getMemberSeq(), me.getUserId());
-    return ResponseEntity.ok("가입 완료");
+    svc.signupWithGrants(req, me.getMemberSeq(), me.getUserId());
+    return ResponseEntity.ok("가입 및 권한부여 완료");
   }
+
+
 
   /** 로그인 */
   @LogActivity(type = "member", activity = "로그인")
