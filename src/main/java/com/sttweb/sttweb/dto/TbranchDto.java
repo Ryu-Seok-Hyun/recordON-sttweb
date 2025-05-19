@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,10 +18,15 @@ public class TbranchDto {
   private String phone; //지점 전화번호
   private String companyName; // 회사명
   private Integer ipType; // IP타입 (예: 0=내부, 1=외부)
+
+  @JsonProperty("pIp")//IP 주소
+  private String pIp;
+
+  @JsonProperty("pPort")
+  private String pPort;//P포트
+
   private String pbIp; // IP 주소
   private String pbPort; // PB 포트
-  private String pIp; //IP 주소
-  private String pPort; //P포트
   private String hqYn; // 본사 여부
   private Integer discd; // 삭제 여부
 //  private Integer dbType; // DB 타입
