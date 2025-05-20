@@ -18,11 +18,6 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
   // 1) 회원가입 중복 체크(아이디 기준)
   Optional<TmemberEntity> findByUserId(String userId);
 
-  // 2) 로그인 처리용(사원번호 기준)
-  Optional<TmemberEntity> findByEmployeeId(Integer employeeId);
-
-  // ★ 동일 userId + branchSeq 조합 중복 조회용 ★
-  Optional<TmemberEntity> findByUserIdAndBranchSeq(String userId, Integer branchSeq);
 
   @Modifying
   @Transactional

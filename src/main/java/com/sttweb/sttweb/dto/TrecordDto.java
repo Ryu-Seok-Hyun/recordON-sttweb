@@ -21,6 +21,11 @@ public class TrecordDto {
   private String audioFileDir; // 오디오 파일 경로
   private String callStatus; // 통화 상태 (OK,NO-ANS)
   private String regDate; //등록 날짜 (YYYY-MM-DD HH:mm:ss)
+
+  /** 이 녹취를 생성한 사용자(memberSeq) */
+  private Integer ownerMemberSeq;
+  /** 이 녹취가 속한 지점(branchSeq) */
+  private Integer branchSeq;
 }
 
 

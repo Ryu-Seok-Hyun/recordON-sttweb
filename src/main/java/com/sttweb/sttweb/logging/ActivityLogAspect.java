@@ -63,7 +63,7 @@ public class ActivityLogAspect {
     // 3) 현재 인증 정보
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
-    // --- operator (로그 남기는 주체) 정보 추출 ---
+    // operator (로그 남기는 주체) 정보 추출
     String operatorUserId   = "";        // JWT 인증 시 auth.getName()
     String operatorWorkerId = "anonymous";
     int    operatorSeq      = 0;
@@ -134,7 +134,7 @@ public class ActivityLogAspect {
     // principal 변수로도 사용 가능
     ctx.setVariable("principal", auth != null ? auth.getPrincipal() : null);
 
-    // 8) contents 평가:
+    // 8) contents 평가
     //    문자열 어디에든 #{…} 가 있으면 TemplateParserContext 로 평가
     String expr = logActivity.contents();
     String contents = "";
@@ -150,7 +150,7 @@ public class ActivityLogAspect {
       contents = expr;
     }
 
-    // 9) dir 평가 (필요시)
+    // 9) dir 평가
     String dirExpr = logActivity.dir();
     String dir = "";
     if (dirExpr != null && dirExpr.contains("#{")) {

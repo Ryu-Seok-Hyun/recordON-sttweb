@@ -7,7 +7,11 @@ import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.net.MalformedURLException;
-import lombok.RequiredArgsConstructor;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.format.DateTimeFormatter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -16,31 +20,32 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.sql.Time;
-import java.sql.Timestamp;
-import java.time.format.DateTimeFormatter;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-@RequiredArgsConstructor
 public class TrecordServiceImpl implements TrecordService {
 
-  /** 기본값을 /data/audio 로 설정했습니다. */
   @Value("${app.audio.base-dir:/data/audio}")
   private String audioBaseDir;
 
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
+  private final TmemberService memberSvc;
 
   private static final DateTimeFormatter DT_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+  public TrecordServiceImpl(TrecordRepository repo,
+      TmemberRepository memberRepo,
+      TmemberService memberSvc) {
+    this.repo = repo;
+    this.memberRepo = memberRepo;
+    this.memberSvc = memberSvc;
+  }
+
+  /** 엔티티 → DTO 변환 */
   private TrecordDto toDto(TrecordEntity e) {
-    return TrecordDto.builder()
+    TrecordDto.TrecordDtoBuilder b = TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
         .callStartDateTime(e.getCallStartDateTime() != null
             ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT)
@@ -58,8 +63,23 @@ public class TrecordServiceImpl implements TrecordService {
         .callStatus(e.getCallStatus())
         .regDate(e.getRegDate() != null
             ? e.getRegDate().toLocalDateTime().format(DT_FMT)
-            : null)
-        .build();
+            : null);
+
+    // 녹취 소유자(memberSeq) 및 branchSeq를 가져와 세팅
+    try {
+      Integer ownerSeq = memberSvc.getMemberSeqByNumber(e.getNumber1());
+      if (ownerSeq != null) {
+        TmemberEntity owner = memberRepo.findById(ownerSeq).orElse(null);
+        if (owner != null) {
+          b.ownerMemberSeq(ownerSeq)
+              .branchSeq(owner.getBranchSeq());
+        }
+      }
+    } catch (Exception ignored) {
+      // 매핑 불가 시 무시
+    }
+
+    return b.build();
   }
 
   @Override
@@ -86,7 +106,8 @@ public class TrecordServiceImpl implements TrecordService {
   @Transactional(readOnly = true)
   public TrecordDto findById(Integer recordSeq) {
     TrecordEntity e = repo.findById(recordSeq)
-        .orElseThrow(() -> new IllegalArgumentException("녹취를 찾을 수 없습니다: " + recordSeq));
+        .orElseThrow(() -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND, "녹취를 찾을 수 없습니다: " + recordSeq));
     return toDto(e);
   }
 
@@ -153,46 +174,16 @@ public class TrecordServiceImpl implements TrecordService {
     return repo.findByNumber1OrNumber2(number, number, pageable).map(this::toDto);
   }
 
-  // ───────────────────────────────────────────────────────────────
-
-  /**
-   * 특정 사용자가 소유한 녹취(recordSeq)의 오디오 바이트를 반환
-   */
-  @Override
-  @Transactional(readOnly = true)
-  public byte[] getAudioByIdAndUserSeq(Integer recordSeq, Integer targetUserSeq) {
-    TrecordEntity e = repo.findById(recordSeq)
-        .orElseThrow(() -> new EntityNotFoundException("녹취를 찾을 수 없습니다: " + recordSeq));
-
-    TmemberEntity member = memberRepo.findById(targetUserSeq)
-        .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + targetUserSeq));
-    if (!member.getNumber().equals(e.getNumber1())) {
-      throw new SecurityException("오디오 청취 권한이 없습니다.");
-    }
-
-    try {
-      Path path = Paths.get(e.getAudioFileDir());
-      return Files.readAllBytes(path);
-    } catch (Exception ex) {
-      throw new RuntimeException("오디오 파일을 읽는 중 오류가 발생했습니다.", ex);
-    }
-  }
-
-  /**
-   * 특정 사용자가 소유한 녹취(recordSeq)의 파일(Resource)를 반환
-   */
   @Override
   @Transactional(readOnly = true)
   public Resource getFileByIdAndUserSeq(Integer recordSeq, Integer targetUserSeq) {
     TrecordEntity e = repo.findById(recordSeq)
         .orElseThrow(() -> new EntityNotFoundException("녹취를 찾을 수 없습니다: " + recordSeq));
-
     TmemberEntity member = memberRepo.findById(targetUserSeq)
         .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + targetUserSeq));
     if (!member.getNumber().equals(e.getNumber1())) {
       throw new SecurityException("파일 다운로드 권한이 없습니다.");
     }
-
     try {
       Path path = Paths.get(e.getAudioFileDir());
       UrlResource resource = new UrlResource(path.toUri());
@@ -205,32 +196,21 @@ public class TrecordServiceImpl implements TrecordService {
     }
   }
 
-
-
-
   @Override
   @Transactional(readOnly = true)
   public Resource getFile(Integer recordSeq) {
     TrecordEntity e = repo.findById(recordSeq)
         .orElseThrow(() -> new ResponseStatusException(
             HttpStatus.NOT_FOUND, "녹취를 찾을 수 없습니다: " + recordSeq));
-
-    // 1) raw 경로 null/빈 검사
     String raw = e.getAudioFileDir();
     if (raw == null || raw.trim().isEmpty()) {
       throw new ResponseStatusException(
           HttpStatus.INTERNAL_SERVER_ERROR,
           "DB에 저장된 오디오 경로가 없습니다: recordSeq=" + recordSeq);
     }
-
-    // 2) 구분자 통일
     String unified = raw.replace("\\", "/");
-
-    // 3) base-dir 경로 준비
     Path base = Paths.get(audioBaseDir);
     Path path;
-
-    // 4) 절대경로 vs 상대경로 분기
     if (Paths.get(unified).isAbsolute()) {
       path = Paths.get(unified).normalize();
     } else {
@@ -244,7 +224,6 @@ public class TrecordServiceImpl implements TrecordService {
           : Paths.get("");
       path = base.resolve(safeSub);
     }
-
     try {
       UrlResource resource = new UrlResource(path.toUri());
       if (!resource.exists() || !resource.isReadable()) {
@@ -260,5 +239,4 @@ public class TrecordServiceImpl implements TrecordService {
           ex);
     }
   }
-
 }

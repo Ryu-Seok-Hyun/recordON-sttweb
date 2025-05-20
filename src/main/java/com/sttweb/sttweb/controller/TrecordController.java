@@ -84,7 +84,7 @@ public class TrecordController {
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     PageRequest pr = PageRequest.of(page, size);
 
-    Page<TrecordDto> paged = (roleSeq >= 4)
+    Page<TrecordDto> paged = (roleSeq >= 3)
         ? recordSvc.findAll(pr)                        // 관리자: 전체 조회
         : recordSvc.findByUserNumber(me.getNumber(), pr);  // 일반 유저: 본인 자료만
 
@@ -272,41 +272,62 @@ public class TrecordController {
         .body(file);
   }
 
-  // ─── 수정: application.properties 의 app.audio.base-dir 값을 주입 받도록 변경 ───
+  // 수정: application.properties 의 app.audio.base-dir 값을 주입 받도록 변경
   @Value("${app.audio.base-dir:/projects/audio}")
   private String audioBaseDir;
 
 
   /**
-   * 2) 녹취 파일 다운로드
-   *    — 관리자(role ≥ 4) / 본인(내선번호) / download 권한(level 3) 보유자만 접근 허용
+   * 1) 녹취 파일 다운로드
+   *    — 본사 관리자(role ≥ 4)
+   *    — 녹취 당사자(내선번호 일치)
+   *    — 지사 관리자(본인 지점)
+   *    — grant(download 권한 level 3) 보유자
    */
+  @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
   @GetMapping("/{id}/download")
   public ResponseEntity<Resource> downloadById(
-      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+      @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @PathVariable("id") Integer id
   ) {
-    // 1) 헤더 검사 → 로그인
-    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
-    }
+    // 1) 로그인 검사
     Info me = requireLogin(authHeader);
 
-    // 2) 권한 검사: 관리자(role ≥ 4) OR 본인(내선번호)만
+    // 2) 녹취 메타 조회
+    TrecordDto dto = recordSvc.findById(id);
+
+    // 3) 권한 판별
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    TrecordDto dto = recordService.findById(id);
+    // roleSeq == 3 이면 “조회+청취+다운로드” 권한
+    boolean hasDownloadRole = roleSeq == 3;
 
-    boolean isAdmin = roleSeq >= 4;
-    boolean isOwner = dto.getNumber1().equals(me.getNumber());
+    // (1) 당사자 여부 (내선번호 일치)
+    int myNum  = Integer.parseInt(me.getNumber());
+    int num1   = Integer.parseInt(dto.getNumber1());
+    int num2   = Integer.parseInt(dto.getNumber2());
+    boolean isOwner = (myNum == num1 || myNum == num2);
 
-    if (!(isAdmin || isOwner)) {
-      // 더 이상 permissionService 로 level 체크하지 않습니다.
+    // (2) 지사 관리자 여부
+    int level = Integer.parseInt(me.getUserLevel());
+    boolean isBranchAdmin = (level == 1 || level == 2)   // 필요에 따라 userLevel 범위 조정
+        && me.getBranchSeq() != null
+        && me.getBranchSeq().equals(dto.getBranchSeq());
+
+    // (3) grant(download 레벨 3) 보유 여부
+    boolean hasGrant = dto.getOwnerMemberSeq() != null
+        && permService.hasLevel(me.getMemberSeq(), dto.getOwnerMemberSeq(), 3);
+
+    if (!(hasDownloadRole || isOwner || isBranchAdmin || hasGrant)) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
     }
 
-    // 3) 파일 로드 → 없으면 404
+    // 4) 파일 로드
     Resource file = recordSvc.getFile(id);
+    if (file == null || !file.exists()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다.");
+    }
 
+    // 5) 응답
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"" + file.getFilename() + "\"")

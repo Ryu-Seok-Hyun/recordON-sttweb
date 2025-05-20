@@ -18,9 +18,7 @@ public interface TmemberService {
     void signupWithGrants(SignupRequest req, Integer regMemberSeq, String regUserId);
     TmemberEntity login(LoginRequest req);
     void logout();
-    Info getMyInfo();
     Info getMyInfoByUserId(String userId);
-    void changePassword(Integer memberSeq, PasswordChangeRequest req);
 
     // 본사 관리자 전용
     Page<Info> searchUsers(String keyword, Pageable pageable);
@@ -32,7 +30,6 @@ public interface TmemberService {
 
     Info getMyInfoByMemberSeq(Integer memberSeq);
     List<Info> getAllMembers();
-    Integer getMemberSeqByNumber(String number);
 
     // === 지사 관리자 전용 ===
     /** 해당 지점 사용자만 페이징 조회 */
@@ -52,4 +49,6 @@ public interface TmemberService {
         Integer updaterSeq,
         String updaterId
     );
+
+    Integer getMemberSeqByNumber(String number);
 }

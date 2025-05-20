@@ -132,12 +132,12 @@ public class TmemberDto {
   @AllArgsConstructor
   public static class UpdateRequest {
     @NotNull(message = "내선번호(number)는 필수입니다.")
-    private String number;               // 내선번호 (필수)
+    private String number;
 
-    private Integer branchSeq;           // 지점 변경 (선택)
-    private Integer employeeId;          // 사원번호 변경 (선택)
-    private Integer roleSeq;             // 역할 변경 (선택)
-    private String  userLevel;           // 레벨 변경 (선택)
+    private Integer branchSeq;
+    private Integer employeeId;
+    private Integer roleSeq;
+    private String  userLevel;
 
     private Boolean active;
     private String oldPassword;

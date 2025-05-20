@@ -92,9 +92,4 @@ public class TbranchServiceImpl implements TbranchService {
     repo.save(e);
   }
 
-  @Override
-  @Transactional
-  public void deleteBranch(Integer branchSeq) {
-    changeStatus(branchSeq, false);
-  }
 }

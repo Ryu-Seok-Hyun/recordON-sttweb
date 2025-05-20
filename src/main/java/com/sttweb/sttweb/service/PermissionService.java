@@ -16,8 +16,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class PermissionService {
 
   private final UserPermissionRepository permRepo;
-  private final TmemberRepository memberRepo;
+  private final TmemberRepository         memberRepo;
 
+  /**
+   * 권한(Grant) 등록
+   */
   @Transactional
   public void grant(GrantDto req) {
     // 중복 체크
@@ -30,7 +33,7 @@ public class PermissionService {
       );
     }
 
-    // 엔티티 생성 및 저장
+    // 저장
     UserPermission p = new UserPermission();
     p.setGranteeUserId(req.getGranteeUserId());
     p.setTargetUserId(req.getTargetUserId());
@@ -38,31 +41,36 @@ public class PermissionService {
     permRepo.save(p);
   }
 
-  @Transactional
-  public void revoke(String granteeUserId, String targetUserId) {
-    permRepo.deleteByGranteeUserIdAndTargetUserId(granteeUserId, targetUserId);
-  }
-
   /**
-   * 지정된 granteeMemberSeq가 targetMemberSeq에 대해 requiredLevel 이상의 권한을 가졌는지 확인
+   * granterMemberSeq 가 targetMemberSeq 에 대해
+   * permLevel(requiredLevel) 이상의 권한을 갖고 있는지 검사
    */
+  @Transactional(readOnly = true)
   public boolean hasLevel(
-      Integer granteeMemberSeq,
+      Integer granterMemberSeq,
       Integer targetMemberSeq,
-      Integer requiredLevel
+      int requiredLevel
   ) {
-    // 회원 조회
-    TmemberEntity grantee = memberRepo.findById(granteeMemberSeq)
+    // 1) memberSeq → userId 로 변환
+    TmemberEntity granter = memberRepo.findById(granterMemberSeq)
         .orElseThrow(() -> new ResponseStatusException(
-            HttpStatus.NOT_FOUND, "Grantee user not found: " + granteeMemberSeq));
-    TmemberEntity target = memberRepo.findById(targetMemberSeq)
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "권한 검사용 사용자 정보를 찾을 수 없습니다: " + granterMemberSeq
+        ));
+    TmemberEntity target  = memberRepo.findById(targetMemberSeq)
         .orElseThrow(() -> new ResponseStatusException(
-            HttpStatus.NOT_FOUND, "Target user not found: " + targetMemberSeq));
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "권한 대상 사용자 정보를 찾을 수 없습니다: " + targetMemberSeq
+        ));
 
-    // 권한 조회 및 레벨 비교
-    return permRepo.findByGranteeUserIdAndTargetUserId(
-            grantee.getUserId(), target.getUserId())
-        .map(p -> p.getPermLevel() >= requiredLevel)
-        .orElse(false);
+    String granteeUserId = granter.getUserId();
+    String targetUserId  = target.getUserId();
+
+    // 2) Grant 테이블에서 permLevel ≥ requiredLevel 인 레코드가 있으면 true
+    return permRepo.countByGranteeUserIdAndTargetUserIdAndPermLevelGreaterThanEqual(
+        granteeUserId,
+        targetUserId,
+        requiredLevel
+    ) > 0;
   }
 }

@@ -21,6 +21,4 @@ public interface TbranchService {
   /** 활성·비활성 처리 */
   void changeStatus(Integer branchSeq, boolean active);
 
-  /** 완전 삭제(선택사항) */
-  void deleteBranch(Integer branchSeq);
 }

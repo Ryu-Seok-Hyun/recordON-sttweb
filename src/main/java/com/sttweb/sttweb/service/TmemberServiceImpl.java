@@ -146,24 +146,6 @@ public class TmemberServiceImpl implements TmemberService {
     session.invalidate();
   }
 
-  /** 세션 기반 내 정보 조회 */
-  @Override
-  public Info getMyInfo() {
-    Integer me = (Integer) session.getAttribute("memberSeq");
-    if (me == null) {
-      throw new IllegalStateException("로그인 상태가 아닙니다.");
-    }
-    TmemberEntity e = repo.findById(me)
-        .orElseThrow(() -> new IllegalStateException("사용자 정보를 찾을 수 없습니다."));
-    Info dto = Info.fromEntity(e);
-
-    // userLevel="0" 인 HQ admin 시 지점 조회 생략
-    if (!"0".equals(e.getUserLevel()) && dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
-      TbranchDto b = branchSvc.findById(dto.getBranchSeq());
-      dto.setBranchName(b.getCompanyName());
-    }
-    return dto;
-  }
 
   @Override
   public Info getMyInfoByMemberSeq(Integer memberSeq) {
@@ -186,18 +168,6 @@ public class TmemberServiceImpl implements TmemberService {
     return dto;
   }
 
-  /** 비밀번호 변경 */
-  @Override
-  @Transactional
-  public void changePassword(Integer memberSeq, PasswordChangeRequest req) {
-    TmemberEntity e = repo.findById(memberSeq)
-        .orElseThrow(() -> new IllegalStateException("사용자 정보를 찾을 수 없습니다."));
-    if (!passwordEncoder.matches(req.getOldPassword(), e.getUserPass())) {
-      throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
-    }
-    e.setUserPass(passwordEncoder.encode(req.getNewPassword()));
-    repo.save(e);
-  }
 
   /** 페이징된 전체 유저 조회 (본사 관리자 전용) */
   @Override
@@ -279,40 +249,6 @@ public class TmemberServiceImpl implements TmemberService {
         .collect(Collectors.toList());
   }
 
-  @Override
-  public Integer getMemberSeqByNumber(String number) {
-    // 1) 가능한 후보 번호 목록 준비
-    List<String> candidates = new ArrayList<>();
-    candidates.add(number);
-
-    // 2) leading zero 제거
-    String noLeading = number.replaceFirst("^0+", "");
-    if (!noLeading.equals(number)) {
-      candidates.add(noLeading);
-    }
-
-    // 3) 4자리 패딩
-    try {
-      int num = Integer.parseInt(noLeading);
-      String padded = String.format("%04d", num);
-      if (!candidates.contains(padded)) {
-        candidates.add(padded);
-      }
-    } catch (NumberFormatException ignored) { }
-
-    // 4) 조회
-    for (String cand : candidates) {
-      Optional<TmemberEntity> opt = memberRepo.findByNumber(cand);
-      if (opt.isPresent()) {
-        return opt.get().getMemberSeq();
-      }
-    }
-
-    throw new ResponseStatusException(
-        HttpStatus.NOT_FOUND,
-        "사용자를 찾을 수 없습니다 (number=" + number + ")"
-    );
-  }
 
   @Override
   @Transactional
@@ -382,4 +318,44 @@ public class TmemberServiceImpl implements TmemberService {
     }
     return dto;
   }
+
+  /**
+   * 내선번호(number)로 여러 후보를 만들어서 조회하는 기존 로직 재사용.
+   */
+  @Override
+  public Integer getMemberSeqByNumber(String number) {
+    // 1) 가능한 후보 번호 목록 준비
+    List<String> candidates = new ArrayList<>();
+    candidates.add(number);
+
+    // 2) leading zero 제거
+    String noLeading = number.replaceFirst("^0+", "");
+    if (!noLeading.equals(number)) {
+      candidates.add(noLeading);
+    }
+
+    // 3) 4자리 패딩
+    try {
+      int num = Integer.parseInt(noLeading);
+      String padded = String.format("%04d", num);
+      if (!candidates.contains(padded)) {
+        candidates.add(padded);
+      }
+    } catch (NumberFormatException ignored) {
+    }
+
+    // 4) 조회
+    for (String cand : candidates) {
+      Optional<TmemberEntity> opt = repo.findByNumber(cand);
+      if (opt.isPresent()) {
+        return opt.get().getMemberSeq();
+      }
+    }
+
+    throw new ResponseStatusException(
+        HttpStatus.NOT_FOUND,
+        "사용자를 찾을 수 없습니다 (number=" + number + ")"
+    );
+  }
+
 }

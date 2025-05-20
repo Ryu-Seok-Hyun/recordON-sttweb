@@ -19,4 +19,11 @@ public interface UserPermissionRepository extends JpaRepository<UserPermission, 
   @Modifying
   @Transactional
   void deleteByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
+
+  // grant된 permLevel 이 requiredLevel 이상인 건수 조회
+  long countByGranteeUserIdAndTargetUserIdAndPermLevelGreaterThanEqual(
+      String granteeUserId,
+      String targetUserId,
+      Integer permLevel
+  );
 }

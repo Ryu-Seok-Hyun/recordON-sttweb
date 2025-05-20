@@ -29,10 +29,10 @@ public interface TrecordService {
   /** 본인 번호만 조회 (페이징) */
   Page<TrecordDto> findByUserNumber(String number, Pageable pageable);
 
-  byte[] getAudioByIdAndUserSeq(Integer recordId, Integer targetUserSeq);
-
   Resource getFileByIdAndUserSeq(Integer recordId, Integer targetUserSeq);
 
   /** 파일만 읽어서 Resource로 반환 (권한 체크는 Controller에서) */
   Resource getFile(Integer recordSeq);
+
+
 }
