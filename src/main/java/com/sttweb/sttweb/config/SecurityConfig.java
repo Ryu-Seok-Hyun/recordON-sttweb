@@ -42,47 +42,33 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.GET, "/api/roles", "/api/roles/**")
             .permitAll()
 
-            // -- 지점
+            // ── 지점 관리 ──
+
+            // 브랜치 리스트 조회는 ADMIN 또는 USER 모두 허용
             .requestMatchers(HttpMethod.GET, "/api/branches")
-            .hasRole("ADMIN")
+            .hasAnyRole("ADMIN","USER")
+
+            // 단건 조회도 ADMIN 또는 USER 허용
             .requestMatchers(HttpMethod.GET, "/api/branches/*")
             .hasAnyRole("ADMIN","USER")
+
+            // 나머지 브랜치 API (POST, PUT, DELETE, activate 등)는 ADMIN만
             .requestMatchers("/api/branches/**")
             .hasRole("ADMIN")
 
-            // -- 내 권한 조회
+            // ── 그 외 API 설정 생략 ──
+
+            // 내 권한 조회
             .requestMatchers(HttpMethod.GET, "/api/members/me/role")
             .authenticated()
 
-            // -- 다른 사용자 권한 변경
+            // 사용자 권한 변경
             .requestMatchers(HttpMethod.PUT, "/api/members/*/role")
             .hasRole("ADMIN")
 
-
-            // ── 녹취 API ──
-
-            // 1) 검색·목록·단건 조회: 누구나
-            .requestMatchers(HttpMethod.GET,
-                "/api/records",
-                "/api/records/**"
-            ).permitAll()
-
-            // 2) 업로드·다운로드·청취: 인증된 사용자만
-            .requestMatchers(HttpMethod.POST, "/api/records/upload")
+            // 녹취 API 등...
+            .anyRequest()
             .authenticated()
-            .requestMatchers(HttpMethod.GET, "/api/records/*/download", "/api/records/*/listen")
-            .authenticated()
-
-            // 3) 관리자 전용 CRUD
-            .requestMatchers(HttpMethod.POST,   "/api/records")
-            .hasRole("ADMIN")
-            .requestMatchers(HttpMethod.PUT,    "/api/records/**")
-            .hasRole("ADMIN")
-            .requestMatchers(HttpMethod.DELETE, "/api/records/**")
-            .hasRole("ADMIN")
-
-            // 4) 나머지 모든 요청: 토큰만 있으면 OK
-            .anyRequest().authenticated()
         )
 
         // 3) JWT 필터 등록

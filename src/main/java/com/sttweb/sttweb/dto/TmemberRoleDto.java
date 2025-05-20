@@ -11,6 +11,6 @@ import lombok.NoArgsConstructor;
 @Builder
 public class TmemberRoleDto {
   private Integer roleSeq;// 1=NONE,2=READ,3=LISTEN,4=DOWNLOAD
-  private String roleCode; // NONE, READ, LISTEN, DOWNLOAD
+  private String roleCode; //  READ, LISTEN, DOWNLOAD
   private String description;  // 권한 설명
 }

@@ -3,6 +3,8 @@ package com.sttweb.sttweb.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sttweb.sttweb.entity.TmemberEntity;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -74,7 +76,7 @@ public class TmemberDto {
     private Integer employeeId;
     private String number;
 
-    /** 선택: "0"=관리자, 그 외=일반 */
+    /** 필수: "0"=본사 관리자, "1"=지사 관리자, "2"=지사 일반 유저 */
     private String userLevel;
 
     /** 선택: 1~3 사이의 역할 번호 */
@@ -122,6 +124,24 @@ public class TmemberDto {
   @AllArgsConstructor
   public static class RoleChangeRequest {
     private Integer roleSeq;
+  }
+
+
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  public static class UpdateRequest {
+    @NotNull(message = "내선번호(number)는 필수입니다.")
+    private String number;               // 내선번호 (필수)
+
+    private Integer branchSeq;           // 지점 변경 (선택)
+    private Integer employeeId;          // 사원번호 변경 (선택)
+    private Integer roleSeq;             // 역할 변경 (선택)
+    private String  userLevel;           // 레벨 변경 (선택)
+
+    private Boolean active;
+    private String oldPassword;
+    private String newPassword;
   }
 
 }

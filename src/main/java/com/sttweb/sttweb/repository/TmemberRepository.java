@@ -1,3 +1,4 @@
+// src/main/java/com/sttweb/sttweb/repository/TmemberRepository.java
 package com.sttweb.sttweb.repository;
 
 import jakarta.transaction.Transactional;
@@ -11,11 +12,17 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer> {
+
+  boolean existsByUserId(String userId);
+
   // 1) 회원가입 중복 체크(아이디 기준)
   Optional<TmemberEntity> findByUserId(String userId);
 
   // 2) 로그인 처리용(사원번호 기준)
   Optional<TmemberEntity> findByEmployeeId(Integer employeeId);
+
+  // ★ 동일 userId + branchSeq 조합 중복 조회용 ★
+  Optional<TmemberEntity> findByUserIdAndBranchSeq(String userId, Integer branchSeq);
 
   @Modifying
   @Transactional
@@ -34,5 +41,18 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
 
   Optional<TmemberEntity> findByNumber(String number);
 
+  // === 지사 관리자 전용 페이징 조회/검색용 ===
+  Page<TmemberEntity> findByBranchSeq(Integer branchSeq, Pageable pageable);
 
+  @Query("SELECT e FROM TmemberEntity e "
+      + "WHERE e.branchSeq = :branchSeq "
+      + "  AND (e.userId LIKE %:kw% OR e.number LIKE %:kw%)")
+  Page<TmemberEntity> findByBranchSeqAnd(
+      @Param("branchSeq") Integer branchSeq,
+      @Param("kw")         String keyword,
+      Pageable pageable
+  );
+
+  // <<< 추가 >>> 브랜치별, userId 중복 개수 조회
+  long countByUserIdAndBranchSeq(String userId, Integer branchSeq);
 }
