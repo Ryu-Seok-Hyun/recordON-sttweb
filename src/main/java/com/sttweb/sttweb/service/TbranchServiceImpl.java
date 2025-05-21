@@ -40,6 +40,14 @@ public class TbranchServiceImpl implements TbranchService {
     return repo.findAll(pageable)
         .map(this::toDto);
   }
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TbranchDto> search(String keyword, Pageable pageable) {
+    return repo
+        .findByCompanyNameContainingIgnoreCase(keyword, pageable)
+        .map(this::toDto);
+  }
+
 
   @Override
   @Transactional(readOnly = true)

@@ -51,14 +51,15 @@ public class TbranchController {
 
   /**
    * 지점 목록 조회
-   * - 본사 관리자(0): 전체
-   * - 지사 관리자(1): 자기 지점만
+   * - 본사 관리자(0): 전체 or 키워드 검색
+   * - 지사 관리자(1): 자기 지점만 (키워드는 무시)
    * - 그 외(2): 403
    */
   @LogActivity(type = "branch", activity = "조회", contents = "지점 조회")
   @GetMapping
   public ResponseEntity<?> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
+      @RequestParam(name = "keyword", required = false) String keyword,   // ← 추가
       Pageable pageable
   ) {
     // 1) 토큰 검사
@@ -70,11 +71,15 @@ public class TbranchController {
     String lvl = me.getUserLevel();
     Integer myBranchSeq = me.getBranchSeq();
 
-    // 3) 분기
     if ("0".equals(lvl)) {
-      // 본사 관리자 → 전체 지점
-      Page<TbranchDto> all = branchSvc.findAll(pageable);
-      return ResponseEntity.ok(all);
+      // 본사 관리자 → 전체 or 검색
+      if (keyword != null && !keyword.isBlank()) {
+        Page<TbranchDto> searched = branchSvc.search(keyword.trim(), pageable);
+        return ResponseEntity.ok(searched);
+      } else {
+        Page<TbranchDto> all = branchSvc.findAll(pageable);
+        return ResponseEntity.ok(all);
+      }
 
     } else if ("1".equals(lvl)) {
       // 지사 관리자 → 자신의 지점만

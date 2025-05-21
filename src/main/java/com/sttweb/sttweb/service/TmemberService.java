@@ -51,4 +51,6 @@ public interface TmemberService {
     );
 
     Integer getMemberSeqByNumber(String number);
+
+    Info getInfoByMemberSeq(Integer memberSeq);
 }

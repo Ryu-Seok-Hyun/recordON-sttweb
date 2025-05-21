@@ -21,4 +21,5 @@ public interface TbranchService {
   /** 활성·비활성 처리 */
   void changeStatus(Integer branchSeq, boolean active);
 
+  Page<TbranchDto> search(String keyword, Pageable pageable);
 }

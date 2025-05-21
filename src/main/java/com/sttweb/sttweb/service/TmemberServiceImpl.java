@@ -358,4 +358,27 @@ public class TmemberServiceImpl implements TmemberService {
     );
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Info getInfoByMemberSeq(Integer memberSeq) {
+    // 1) 엔티티 조회
+    TmemberEntity e = memberRepo.findById(memberSeq)
+        .orElseThrow(() -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다: " + memberSeq));
+
+    // 2) DTO 생성 (fromEntity는 userId, number, employeeId, discd, crtime, udtime, reguserId, userLevel, roleSeq, branchSeq 등을 모두 복사)
+    Info dto = Info.fromEntity(e);
+
+    // 3) branchName 추가 세팅
+    //    (branchSeq가 있으면 branchSvc에서 지점 정보를 꺼내와 companyName을 세팅)
+    Integer bs = dto.getBranchSeq();
+    if (bs != null && bs > 0) {
+      TbranchDto b = branchSvc.findById(bs);
+      dto.setBranchName(b.getCompanyName());
+    }
+
+    return dto;
+  }
+
+
 }
