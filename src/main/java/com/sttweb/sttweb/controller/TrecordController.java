@@ -8,6 +8,9 @@ import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
@@ -55,10 +58,11 @@ public class TrecordController {
   }
 
   /**
-   * 전체 녹취 + 통합검색
+   * 전체 녹취 + 필터링
    * direction=ALL|IN|OUT,
    * numberKind=ALL|PHONE|EXT,
-   * q=통화내용 키워드
+   * q=검색어,
+   * start/end = yyyy-MM-dd HH:mm
    */
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
@@ -68,21 +72,23 @@ public class TrecordController {
       @RequestParam(name = "size", defaultValue = "10") int size,
       @RequestParam(name = "direction", defaultValue = "ALL") String direction,
       @RequestParam(name = "numberKind", defaultValue = "ALL") String numberKind,
-      @RequestParam(name = "q", required = false) String q
+      @RequestParam(name = "q", required = false) String q,
+      @RequestParam(name = "start", required = false) String startStr,
+      @RequestParam(name = "end",   required = false) String endStr
   ) {
+    DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    LocalDateTime start = startStr != null ? LocalDateTime.parse(startStr, fmt) : null;
+    LocalDateTime end   = endStr   != null ? LocalDateTime.parse(endStr,   fmt) : null;
+
     Info me = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     PageRequest pr = PageRequest.of(page, size);
 
-    Page<TrecordDto> paged;
-    if (roleSeq < 2) {
-      // NONE 권한: 내 번호로만 검색
-      String myNum = me.getNumber();
-      paged = recordSvc.search(myNum, myNum, direction, numberKind, q, pr);
-    } else {
-      // READ 이상: 전체 대상
-      paged = recordSvc.search(null, null, direction, numberKind, q, pr);
-    }
+    Page<TrecordDto> paged = (roleSeq < 2)
+        ? recordSvc.search(me.getNumber(), me.getNumber(),
+        direction, numberKind, q, start, end, pr)
+        : recordSvc.search(null, null,
+            direction, numberKind, q, start, end, pr);
 
     return ResponseEntity.ok(paged);
   }
@@ -151,9 +157,9 @@ public class TrecordController {
       region = new ResourceRegion(audio, 0, chunk);
     } else {
       HttpRange range = ranges.get(0);
-      long start = range.getRangeStart(contentLength);
-      long end   = range.getRangeEnd(contentLength);
-      region = new ResourceRegion(audio, start, end - start + 1);
+      long startPos = range.getRangeStart(contentLength);
+      long endPos   = range.getRangeEnd(contentLength);
+      region = new ResourceRegion(audio, startPos, endPos - startPos + 1);
     }
 
     return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)

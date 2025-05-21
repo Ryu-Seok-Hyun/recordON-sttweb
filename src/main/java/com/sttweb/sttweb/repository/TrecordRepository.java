@@ -1,6 +1,7 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TrecordEntity;
+import java.time.LocalDateTime;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -31,6 +32,8 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
              or (t.ioDiscdVal = '발신' and length(t.number2) > 4)
              ))
        )
+       and (:start is null or t.callStartDateTime >= :start)
+       and (:end   is null or t.callEndDateTime   <= :end)
        and (
             :q is null
          or t.callStatus like concat('%', :q, '%')
@@ -39,11 +42,13 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
        )
   """)
   Page<TrecordEntity> search(
-      @Param("num1")    String    num1,
-      @Param("num2")    String    num2,
-      @Param("inbound") Boolean   inbound,
-      @Param("isExt")   Boolean   isExt,
-      @Param("q")       String    q,
-      Pageable                 pageable
+      @Param("num1")    String          num1,
+      @Param("num2")    String          num2,
+      @Param("inbound") Boolean         inbound,
+      @Param("isExt")   Boolean         isExt,
+      @Param("q")       String          q,
+      @Param("start") LocalDateTime start,
+      @Param("end")     LocalDateTime   end,
+      Pageable                      pageable
   );
 }

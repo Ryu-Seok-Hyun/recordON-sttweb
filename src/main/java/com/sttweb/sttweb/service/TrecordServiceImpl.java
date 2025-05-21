@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -112,23 +113,30 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> search(String number1,
+  public Page<TrecordDto> search(
+      String number1,
       String number2,
       String direction,
       String numberKind,
       String query,
-      Pageable pageable) {
-    // direction: ALL/IN/OUT → inbound flag
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  ) {
     Boolean inbound = null;
     if ("IN".equalsIgnoreCase(direction))  inbound = true;
     if ("OUT".equalsIgnoreCase(direction)) inbound = false;
 
-    // numberKind: ALL/PHONE/EXT → isExt flag
     Boolean isExt = null;
     if ("EXT".equalsIgnoreCase(numberKind))  isExt = true;
     if ("PHONE".equalsIgnoreCase(numberKind)) isExt = false;
 
-    return repo.search(number1, number2, inbound, isExt, query, pageable)
+    return repo.search(
+            number1, number2,
+            inbound, isExt, query,
+            start, end,
+            pageable
+        )
         .map(this::toDto);
   }
 
