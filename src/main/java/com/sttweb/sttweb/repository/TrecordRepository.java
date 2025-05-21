@@ -5,10 +5,13 @@ import java.time.LocalDateTime;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;  // 추가
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer> {
+public interface TrecordRepository
+    extends JpaRepository<TrecordEntity, Integer>,
+    JpaSpecificationExecutor<TrecordEntity> {  // 여기에 추가
 
   Page<TrecordEntity> findByNumber1(String number1, Pageable pageable);
   Page<TrecordEntity> findByNumber2(String number2, Pageable pageable);
@@ -42,13 +45,13 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
        )
   """)
   Page<TrecordEntity> search(
-      @Param("num1")    String          num1,
-      @Param("num2")    String          num2,
-      @Param("inbound") Boolean         inbound,
-      @Param("isExt")   Boolean         isExt,
-      @Param("q")       String          q,
-      @Param("start") LocalDateTime start,
-      @Param("end")     LocalDateTime   end,
-      Pageable                      pageable
+      @Param("num1")    String        num1,
+      @Param("num2")    String        num2,
+      @Param("inbound") Boolean       inbound,
+      @Param("isExt")   Boolean       isExt,
+      @Param("q")       String        q,
+      @Param("start")   LocalDateTime start,
+      @Param("end")     LocalDateTime end,
+      Pageable                    pageable
   );
 }

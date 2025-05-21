@@ -24,27 +24,35 @@ public class ActivityLogController {
     return authHeader.substring(7);
   }
 
-  /** 페이징 조회 */
+  /** 페이징 + 필터 조회 */
   @GetMapping
   public ResponseEntity<Page<TactivitylogDto>> listLogs(
-      @RequestParam(name="page", defaultValue="0") int page,
-      @RequestParam(name="size", defaultValue="10") int size,
-      @RequestHeader(value="Authorization", required=false) String authHeader
+      @RequestParam(name="page",       defaultValue="0")           int page,
+      @RequestParam(name="size",       defaultValue="10")          int size,
+      @RequestParam(name="startCrtime", required=false)          String startCrtime,
+      @RequestParam(name="endCrtime",   required=false)          String endCrtime,
+      @RequestParam(name="type",        required=false)          String type,
+      @RequestParam(name="searchField", required=false)          String searchField,
+      @RequestParam(name="keyword",     required=false)          String keyword,
+      @RequestHeader(value="Authorization", required=false)      String authHeader
   ) {
+    // JWT 검증
     String token = extractToken(authHeader);
     if (token == null || !jwtTokenProvider.validateToken(token)) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    String userId = jwtTokenProvider.getUserId(token);
+    String userId    = jwtTokenProvider.getUserId(token);
     String userLevel = jwtTokenProvider.getUserLevel(token);
 
-    PageRequest pr = PageRequest.of(page, size, Sort.by("crtime").descending());
-    Page<TactivitylogDto> result;
-    if ("0".equals(userLevel)) {
-      result = logService.getLogs(pr);
-    } else {
-      result = logService.getLogsByUserId(userId, pr);
-    }
+    Pageable pageable = PageRequest.of(page, size, Sort.by("crtime").descending());
+
+    Page<TactivitylogDto> result = logService.getLogsWithFilter(
+        userId, userLevel,
+        startCrtime, endCrtime,
+        type,
+        searchField, keyword,
+        pageable
+    );
     return ResponseEntity.ok(result);
   }
 
@@ -58,7 +66,7 @@ public class ActivityLogController {
     if (token == null || !jwtTokenProvider.validateToken(token)) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    String userId = jwtTokenProvider.getUserId(token);
+    String userId    = jwtTokenProvider.getUserId(token);
     String userLevel = jwtTokenProvider.getUserLevel(token);
 
     TactivitylogDto dto = logService.getLog(id);
@@ -78,7 +86,7 @@ public class ActivityLogController {
     if (token == null || !jwtTokenProvider.validateToken(token)) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    String userId = jwtTokenProvider.getUserId(token);
+    String userId    = jwtTokenProvider.getUserId(token);
     String userLevel = jwtTokenProvider.getUserLevel(token);
 
     TactivitylogDto dto = logService.getLog(id);

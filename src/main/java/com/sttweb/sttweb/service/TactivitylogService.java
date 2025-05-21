@@ -1,25 +1,32 @@
-// src/main/java/com/sttweb/sttweb/service/TactivitylogService.java
 package com.sttweb.sttweb.service;
 
-import com.sttweb.sttweb.entity.TactivitylogEntity;
 import com.sttweb.sttweb.dto.TactivitylogDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface TactivitylogService {
 
-
-  /** 새 로그 생성 (DTO) */
   TactivitylogDto createLog(TactivitylogDto dto);
 
-  /** 단건 조회 */
   TactivitylogDto getLog(Integer activitySeq);
 
-  /** 페이징 조회 */
-  Page<TactivitylogDto> getLogs(Pageable pageable);
-
-  /** 삭제 */
   void deleteLog(Integer activitySeq);
 
+  Page<TactivitylogDto> getLogs(Pageable pageable);
+
   Page<TactivitylogDto> getLogsByUserId(String userId, Pageable pageable);
+
+  /**
+   * 필터(날짜범위, 구분, 검색필드/키워드) 적용 페이징 조회
+   */
+  Page<TactivitylogDto> getLogsWithFilter(
+      String userId,
+      String userLevel,
+      String startCrtime,
+      String endCrtime,
+      String type,
+      String searchField,
+      String keyword,
+      Pageable pageable
+  );
 }

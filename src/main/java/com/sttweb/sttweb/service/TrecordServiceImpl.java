@@ -22,6 +22,7 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -79,8 +80,7 @@ public class TrecordServiceImpl implements TrecordService {
               .branchSeq(owner.getBranchSeq());
         }
       }
-    } catch (Exception ignored) {
-    }
+    } catch (Exception ignored) {}
 
     return b.build();
   }
@@ -149,32 +149,44 @@ public class TrecordServiceImpl implements TrecordService {
       Pageable pageable,
       Info me
   ) {
-    // 1) 기본 전체 조회 (페이징)
-    Page<TrecordDto> base = repo.findAll(pageable).map(this::toDto);
+    // JpaSpecificationExecutor 사용을 위해 TrecordRepository가 extends JpaSpecificationExecutor<TrecordEntity>여야 합니다.
+    Specification<TrecordEntity> spec = Specification.where(null);
 
-    // 2) in-memory 필터링 후 리스트로 수집
-    List<TrecordDto> filtered = base.stream()
-        .filter(dto -> {
-          // 방향 필터: 'I' = IN, 'O' = OUT
-          if ("IN".equalsIgnoreCase(direction)  && !"I".equals(dto.getIoDiscdVal()))  return false;
-          if ("OUT".equalsIgnoreCase(direction) && !"O".equals(dto.getIoDiscdVal())) return false;
+    // 1) direction 필터: 'IN' = ioDiscdVal 'I', 'OUT' = 'O'
+    if ("IN".equalsIgnoreCase(direction)) {
+      spec = spec.and((root, query, cb) ->
+          cb.equal(root.get("ioDiscdVal"), "I")
+      );
+    } else if ("OUT".equalsIgnoreCase(direction)) {
+      spec = spec.and((root, query, cb) ->
+          cb.equal(root.get("ioDiscdVal"), "O")
+      );
+    }
 
-          // 내선(EXT)/전화번호(PHONE) 필터
-          boolean isExtNumber = dto.getNumber1() != null && dto.getNumber1().length() <= 4;
-          if ("EXT".equalsIgnoreCase(numberKind)  && !isExtNumber) return false;
-          if ("PHONE".equalsIgnoreCase(numberKind) &&  isExtNumber) return false;
+    // 2) numberKind 필터: 'EXT' = 내선(길이<=4), 'PHONE' = 전화번호(길이>4)
+    if ("EXT".equalsIgnoreCase(numberKind)) {
+      spec = spec.and((root, query, cb) ->
+          cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4)
+      );
+    } else if ("PHONE".equalsIgnoreCase(numberKind)) {
+      spec = spec.and((root, query, cb) ->
+          cb.greaterThan(cb.length(root.get("number1")), 4)
+      );
+    }
 
-          // 통화내용(q) 키워드 필터
-          if (q != null && !q.isBlank()) {
-            return dto.getCallStatus() != null && dto.getCallStatus().contains(q);
-          }
-          return true;
-        })
-        .collect(Collectors.toList());
+    // 3) q 필터: callStatus에 키워드 포함
+    if (q != null && !q.isBlank()) {
+      String pattern = "%" + q + "%";
+      spec = spec.and((root, query, cb) ->
+          cb.like(root.get("callStatus"), pattern)
+      );
+    }
 
-    // 3) PageImpl으로 감싸서 반환
-    return new PageImpl<>(filtered, pageable, filtered.size());
+    // 4) 페이징 조회
+    Page<TrecordEntity> page = repo.findAll(spec, pageable);
+    return page.map(this::toDto);
   }
+
 
   @Override
   @Transactional(readOnly = true)
