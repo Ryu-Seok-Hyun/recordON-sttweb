@@ -13,6 +13,7 @@ import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -135,7 +136,7 @@ public class TmemberController {
 
     // 6) 임시 비밀번호 사용 중인지 판단
     boolean isTemp = passwordEncoder.matches("1234", user.getUserPass());
-    info.setChangePass(isTemp);
+    info.setMustChangePassword(isTemp);
 
     // 7) 응답 맵 구성
     Map<String, Object> res = new HashMap<>();
@@ -158,19 +159,53 @@ public class TmemberController {
   }
 
 
-  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "비밀번호 초기화 수행")
+  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "단일 초기화")
   @PutMapping("/{memberSeq}/changpass")
   public ResponseEntity<String> resetPassword(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-      @PathVariable("memberSeq") Integer memberSeq
+      @PathVariable Integer memberSeq
   ) {
     Info me = requireLogin(authHeader);
     if (!"0".equals(me.getUserLevel())) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
     }
     svc.resetPassword(memberSeq, "1234", me.getUserId());
-    return ResponseEntity.ok("비밀번호가 초기화되었습니다. 비밀번호(1234)로 로그인 후 변경이 필요합니다.");
+    return ResponseEntity.ok("사용자 " + memberSeq + " 비밀번호가 초기화되었습니다. 기본(1234)로 로그인 후 변경하세요.");
   }
+
+  // (1) 여러 명 동시 초기화
+  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "여러 명 동시 초기화")
+  @PutMapping("/changpass/bulk")
+  public ResponseEntity<String> resetPasswordsBulk(
+      @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+      @RequestBody List<Integer> memberSeqs
+  ) {
+    Info me = requireLogin(authHeader);
+    if (!"0".equals(me.getUserLevel())) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
+    }
+    svc.resetPasswords(memberSeqs, "1234", me.getUserId());
+    return ResponseEntity.ok(
+        "사용자 " + memberSeqs + "의 비밀번호가 모두 초기화되었습니다. 기본(1234)로 로그인 후 변경하세요."
+    );
+  }
+
+  // (2) 전체 초기화
+  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "전체 사용자 초기화")
+  @PutMapping("/changpass/all")
+  public ResponseEntity<String> resetAllPasswords(
+      @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader
+  ) {
+    Info me = requireLogin(authHeader);
+    if (!"0".equals(me.getUserLevel())) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
+    }
+    svc.resetAllPasswords("1234", me.getUserId());
+    return ResponseEntity.ok(
+        "전체 사용자 비밀번호가 초기화되었습니다. 기본(1234)로 로그인 후 변경하세요."
+    );
+  }
+
 
   @LogActivity(type = "member", activity = "로그아웃")
   @PostMapping("/logout")

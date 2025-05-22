@@ -30,6 +30,10 @@ public class TmemberDto {
     private String  udtime;
     private String  reguserId;
 
+    /** 초기화된 비밀번호 사용 중인지 표시 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean mustChangePassword;
+
     /** JSON에는 role_seq로 직렬화 */
     @JsonProperty("role_seq")
     private Integer roleSeq;

@@ -332,7 +332,7 @@ public class TmemberServiceImpl implements TmemberService {
         "사용자를 찾을 수 없습니다 (number=" + number + ")");
   }
 
-  /** 비밀번호 초기화 */
+  /** 단일 사용자 비밀번호 초기화 */
   @Override
   @Transactional
   public void resetPassword(Integer memberSeq, String rawPassword, String operatorId) {
@@ -340,5 +340,27 @@ public class TmemberServiceImpl implements TmemberService {
         .orElseThrow(() -> new ResourceNotFoundException("사용자를 찾을 수 없습니다: " + memberSeq));
     e.setUserPass(passwordEncoder.encode(rawPassword));
     repo.save(e);
+  }
+
+  /** 비밀번호 초기화 */
+  @Override
+  @Transactional
+  public void resetPasswords(List<Integer> memberSeqs, String rawPassword, String operatorId) {
+    for (Integer seq : memberSeqs) {
+      TmemberEntity e = repo.findById(seq)
+          .orElseThrow(() -> new ResourceNotFoundException("사용자를 찾을 수 없습니다: " + seq));
+      e.setUserPass(passwordEncoder.encode(rawPassword));
+      repo.save(e);
+    }
+  }
+
+  @Override
+  @Transactional
+  public void resetAllPasswords(String rawPassword, String operatorId) {
+    List<TmemberEntity> all = repo.findAll();
+    for (TmemberEntity e : all) {
+      e.setUserPass(passwordEncoder.encode(rawPassword));
+    }
+    repo.saveAll(all);
   }
 }

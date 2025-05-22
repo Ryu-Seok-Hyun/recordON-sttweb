@@ -47,4 +47,9 @@ public interface TmemberService {
 
     // 🔥 추가: branchSeq → branchName 조회
     String getBranchNameBySeq(Integer branchSeq);
+
+    void resetPasswords(List<Integer> memberSeqs, String rawPassword, String operatorId);
+
+    /** 전체 초기화 */
+    void resetAllPasswords(String rawPassword, String operatorId);
 }
