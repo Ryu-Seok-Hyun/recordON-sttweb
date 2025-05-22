@@ -1,6 +1,7 @@
 package com.sttweb.sttweb.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.sttweb.sttweb.entity.TbranchEntity;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -40,5 +41,14 @@ public class TbranchDto {
 //  private Integer mailDiscd; // 메일 전송 여부
 //  private String mailManager; // 메일 관리자ID
 //  private String mailAddress; // 메일주소
+
+
+  public static TbranchDto fromEntity(TbranchEntity e) {
+    return TbranchDto.builder()
+        .branchSeq(e.getBranchSeq())
+        .companyName(e.getCompanyName())
+        .pIp(e.getPIp())
+        .build();
+  }
 }
 

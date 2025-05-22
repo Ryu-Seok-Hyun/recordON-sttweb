@@ -10,6 +10,7 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class TrecordController {
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
   private final PermissionService permService;
+
 
   private String extractToken(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {

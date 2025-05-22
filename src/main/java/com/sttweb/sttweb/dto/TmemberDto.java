@@ -1,15 +1,12 @@
+// src/main/java/com/sttweb/sttweb/dto/TmemberDto.java
 package com.sttweb.sttweb.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sttweb.sttweb.entity.TmemberEntity;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import java.util.List;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 public class TmemberDto {
 
@@ -36,6 +33,10 @@ public class TmemberDto {
     /** JSON에는 role_seq로 직렬화 */
     @JsonProperty("role_seq")
     private Integer roleSeq;
+
+    /** 임시 비밀번호 사용 중인지 표시 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Boolean ChangePass;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String token;
@@ -70,12 +71,25 @@ public class TmemberDto {
   @NoArgsConstructor
   @AllArgsConstructor
   public static class SignupRequest {
+    @NotBlank(message = "userId를 입력하세요.")
     private String userId;
+
+    @NotBlank(message = "password를 입력하세요.")
+    @Pattern(
+        regexp  = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$",
+        message = "비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다."
+    )
     private String userPass;
+
+    @NotNull(message = "branchSeq를 입력하세요.")
     private Integer branchSeq;
+
     private Integer employeeId;
+
+    @NotBlank(message = "number를 입력하세요.")
     private String number;
 
+    @NotBlank(message = "userLevel을 입력하세요.")
     /** 필수: "0"=본사 관리자, "1"=지사 관리자, "2"=지사 일반 유저 */
     private String userLevel;
 
@@ -95,6 +109,7 @@ public class TmemberDto {
   public static class LoginRequest {
     private String userId;
     private String userPass;
+    private String targetDomain;
   }
 
   /**
@@ -118,30 +133,21 @@ public class TmemberDto {
     private boolean active;
   }
 
-
-  @Data
-  @NoArgsConstructor
-  @AllArgsConstructor
-  public static class RoleChangeRequest {
-    private Integer roleSeq;
-  }
-
-
+  /**
+   * 업데이트 요청용 DTO
+   */
   @Data
   @NoArgsConstructor
   @AllArgsConstructor
   public static class UpdateRequest {
-    @NotNull(message = "내선번호(number)는 필수입니다.")
+    @NotBlank(message = "내선번호(number)는 필수입니다.")
     private String number;
-
     private Integer branchSeq;
     private Integer employeeId;
     private Integer roleSeq;
     private String  userLevel;
-
     private Boolean active;
     private String oldPassword;
     private String newPassword;
   }
-
 }

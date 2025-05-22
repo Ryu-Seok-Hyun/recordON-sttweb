@@ -1,4 +1,4 @@
-package com.sttweb.sttweb.service.impl;
+package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TactivitylogDto;
 import com.sttweb.sttweb.entity.TactivitylogEntity;
@@ -125,25 +125,36 @@ public class TactivitylogServiceImpl implements TactivitylogService {
 
     // 4) 검색필드 + 키워드 필터
     if (searchField != null && !searchField.isBlank()
-        && keyword != null && !keyword.isBlank()) {
+        && keyword    != null && !keyword.isBlank()) {
+      String q       = keyword.trim();
       switch (searchField) {
         case "userId":
-        case "contents":
-          spec = spec.and(ActivityLogSpecification.containsField(searchField, keyword));
-          break;
-        case "activity":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", keyword));
+          spec = spec.and(ActivityLogSpecification.containsField("userId", q));
           break;
         case "ip":
-          spec = spec.and(ActivityLogSpecification.ipLike(keyword));
+          spec = spec.and(ActivityLogSpecification.ipLike(q));
+          break;
+        case "activity":
+          spec = spec.and(ActivityLogSpecification.containsField("activity", q));
+          break;
+        case "contents":
+          spec = spec.and(ActivityLogSpecification.containsField("contents", q));
+          break;
+        case "activityContent":
+          // activity OR contents
+          spec = spec.and(
+              ActivityLogSpecification.containsField("activity", q)
+                  .or(ActivityLogSpecification.containsField("contents", q))
+          );
           break;
         default:
-          // 무시
+          // ALL 혹은 미지정 시 필터 없음
+          break;
       }
     }
 
     return repository.findAll(spec, pageable)
-        .map(entity -> toDto(entity));
+        .map(this::toDto);
   }
 
   /** Entity → DTO 변환 헬퍼 */

@@ -4,6 +4,7 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.repository.TbranchRepository;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TbranchServiceImpl implements TbranchService {
   private final TbranchRepository repo;
+  private static final String PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$";
 
   private TbranchDto toDto(TbranchEntity e) {
     return TbranchDto.builder()
@@ -48,6 +50,17 @@ public class TbranchServiceImpl implements TbranchService {
         .map(this::toDto);
   }
 
+  @Override
+  public TbranchDto findByPublicIp(String ip) {
+    return repo.findBypIp(ip)
+        .map(TbranchDto::fromEntity)
+        .orElseThrow(() -> new IllegalArgumentException("해당 IP에 해당하는 지사가 없습니다: " + ip));
+  }
+
+  @Override
+  public Optional<TbranchEntity> findBypIp(String pIp) {
+    return repo.findBypIp(pIp);
+  }
 
   @Override
   @Transactional(readOnly = true)

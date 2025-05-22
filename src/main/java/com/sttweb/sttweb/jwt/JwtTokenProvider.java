@@ -1,37 +1,43 @@
+// ✅ 변경사항 요약:
+// 1. IP 기반 조회 시 IPv6 로컬주소 처리 추가
+// 2. JWT 유효시간 기본값을 12시간으로 연장 (JwtTokenProvider 수정)
+// 3. 토큰 생성 시 branchName을 포함해 응답 JSON에서 redirectUrl 제공
+
+// === JwtTokenProvider.java ===
 package com.sttweb.sttweb.jwt;
 
 import io.jsonwebtoken.*;
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Base64;
 import java.util.Date;
 
-/**
- * JWT 토큰 생성 및 파싱을 담당하는 컴포넌트
- */
+@Slf4j
 @Component
 public class JwtTokenProvider {
   @Value("${jwt.secret}")
   private String secretKey;
 
-  @Value("${jwt.expiration.time}")
+  @Value("${jwt.expiration.time:43200000}") // 기본 12시간
   private long validityInMs;
 
   @PostConstruct
   protected void init() {
-    // Base64로 인코딩
     secretKey = Base64.getEncoder().encodeToString(secretKey.getBytes());
   }
 
-  /**
-   * 토큰 생성 (Subject: userId, Claim: roles)
-   */
-  public String createToken(String userId, String roles) {
+  public String getUserLevel(String token) {
+    return getRoles(token);
+  }
+
+  public String createToken(String userId, String userLevel, Integer branchSeq) {
     Claims claims = Jwts.claims().setSubject(userId);
-    claims.put("roles", roles);
-    Date now    = new Date();
+    claims.put("roles", userLevel);
+    claims.put("branchSeq", branchSeq);
+    Date now = new Date();
     Date expiry = new Date(now.getTime() + validityInMs);
 
     return Jwts.builder()
@@ -42,44 +48,27 @@ public class JwtTokenProvider {
         .compact();
   }
 
-  /**
-   * 토큰에서 userId 추출
-   */
   public String getUserId(String token) {
-    return Jwts.parser()
-        .setSigningKey(secretKey)
-        .parseClaimsJws(token)
-        .getBody()
-        .getSubject();
+    return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().getSubject();
   }
 
-  /**
-   * 토큰에서 roles (userLevel) 추출
-   */
   public String getRoles(String token) {
-    return Jwts.parser()
-        .setSigningKey(secretKey)
-        .parseClaimsJws(token)
-        .getBody()
-        .get("roles", String.class);
+    return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().get("roles", String.class);
   }
 
-  /**
-   * JWT 토큰에서 userLevel과 동일하게 roles를 반환
-   */
-  public String getUserLevel(String token) {
-    return getRoles(token);
+  public Integer getBranchSeq(String token) {
+    return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().get("branchSeq", Integer.class);
   }
 
-  /**
-   * 토큰 유효성 검사
-   */
   public boolean validateToken(String token) {
     try {
       Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token);
       return true;
+    } catch (ExpiredJwtException e) {
+      log.warn("JWT 만료됨", e);
     } catch (JwtException | IllegalArgumentException e) {
-      return false;
+      log.warn("JWT 유효하지 않음", e);
     }
+    return false;
   }
 }

@@ -17,32 +17,43 @@ public interface TrecordRepository
   Page<TrecordEntity> findByNumber2(String number2, Pageable pageable);
   Page<TrecordEntity> findByNumber1OrNumber2(String number1, String number2, Pageable pageable);
 
+  /**
+   * @param num1    첫 번째 번호 필터 (null 이면 무시)
+   * @param num2    두 번째 번호 필터 (null 이면 무시)
+   * @param inbound IN/OUT 구분 (null=ALL)
+   * @param isExt   내선(EXT)=true, 전화번호(PHONE)=false, ALL=null
+   * @param q       검색어 (null 이면 무시)
+   * @param start   시작시간 (null 이면 무시)
+   * @param end     종료시간 (null 이면 무시)
+   */
   @Query("""
     select t
       from TrecordEntity t
-     where (:num1    is null or t.number1    = :num1)
-       and (:num2    is null or t.number2    = :num2)
+     where (:num1    is null or t.number1 = :num1)
+       and (:num2    is null or t.number2 = :num2)
        and (:inbound is null 
             or t.ioDiscdVal = case when :inbound = true then '수신' else '발신' end)
        and (
-            :isExt is null
-         or ( :isExt = true  and (
-                (t.ioDiscdVal = '수신' and length(t.number2) <= 4)
-             or (t.ioDiscdVal = '발신' and length(t.number1) <= 4)
-             ))
-         or ( :isExt = false and (
-                (t.ioDiscdVal = '수신' and length(t.number1) > 4)
-             or (t.ioDiscdVal = '발신' and length(t.number2) > 4)
-             ))
+            :q is null
+         or (
+              (:isExt is null)
+           and (t.callStatus like concat('%',:q,'%')
+             or t.number1    like concat('%',:q,'%')
+             or t.number2    like concat('%',:q,'%'))
+          )
+         or (
+              :isExt = true
+           and (t.callStatus like concat('%',:q,'%')
+             or t.number1    like concat('%',:q,'%'))
+          )
+         or (
+              :isExt = false
+           and (t.callStatus like concat('%',:q,'%')
+             or t.number2    like concat('%',:q,'%'))
+          )
        )
        and (:start is null or t.callStartDateTime >= :start)
        and (:end   is null or t.callEndDateTime   <= :end)
-       and (
-            :q is null
-         or t.callStatus like concat('%', :q, '%')
-         or t.number1    like concat('%', :q, '%')
-         or t.number2    like concat('%', :q, '%')
-       )
   """)
   Page<TrecordEntity> search(
       @Param("num1")    String        num1,
@@ -54,4 +65,5 @@ public interface TrecordRepository
       @Param("end")     LocalDateTime end,
       Pageable                    pageable
   );
+
 }

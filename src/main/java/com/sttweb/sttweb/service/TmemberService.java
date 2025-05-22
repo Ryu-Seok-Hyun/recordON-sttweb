@@ -31,26 +31,20 @@ public interface TmemberService {
     Info getMyInfoByMemberSeq(Integer memberSeq);
     List<Info> getAllMembers();
 
-    // === 지사 관리자 전용 ===
-    /** 해당 지점 사용자만 페이징 조회 */
+    // 지사 관리자 전용
     Page<Info> listUsersInBranch(Integer branchSeq, Pageable pageable);
-
-    /** 지사 관리자 전용 검색 */
     Page<Info> searchUsersInBranch(String keyword, Integer branchSeq, Pageable pageable);
 
-    /** 같은 지점 내에 동일 userId 존재 여부 검사 */
     boolean existsUserInBranch(String userId, Integer branchSeq);
-
     boolean existsByUserId(String userId);
 
-    Info updateMemberInfo(
-        Integer memberSeq,
-        UpdateRequest req,
-        Integer updaterSeq,
-        String updaterId
-    );
-
+    Info updateMemberInfo(Integer memberSeq, UpdateRequest req, Integer updaterSeq, String updaterId);
     Integer getMemberSeqByNumber(String number);
-
     Info getInfoByMemberSeq(Integer memberSeq);
+
+    // 🔥 추가: 비밀번호 초기화
+    void resetPassword(Integer memberSeq, String rawPassword, String operatorId);
+
+    // 🔥 추가: branchSeq → branchName 조회
+    String getBranchNameBySeq(Integer branchSeq);
 }

@@ -31,8 +31,14 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TrecordServiceImpl implements TrecordService {
 
-  @Value("${app.audio.base-dir:\\\\192.168.55.180\\RecOnData}")
+// 태경씨 임시 청취 배포후 삭제.
+  @Value("${audio.base-directory}")
   private String audioBaseDir;
+
+
+  // 상대경로
+//  @Value("${app.audio.base-dir:\\\\192.168.55.180\\RecOnData}")
+//  private String audioBaseDir;
 
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
@@ -307,4 +313,6 @@ public class TrecordServiceImpl implements TrecordService {
           "파일 URL 생성 실패: " + full, ex);
     }
   }
+
+
 }

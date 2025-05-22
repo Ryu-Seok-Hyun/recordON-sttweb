@@ -2,6 +2,8 @@
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TbranchDto;
+import com.sttweb.sttweb.entity.TbranchEntity;
+import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -22,4 +24,8 @@ public interface TbranchService {
   void changeStatus(Integer branchSeq, boolean active);
 
   Page<TbranchDto> search(String keyword, Pageable pageable);
+
+  TbranchDto findByPublicIp(String ip);
+
+  Optional<TbranchEntity> findBypIp(String pIp);
 }
