@@ -25,27 +25,29 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-        // 1) stateless + CSRF off
+
         .csrf(csrf -> csrf.disable())
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-        // 2) URL별 권한 설정
+
         .authorizeHttpRequests(auth -> auth
             .requestMatchers(
                 "/api/members/signup",
                 "/api/members/login",
-                "/api/members/logout"
+                "/api/members/logout",
+                "/api/user-permissions/**",
+                "/api/test/**"
             ).permitAll()
             .anyRequest().authenticated()
         )
 
-        // 3) JWT 필터 등록
+        // JWT 필터 등록
         .addFilterBefore(
             new JwtAuthenticationFilter(jwtTokenProvider),
             UsernamePasswordAuthenticationFilter.class
         )
 
-        // 4) 401/403 메시지 커스터마이징
+        // 401/403 메시지 커스터마이징
         .exceptionHandling(ex -> ex
             .authenticationEntryPoint((req, res, e) -> {
               res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

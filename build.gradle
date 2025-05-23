@@ -40,15 +40,23 @@ dependencies {
 	runtimeOnly 'org.mariadb.jdbc:mariadb-java-client'
 	annotationProcessor 'org.projectlombok:lombok'
 	providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-// 모든 Java 컴파일 작업에 -parameters 플래그를 추가
+bootWar {
+	enabled = true
+	archiveFileName = 'sttweb.war'
+}
+
+//  main class 설정 (Spring Boot 3.x)
+springBoot {
+	mainClass = 'com.sttweb.sttweb.SttwebApplication'
+}
+
 tasks.withType(JavaCompile) {
 	options.encoding = 'UTF-8'
 	options.compilerArgs += ['-parameters']
 }
-
-

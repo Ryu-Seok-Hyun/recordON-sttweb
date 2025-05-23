@@ -1,6 +1,7 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.UserPermission;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,4 +27,6 @@ public interface UserPermissionRepository extends JpaRepository<UserPermission, 
       String targetUserId,
       Integer permLevel
   );
+
+  List<UserPermission> findByGranteeUserId(String granteeUserId);
 }

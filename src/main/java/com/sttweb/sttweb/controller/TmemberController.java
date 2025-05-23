@@ -3,6 +3,7 @@ package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.TmemberDto.LoginRequest;
+import com.sttweb.sttweb.dto.TmemberDto.PasswordChangeRequest;
 import com.sttweb.sttweb.dto.TmemberDto.SignupRequest;
 import com.sttweb.sttweb.dto.TmemberDto.StatusChangeRequest;
 import com.sttweb.sttweb.dto.TmemberDto.UpdateRequest;
@@ -156,6 +157,25 @@ public class TmemberController {
     }
 
     return ResponseEntity.ok(res);
+  }
+
+  /**
+   * 내 비밀번호 변경
+   * PUT /api/members/password
+   * Body: { "oldPassword": "...", "newPassword": "..." }
+   */
+  @LogActivity(type = "member", activity = "비밀번호 변경", contents = "내 비밀번호 변경")
+  @PutMapping("/password")
+  public ResponseEntity<String> changeMyPassword(
+      @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+      @RequestBody PasswordChangeRequest req
+  ) {
+    // 1) 로그인 검사
+    Info me = requireLogin(authHeader);
+    // 2) 서비스 호출
+    svc.changePassword(me.getMemberSeq(), req.getOldPassword(), req.getNewPassword());
+    // 3) 응답
+    return ResponseEntity.ok("비밀번호가 성공적으로 변경되었습니다.");
   }
 
 

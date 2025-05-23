@@ -309,6 +309,28 @@ public class TmemberServiceImpl implements TmemberService {
     return dto;
   }
 
+  /** 내 비밀번호 변경 */
+  @Override
+  @Transactional
+  public void changePassword(Integer memberSeq, String oldPassword, String newPassword) {
+    TmemberEntity e = repo.findById(memberSeq)
+        .orElseThrow(() -> new ResourceNotFoundException("사용자를 찾을 수 없습니다: " + memberSeq));
+
+    // 1) 현재 비밀번호 검증
+    if (!passwordEncoder.matches(oldPassword, e.getUserPass())) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "현재 비밀번호가 일치하지 않습니다.");
+    }
+    // 2) 정책 검증
+    if (!newPassword.matches(PASSWORD_PATTERN)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+          "새 비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다.");
+    }
+    // 3) 변경
+    e.setUserPass(passwordEncoder.encode(newPassword));
+    repo.save(e);
+  }
+
+
   /** memberSeq 조회 (number 기반) */
   @Override
   public Integer getMemberSeqByNumber(String number) {

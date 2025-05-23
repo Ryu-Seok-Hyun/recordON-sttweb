@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
-// 다른 사람에 대한 권한 파트
 @RestController
 @RequestMapping("/api/user-permissions")
 @RequiredArgsConstructor
@@ -24,15 +23,10 @@ public class UserPermissionController {
   private final UserPermissionRepository repo;
   private final TmemberService memberSvc;
 
-  @LogActivity(
-      type     = "role",
-      activity = "부여",
-      contents = "권한부여"
-  )
+  @LogActivity(type = "role", activity = "부여", contents = "권한부여")
   @PostMapping
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<Void> grant(@RequestBody GrantDto dto) {
-    // user_id 기반으로 권한 엔티티 조회 또는 새로 생성
     UserPermission up = repo
         .findByGranteeUserIdAndTargetUserId(dto.getGranteeUserId(), dto.getTargetUserId())
         .orElseGet(UserPermission::new);
@@ -45,45 +39,46 @@ public class UserPermissionController {
     return ResponseEntity.ok().build();
   }
 
-  @LogActivity(
-      type     = "role",
-      activity = "회수",
-      contents = "권한회수"
-  )
+  @LogActivity(type = "role", activity = "회수", contents = "권한회수")
   @DeleteMapping
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<Void> revoke(@RequestBody GrantDto dto) {
-    // user_id 기반으로 바로 삭제
     repo.deleteByGranteeUserIdAndTargetUserId(dto.getGranteeUserId(), dto.getTargetUserId());
     return ResponseEntity.noContent().build();
   }
 
-  @LogActivity(
-      type     = "role",
-      activity = "조회",
-      contents = "권한조회"
-  )
-  @GetMapping("/{granteeUserId}")
+  // 공통 로직: granteeUserId에 부여된 권한만 뽑아서 DTO 리스트 생성
+  private List<UserPermissionViewDto> listByGrantee(String granteeUserId) {
+    return repo.findByGranteeUserId(granteeUserId).stream()
+        .map(up -> new UserPermissionViewDto(
+            up.getTargetUserId(),
+            up.getPermLevel() >= 2,
+            up.getPermLevel() >= 3,
+            up.getPermLevel() >= 4
+        ))
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * 1) PathVariable 방식
+   *    GET /api/user-permissions/{granteeUserId}
+   * 2) QueryParam 방식
+   *    GET /api/user-permissions?granteeUserId=...
+   * 두 방식을 하나의 메서드로 처리합니다.
+   */
+  @LogActivity(type = "role", activity = "조회", contents = "권한조회")
+  @GetMapping({"/{granteeUserId}", ""})
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<List<UserPermissionViewDto>> viewPermissions(
-      @PathVariable("granteeUserId") String granteeUserId
+      @PathVariable(value = "granteeUserId", required = false) String fromPath,
+      @RequestParam(value = "granteeUserId", required = false) String fromParam
   ) {
-    // 전체 사용자 목록을 돌며, user_id 기반으로 권한 레벨 조회
-    List<UserPermissionViewDto> list = memberSvc.getAllMembers().stream()
-        .map(m -> {
-          int level = repo
-              .findByGranteeUserIdAndTargetUserId(granteeUserId, m.getUserId())
-              .map(UserPermission::getPermLevel)
-              .orElse(1);
-          return new UserPermissionViewDto(
-              m.getUserId(),
-              level >= 2,
-              level >= 3,
-              level >= 4
-          );
-        })
-        .collect(Collectors.toList());
-
-    return ResponseEntity.ok(list);
+    // PathVariable이 우선, 없으면 QueryParam 사용
+    String granteeUserId = (fromPath != null) ? fromPath : fromParam;
+    if (granteeUserId == null || granteeUserId.isBlank()) {
+      // 파라미터가 하나도 없으면 빈 리스트 응답
+      return ResponseEntity.ok(List.of());
+    }
+    return ResponseEntity.ok(listByGrantee(granteeUserId));
   }
 }

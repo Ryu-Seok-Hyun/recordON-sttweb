@@ -42,6 +42,8 @@ public interface TmemberService {
     Integer getMemberSeqByNumber(String number);
     Info getInfoByMemberSeq(Integer memberSeq);
 
+    void changePassword(Integer memberSeq, String oldPassword, String newPassword);
+
     // 🔥 추가: 비밀번호 초기화
     void resetPassword(Integer memberSeq, String rawPassword, String operatorId);
 
