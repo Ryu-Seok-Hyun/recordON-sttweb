@@ -48,6 +48,14 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
       Pageable pageable
   );
 
+  /** 지점명으로 사용자 페이징 조회 */
+  @Query("SELECT m FROM TmemberEntity m JOIN TbranchEntity b ON m.branchSeq = b.branchSeq " +
+      " WHERE LOWER(b.companyName) LIKE LOWER(CONCAT('%', :branchName, '%'))")
+  Page<TmemberEntity> findByBranchNameContaining(
+      @Param("branchName") String branchName,
+      Pageable pageable
+  );
+
   // <<< 추가 >>> 브랜치별, userId 중복 개수 조회
   long countByUserIdAndBranchSeq(String userId, Integer branchSeq);
 }

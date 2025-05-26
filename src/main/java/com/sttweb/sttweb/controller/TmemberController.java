@@ -17,6 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
@@ -123,31 +124,25 @@ public class TmemberController {
     // 3) 인증
     TmemberEntity user = svc.login(req);
 
-    // 4) DTO 생성
+    // 4) DTO 생성 및 mustChangePassword 설정
     Info info = Info.fromEntity(user);
     if (branch != null) {
       info.setBranchName(branch.getCompanyName());
     }
+    boolean isTemp = passwordEncoder.matches("1234", user.getUserPass());
+    info.setMustChangePassword(isTemp);
 
     // 5) JWT 생성 (Info 에 있는 모든 필드를 Payload 에 담음)
     String token = jwtTokenProvider.createTokenFromInfo(info);
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    // 6) 임시 비밀번호 사용 중인지 판단
-    boolean isTemp = passwordEncoder.matches("1234", user.getUserPass());
-    info.setMustChangePassword(isTemp);
-
-    // 7) 응답 맵 구성
+    // 6) 응답 맵 구성
     Map<String, Object> res = new HashMap<>();
     res.put("user", info);
-
-    // 8) 임시 비밀번호 상태 메시지 추가
     if (isTemp) {
       res.put("message", "초기화 된 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 비밀번호를 변경하세요.");
     }
-
-    // 9) 선택적 리다이렉트 URL
     if (branch != null && branch.getPIp() != null && branch.getPPort() != null) {
       String redirectUrl = "http://" + branch.getPIp()
           + ":" + branch.getPPort()
@@ -157,6 +152,7 @@ public class TmemberController {
 
     return ResponseEntity.ok(res);
   }
+
 
 
   /**
@@ -246,32 +242,50 @@ public class TmemberController {
   @GetMapping
   public ResponseEntity<?> listOrSearchUsers(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "keyword", required = false) String keyword,
-      @RequestParam(name = "page", defaultValue = "0") int page,
-      @RequestParam(name = "size", defaultValue = "10") int size
+      @RequestParam(name = "keyword",    required = false) String keyword,
+      @RequestParam(name = "branchName", required = false) String branchName,  // ← 추가
+      @RequestParam(name = "page",       defaultValue = "0") int page,
+      @RequestParam(name = "size",       defaultValue = "10") int size
   ) {
     Info me = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);
+
     if ("0".equals(lvl)) {
-      Page<Info> p = (keyword != null && !keyword.isBlank())
-          ? svc.searchUsers(keyword.trim(), pr)
-          : svc.listAllUsers(pr);
+      Page<Info> p;
+      if (keyword != null && !keyword.isBlank()) {
+        p = svc.searchUsers(keyword.trim(), pr);
+      }
+      else if (branchName != null && !branchName.isBlank()) {
+        p = svc.searchUsersByBranchName(branchName.trim(), pr);   // ← 분기 처리
+      }
+      else {
+        p = svc.listAllUsers(pr);
+      }
       return ResponseEntity.ok(p);
     }
+
     if ("1".equals(lvl)) {
       Integer bs = me.getBranchSeq();
       if (bs == null) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body("내 지사 정보가 없습니다.");
       }
-      Page<Info> p = (keyword != null && !keyword.isBlank())
-          ? svc.searchUsersInBranch(keyword.trim(), bs, pr)
-          : svc.listUsersInBranch(bs, pr);
+      Page<Info> p;
+      if (keyword != null && !keyword.isBlank()) {
+        p = svc.searchUsersInBranch(keyword.trim(), bs, pr);
+      }
+      else if (branchName != null && !branchName.isBlank()) {
+        // 지사관리자는 자기 지점명으로 검색해도 결과가 동일하므로, 전체 조회로 처리
+        p = svc.listUsersInBranch(bs, pr);
+      }
+      else {
+        p = svc.listUsersInBranch(bs, pr);
+      }
       return ResponseEntity.ok(p);
     }
-    Page<Info> self = new org.springframework.data.domain.PageImpl<>(
-        java.util.List.of(me), pr, 1
-    );
+
+    // 일반 유저는 자기 정보만
+    Page<Info> self = new PageImpl<>(List.of(me), pr, 1);
     return ResponseEntity.ok(self);
   }
 

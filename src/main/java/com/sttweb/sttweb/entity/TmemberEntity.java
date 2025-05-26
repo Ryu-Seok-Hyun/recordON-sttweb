@@ -44,6 +44,16 @@ public class TmemberEntity {
   @Column(name = "number", nullable = false, length = 15)
   private String number;
 
+  @Column(name = "position", length = 50, nullable = true)
+  private String position;
+
+  @Column(name = "rank", length = 50, nullable = true)
+  private String rank;
+
+  @Column(name = "department", length = 50, nullable = true)
+  private String department;
+
+
   @Column(
       name = "discd",
       nullable = false,

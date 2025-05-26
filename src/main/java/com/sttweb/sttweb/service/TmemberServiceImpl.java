@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/service/impl/TmemberServiceImpl.java
 package com.sttweb.sttweb.service.impl;
 
 import com.sttweb.sttweb.dto.GrantDto;
@@ -24,7 +23,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
-
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -37,22 +35,18 @@ import java.util.stream.Collectors;
 public class TmemberServiceImpl implements TmemberService {
 
   private final TmemberRepository repo;
-  private final PasswordEncoder passwordEncoder;  // BCrypt 빈
+  private final PasswordEncoder passwordEncoder;
   private final HttpSession session;
   private final TbranchService branchSvc;
   private final PermissionService permissionService;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-  // 비밀번호 정책: 최소 8자, 영어 소문자·숫자·특수문자 각 1개 이상
   private static final String PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$";
 
-  /** 전역 userId 중복 여부 검사 */
   @Override
   public boolean existsByUserId(String userId) {
     return repo.existsByUserId(userId);
   }
 
-  /** 동일 지점에 같은 userId 가 이미 있는지 검사 */
   @Override
   public boolean existsUserInBranch(String userId, Integer branchSeq) {
     if (branchSeq == null) return false;
@@ -87,7 +81,6 @@ public class TmemberServiceImpl implements TmemberService {
       if (req.getBranchSeq() == null || branchSvc.findById(req.getBranchSeq()) == null) {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "유효한 지사번호를 지정하세요.");
       }
-      // “본사 관리자만 지사 관리자 생성 가능”
       if ("1".equals(level) && !"0".equals(creatorLevel)) {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 지사 관리자 생성 가능합니다.");
       }
@@ -114,6 +107,14 @@ public class TmemberServiceImpl implements TmemberService {
     e.setCrtime(now);
     e.setUdtime(now);
     e.setReguserId(regUserId);
+
+    e.setPosition(StringUtils.hasText(req.getPosition())
+        ? req.getPosition().trim() : null);
+    e.setRank(StringUtils.hasText(req.getRank())
+        ? req.getRank().trim() : null);
+    e.setDepartment(StringUtils.hasText(req.getDepartment())
+        ? req.getDepartment().trim() : null);
+
     repo.save(e);
   }
 
@@ -138,7 +139,6 @@ public class TmemberServiceImpl implements TmemberService {
     if (user.getDiscd() != null && user.getDiscd() == 1) {
       throw new IllegalStateException("비활성 사용자입니다.");
     }
-    // BCrypt.matches(평문, 해시) 호출
     if (!passwordEncoder.matches(req.getUserPass(), user.getUserPass())) {
       throw new IllegalArgumentException("아이디 또는 비밀번호가 틀립니다.");
     }
@@ -166,9 +166,10 @@ public class TmemberServiceImpl implements TmemberService {
     TmemberEntity e = repo.findById(memberSeq)
         .orElseThrow(() -> new ResourceNotFoundException("사용자를 찾을 수 없습니다: " + memberSeq));
     Info dto = Info.fromEntity(e);
-    if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
-      dto.setBranchName(branchSvc.findById(dto.getBranchSeq()).getCompanyName());
-    }
+    dto.setBranchName(getBranchNameBySeq(dto.getBranchSeq()));
+    dto.setPosition(e.getPosition());
+    dto.setRank(e.getRank());
+    dto.setDepartment(e.getDepartment());
     return dto;
   }
 
@@ -184,43 +185,53 @@ public class TmemberServiceImpl implements TmemberService {
     TmemberEntity e = repo.findByUserId(userId)
         .orElseThrow(() -> new ResourceNotFoundException("사용자 정보를 찾을 수 없습니다."));
     Info dto = Info.fromEntity(e);
-    if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
-      dto.setBranchName(branchSvc.findById(dto.getBranchSeq()).getCompanyName());
-    }
+    dto.setBranchName(getBranchNameBySeq(dto.getBranchSeq()));
+    dto.setPosition(e.getPosition());
+    dto.setRank(e.getRank());
+    dto.setDepartment(e.getDepartment());
     return dto;
   }
 
   /** 본사 관리자: 전체 유저 페이징 조회 */
   @Override
   public Page<Info> listAllUsers(Pageable pageable) {
-    return repo.findAll(pageable).map(this::toDtoWithBranchName);
+    return repo.findAll(pageable)
+        .map(this::toDtoWithBranchNameAndPosition);
   }
 
   /** 본사 관리자: 키워드 검색 */
   @Override
   public Page<Info> searchUsers(String keyword, Pageable pageable) {
     return repo.findByUserIdContainingOrNumberContaining(keyword, keyword, pageable)
-        .map(this::toDtoWithBranchName);
+        .map(this::toDtoWithBranchNameAndPosition);
   }
 
   /** 지사 관리자: 해당 지사 페이징 조회 */
   @Override
   public Page<Info> listUsersInBranch(Integer branchSeq, Pageable pageable) {
-    return repo.findByBranchSeq(branchSeq, pageable).map(this::toDtoWithBranchName);
+    return repo.findByBranchSeq(branchSeq, pageable)
+        .map(this::toDtoWithBranchNameAndPosition);
   }
 
   /** 지사 관리자: 지사+키워드 검색 */
   @Override
   public Page<Info> searchUsersInBranch(String keyword, Integer branchSeq, Pageable pageable) {
     return repo.findByBranchSeqAnd(branchSeq, keyword, pageable)
-        .map(this::toDtoWithBranchName);
+        .map(this::toDtoWithBranchNameAndPosition);
   }
 
-  private Info toDtoWithBranchName(TmemberEntity e) {
+  @Override
+  public Page<Info> searchUsersByBranchName(String branchName, Pageable pageable) {
+    return repo.findByBranchNameContaining(branchName, pageable)
+        .map(this::toDtoWithBranchNameAndPosition);
+  }
+
+  private Info toDtoWithBranchNameAndPosition(TmemberEntity e) {
     Info dto = Info.fromEntity(e);
-    if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
-      dto.setBranchName(branchSvc.findById(dto.getBranchSeq()).getCompanyName());
-    }
+    dto.setBranchName(getBranchNameBySeq(dto.getBranchSeq()));
+    dto.setPosition(e.getPosition());
+    dto.setRank(e.getRank());
+    dto.setDepartment(e.getDepartment());
     return dto;
   }
 
@@ -260,52 +271,49 @@ public class TmemberServiceImpl implements TmemberService {
             .memberSeq(e.getMemberSeq())
             .userId(e.getUserId())
             .number(e.getNumber())
+            .position(e.getPosition())
+            .rank(e.getRank())
+            .department(e.getDepartment())
             .build())
         .collect(Collectors.toList());
   }
 
   /** 회원정보 수정 */
   @Override
-  @Transactional(readOnly = true)
+  @Transactional
   public Info updateMemberInfo(Integer memberSeq, UpdateRequest req, Integer updaterSeq, String updaterId) {
     TmemberEntity e = repo.findById(memberSeq)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "대상 사용자가 없습니다: " + memberSeq));
 
-    // 기본 필드 수정
     e.setNumber(req.getNumber());
     if (req.getEmployeeId() != null) e.setEmployeeId(req.getEmployeeId());
-    if (req.getBranchSeq() != null) {
-      branchSvc.findById(req.getBranchSeq());
-      e.setBranchSeq(req.getBranchSeq());
-    }
+    if (req.getBranchSeq() != null) e.setBranchSeq(req.getBranchSeq());
     if (req.getRoleSeq() != null) e.setRoleSeq(req.getRoleSeq());
     if (req.getUserLevel() != null) e.setUserLevel(req.getUserLevel());
     if (req.getActive() != null) e.setDiscd(req.getActive() ? 0 : 1);
 
-    // 비밀번호 변경
-    boolean hasOld = StringUtils.hasText(req.getOldPassword());
-    boolean hasNew = StringUtils.hasText(req.getNewPassword());
-    if (hasOld && hasNew) {
-      String newPass = req.getNewPassword();
-      if (!newPass.matches(PASSWORD_PATTERN)) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-            "새 비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다.");
-      }
-      if (!passwordEncoder.matches(req.getOldPassword(), e.getUserPass())) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-            "현재 비밀번호가 일치하지 않습니다.");
-      }
-      e.setUserPass(passwordEncoder.encode(newPass));
-    }
 
+    if (req.getPosition() != null) {
+      e.setPosition(StringUtils.hasText(req.getPosition())
+          ? req.getPosition().trim() : null);
+    }
+    if (req.getRank() != null) {
+      e.setRank(StringUtils.hasText(req.getRank())
+          ? req.getRank().trim() : null);
+    }
+    if (req.getDepartment() != null) {
+      e.setDepartment(StringUtils.hasText(req.getDepartment())
+          ? req.getDepartment().trim() : null);
+    }
     e.setReguserId(updaterId);
     e.setUdtime(LocalDateTime.now().format(FMT));
     TmemberEntity saved = repo.save(e);
 
     Info dto = Info.fromEntity(saved);
-    if (dto.getBranchSeq() != null && dto.getBranchSeq() > 0) {
-      dto.setBranchName(branchSvc.findById(dto.getBranchSeq()).getCompanyName());
-    }
+    dto.setBranchName(getBranchNameBySeq(dto.getBranchSeq()));
+    dto.setPosition(saved.getPosition());
+    dto.setRank(saved.getRank());
+    dto.setDepartment(saved.getDepartment());
     return dto;
   }
 

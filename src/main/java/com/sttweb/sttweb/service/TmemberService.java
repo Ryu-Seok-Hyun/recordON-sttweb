@@ -54,4 +54,8 @@ public interface TmemberService {
 
     /** 전체 초기화 */
     void resetAllPasswords(String rawPassword, String operatorId);
+
+    /** 추가: 지점명으로 검색 */
+    Page<Info> searchUsersByBranchName(String branchName, Pageable pageable);
+
 }

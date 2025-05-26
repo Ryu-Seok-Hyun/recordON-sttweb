@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/dto/TmemberDto.java
 package com.sttweb.sttweb.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -7,6 +6,7 @@ import com.sttweb.sttweb.entity.TmemberEntity;
 import jakarta.validation.constraints.*;
 import java.util.List;
 import lombok.*;
+import com.sttweb.sttweb.dto.GrantDto;
 
 public class TmemberDto {
 
@@ -30,6 +30,18 @@ public class TmemberDto {
     private String  udtime;
     private String  reguserId;
 
+    /** 직책(포지션) */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String position;
+
+    /** 직급 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String rank;
+
+    /** 부서 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String department;
+
     /** 초기화된 비밀번호 사용 중인지 표시 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Boolean mustChangePassword;
@@ -37,10 +49,6 @@ public class TmemberDto {
     /** JSON에는 role_seq로 직렬화 */
     @JsonProperty("role_seq")
     private Integer roleSeq;
-
-    /** 임시 비밀번호 사용 중인지 표시 */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private Boolean ChangePass;
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String token;
@@ -64,6 +72,9 @@ public class TmemberDto {
           .udtime(e.getUdtime())
           .reguserId(e.getReguserId())
           .roleSeq(e.getRoleSeq())
+          .position(e.getPosition())
+          .rank(e.getRank())
+          .department(e.getDepartment())
           .build();
     }
   }
@@ -97,11 +108,20 @@ public class TmemberDto {
     /** 필수: "0"=본사 관리자, "1"=지사 관리자, "2"=지사 일반 유저 */
     private String userLevel;
 
-    /** 선택: 1~3 사이의 역할 번호 */
+    /** 선택: 1~4 사이의 역할 번호 */
     private Integer roleSeq;
 
     /** 선택: 회원가입 시 함께 부여할 권한 목록 */
     private List<GrantDto> grants;
+
+    /** 선택: 직책(포지션) */
+    private String position;
+
+    /** 선택: 직급 */
+    private String rank;
+
+    /** 선택: 부서 */
+    private String department;
   }
 
   /**
@@ -153,5 +173,8 @@ public class TmemberDto {
     private Boolean active;
     private String oldPassword;
     private String newPassword;
+    private String position;
+    private String rank;
+    private String department;
   }
 }

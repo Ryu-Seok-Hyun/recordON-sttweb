@@ -47,11 +47,15 @@ public class JwtTokenProvider {
     claims.put("employeeId",  info.getEmployeeId());
     claims.put("userLevel",   info.getUserLevel());
     claims.put("number",      info.getNumber());
+    claims.put("position",     info.getPosition());
+    claims.put("rank",       info.getRank());
+    claims.put("department", info.getDepartment());
     claims.put("discd",       info.getDiscd());
     claims.put("crtime",      info.getCrtime());
     claims.put("udtime",      info.getUdtime());
     claims.put("reguserId",   info.getReguserId());
     claims.put("role_seq",    info.getRoleSeq());
+    claims.put("mustChangePassword", info.getMustChangePassword());
 
     Date now    = new Date();
     Date expiry = new Date(now.getTime() + validityInMs);
