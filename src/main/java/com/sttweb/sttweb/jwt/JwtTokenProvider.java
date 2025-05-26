@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Base64;
 import java.util.Date;
+import com.sttweb.sttweb.dto.TmemberDto.Info;
 
 @Slf4j
 @Component
@@ -24,14 +25,46 @@ public class JwtTokenProvider {
   @Value("${jwt.expiration.time:43200000}") // 기본 12시간
   private long validityInMs;
 
+
   @PostConstruct
   protected void init() {
     secretKey = Base64.getEncoder().encodeToString(secretKey.getBytes());
   }
-
   public String getUserLevel(String token) {
     return getRoles(token);
   }
+
+  /**
+   * 사용자 Info 객체에 있는 모든 필드를 claim 으로 넣고 토큰을 생성합니다.
+   */
+  // Info 객체 타입으로 선언
+  public String createTokenFromInfo(Info info) {
+    Claims claims = Jwts.claims().setSubject(info.getUserId());
+    // 모든 필드 claims 에 담기
+    claims.put("memberSeq",   info.getMemberSeq());
+    claims.put("branchSeq",   info.getBranchSeq());
+    claims.put("branchName",  info.getBranchName());
+    claims.put("employeeId",  info.getEmployeeId());
+    claims.put("userLevel",   info.getUserLevel());
+    claims.put("number",      info.getNumber());
+    claims.put("discd",       info.getDiscd());
+    claims.put("crtime",      info.getCrtime());
+    claims.put("udtime",      info.getUdtime());
+    claims.put("reguserId",   info.getReguserId());
+    claims.put("role_seq",    info.getRoleSeq());
+
+    Date now    = new Date();
+    Date expiry = new Date(now.getTime() + validityInMs);
+
+    return Jwts.builder()
+        .setClaims(claims)
+        .setIssuedAt(now)
+        .setExpiration(expiry)
+        .signWith(SignatureAlgorithm.HS256, secretKey)
+        .compact();
+  }
+
+
 
   public String createToken(String userId, String userLevel, Integer branchSeq) {
     Claims claims = Jwts.claims().setSubject(userId);

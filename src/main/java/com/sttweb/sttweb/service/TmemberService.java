@@ -44,10 +44,10 @@ public interface TmemberService {
 
     void changePassword(Integer memberSeq, String oldPassword, String newPassword);
 
-    // 🔥 추가: 비밀번호 초기화
+    //  추가: 비밀번호 초기화
     void resetPassword(Integer memberSeq, String rawPassword, String operatorId);
 
-    // 🔥 추가: branchSeq → branchName 조회
+    // 추가: branchSeq → branchName 조회
     String getBranchNameBySeq(Integer branchSeq);
 
     void resetPasswords(List<Integer> memberSeqs, String rawPassword, String operatorId);

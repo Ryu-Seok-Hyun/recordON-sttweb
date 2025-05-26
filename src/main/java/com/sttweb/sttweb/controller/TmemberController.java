@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+
 @RestController
 @RequestMapping("/api/members")
 @RequiredArgsConstructor
@@ -104,7 +105,6 @@ public class TmemberController {
     String rawIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
         .filter(h -> !h.isBlank())
         .orElse(request.getRemoteAddr());
-
     if ("::1".equals(rawIp) || "0:0:0:0:0:0:0:1".equals(rawIp)) {
       rawIp = "127.0.0.1";
     }
@@ -123,17 +123,16 @@ public class TmemberController {
     // 3) 인증
     TmemberEntity user = svc.login(req);
 
-    // 4) JWT 생성
-    String token = jwtTokenProvider.createToken(
-        user.getUserId(), user.getUserLevel(), user.getBranchSeq());
-
-    // 5) DTO 구성
+    // 4) DTO 생성
     Info info = Info.fromEntity(user);
-    info.setToken(token);
-    info.setTokenType("Bearer");
     if (branch != null) {
       info.setBranchName(branch.getCompanyName());
     }
+
+    // 5) JWT 생성 (Info 에 있는 모든 필드를 Payload 에 담음)
+    String token = jwtTokenProvider.createTokenFromInfo(info);
+    info.setToken(token);
+    info.setTokenType("Bearer");
 
     // 6) 임시 비밀번호 사용 중인지 판단
     boolean isTemp = passwordEncoder.matches("1234", user.getUserPass());
@@ -158,6 +157,7 @@ public class TmemberController {
 
     return ResponseEntity.ok(res);
   }
+
 
   /**
    * 내 비밀번호 변경
