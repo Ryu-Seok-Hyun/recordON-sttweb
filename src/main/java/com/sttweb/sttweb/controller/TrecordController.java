@@ -10,6 +10,9 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
@@ -26,6 +29,7 @@ import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import com.sttweb.sttweb.dto.RecordSearchResponseDto;
 
 @RestController
 @RequestMapping("/api/records")
@@ -60,15 +64,11 @@ public class TrecordController {
   }
 
   /**
-   * 전체 녹취 + 필터링
-   * direction=ALL|IN|OUT,
-   * numberKind=ALL|PHONE|EXT,
-   * q=검색어,
-   * start/end = yyyy-MM-dd HH:mm
+   * 전체 녹취 + 필터링 + IN/OUT 카운트
    */
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
-  public ResponseEntity<Page<TrecordDto>> listAll(
+  public ResponseEntity<Map<String,Object>> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
       @RequestParam(name = "page", defaultValue = "0") int page,
       @RequestParam(name = "size", defaultValue = "10") int size,
@@ -86,14 +86,50 @@ public class TrecordController {
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     PageRequest pr = PageRequest.of(page, size);
 
+    // 1) 페이징된 데이터 조회
     Page<TrecordDto> paged = (roleSeq < 2)
-        ? recordSvc.search(me.getNumber(), me.getNumber(),
-        direction, numberKind, q, start, end, pr)
-        : recordSvc.search(null, null,
-            direction, numberKind, q, start, end, pr);
+        ? recordSvc.search(me.getNumber(), me.getNumber(), direction, numberKind, q, start, end, pr)
+        : recordSvc.search(null, null,                  direction, numberKind, q, start, end, pr);
 
-    return ResponseEntity.ok(paged);
+    // 2) IN/OUT 별 총건수 조회
+    long inCount  = recordSvc.search(
+        roleSeq<2 ? me.getNumber() : null,
+        roleSeq<2 ? me.getNumber() : null,
+        "IN", numberKind, q, start, end,
+        PageRequest.of(0,1)
+    ).getTotalElements();
+
+    long outCount = recordSvc.search(
+        roleSeq<2 ? me.getNumber() : null,
+        roleSeq<2 ? me.getNumber() : null,
+        "OUT", numberKind, q, start, end,
+        PageRequest.of(0,1)
+    ).getTotalElements();
+
+    // 3) 응답 본문 조립 (LinkedHashMap으로 삽입 순서 유지)
+    Map<String,Object> body = new LinkedHashMap<>();
+    // 1) 실제 데이터
+    body.put("content",          paged.getContent());
+    // 2) 페이징 메타
+    body.put("totalElements",    paged.getTotalElements());
+    body.put("totalPages",       paged.getTotalPages());
+    body.put("size",             paged.getSize());
+    body.put("number",           paged.getNumber());
+    body.put("numberOfElements", paged.getNumberOfElements());
+    body.put("empty",            paged.isEmpty());
+    // 3) IN/OUT 카운트
+    body.put("inboundCount",     inCount);
+    body.put("outboundCount",    outCount);
+    // 4) 첫/마지막 여부
+    body.put("first",            paged.isFirst());
+    body.put("last",             paged.isLast());
+    // 5) 이제 맨 아래에 pageable, sort
+    body.put("pageable",         paged.getPageable());
+    body.put("sort",             paged.getSort());
+
+    return ResponseEntity.ok(body);
   }
+
 
   /** 번호 검색 (legacy) */
   @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
