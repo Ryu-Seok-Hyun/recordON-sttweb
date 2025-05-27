@@ -1,13 +1,9 @@
-// ✅ 변경사항 요약:
-// 1. IP 기반 조회 시 IPv6 로컬주소 처리 추가
-// 2. JWT 유효시간 기본값을 12시간으로 연장 (JwtTokenProvider 수정)
-// 3. 토큰 생성 시 branchName을 포함해 응답 JSON에서 redirectUrl 제공
-
-// === JwtTokenProvider.java ===
 package com.sttweb.sttweb.jwt;
 
 import io.jsonwebtoken.*;
+import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import java.security.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -19,19 +15,23 @@ import com.sttweb.sttweb.dto.TmemberDto.Info;
 @Slf4j
 @Component
 public class JwtTokenProvider {
-  @Value("${jwt.secret}")
-  private String secretKey;
 
-  @Value("${jwt.expiration.time:43200000}") // 기본 12시간
-  private long validityInMs;
+  private Key secretKey;
+
+  @Value("${jwt.secret}")
+  private String secret;
+
+  @Value("${jwt.expiration.time}")
+  private long validityInMs;             // 일반 JWT 유효시간 (ms)
+
+  private static final long REAUTH_EXPIRE_MS = 30 * 60 * 1000L; // 재인증: 30분
 
 
   @PostConstruct
   protected void init() {
-    secretKey = Base64.getEncoder().encodeToString(secretKey.getBytes());
-  }
-  public String getUserLevel(String token) {
-    return getRoles(token);
+    // base64 디코딩된 시크릿 키로 HMAC-SHA256 키 생성
+    byte[] keyBytes = io.jsonwebtoken.io.Decoders.BASE64.decode(secret);
+    this.secretKey    = Keys.hmacShaKeyFor(keyBytes);
   }
 
   /**
@@ -64,42 +64,36 @@ public class JwtTokenProvider {
         .setClaims(claims)
         .setIssuedAt(now)
         .setExpiration(expiry)
-        .signWith(SignatureAlgorithm.HS256, secretKey)
+        .signWith(secretKey, SignatureAlgorithm.HS256)
         .compact();
   }
 
 
 
-  public String createToken(String userId, String userLevel, Integer branchSeq) {
-    Claims claims = Jwts.claims().setSubject(userId);
-    claims.put("roles", userLevel);
-    claims.put("branchSeq", branchSeq);
-    Date now = new Date();
-    Date expiry = new Date(now.getTime() + validityInMs);
+  /**
+   * 2) 재인증용 토큰: Payload에는 최소한의 subject(userId) 와
+   *    reauth=true flag 만 담고, 만료시간 = now + REAUTH_EXPIRE_MS (30분)
+   */
+  public String createReAuthToken(String userId) {
+    Date now    = new Date();
+    Date expiry = new Date(now.getTime() + REAUTH_EXPIRE_MS);
 
     return Jwts.builder()
-        .setClaims(claims)
+        .setSubject(userId)
+        .claim("reauth", true)
         .setIssuedAt(now)
         .setExpiration(expiry)
-        .signWith(SignatureAlgorithm.HS256, secretKey)
+        .signWith(secretKey, SignatureAlgorithm.HS256)
         .compact();
   }
 
-  public String getUserId(String token) {
-    return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().getSubject();
-  }
-
-  public String getRoles(String token) {
-    return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().get("roles", String.class);
-  }
-
-  public Integer getBranchSeq(String token) {
-    return Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token).getBody().get("branchSeq", Integer.class);
-  }
-
+  /** 일반 토큰 유효성 검사 */
   public boolean validateToken(String token) {
     try {
-      Jwts.parser().setSigningKey(secretKey).parseClaimsJws(token);
+      Jwts.parserBuilder()
+          .setSigningKey(secretKey)
+          .build()
+          .parseClaimsJws(token);
       return true;
     } catch (ExpiredJwtException e) {
       log.warn("JWT 만료됨", e);
@@ -107,5 +101,49 @@ public class JwtTokenProvider {
       log.warn("JWT 유효하지 않음", e);
     }
     return false;
+  }
+
+  /** 재인증용 토큰인지 확인하며, 만료되지 않았어야 함 */
+  public boolean validateReAuthToken(String token) {
+    try {
+      Claims claims = Jwts.parserBuilder()
+          .setSigningKey(secretKey)
+          .build()
+          .parseClaimsJws(token)
+          .getBody();
+      return Boolean.TRUE.equals(claims.get("reauth", Boolean.class));
+    } catch (JwtException | IllegalArgumentException e) {
+      log.warn("ReAuth 토큰 유효하지 않음", e);
+      return false;
+    }
+  }
+
+  /** 토큰에서 userId(subject) 추출 */
+  public String getUserId(String token) {
+    return Jwts.parserBuilder()
+        .setSigningKey(secretKey)
+        .build()
+        .parseClaimsJws(token)
+        .getBody()
+        .getSubject();
+  }
+
+  /** (선택) 기존 roles, branchSeq 같은 개별 claim 접근 메서드도 유지 가능합니다 */
+  public String getRoles(String token) {
+    return Jwts.parserBuilder()
+        .setSigningKey(secretKey)
+        .build()
+        .parseClaimsJws(token)
+        .getBody()
+        .get("roles", String.class);
+  }
+
+  public Integer getBranchSeq(String token) {
+    return Jwts.parserBuilder()
+        .setSigningKey(secretKey)
+        .build()
+        .parseClaimsJws(token)
+        .getBody()
+        .get("branchSeq", Integer.class);
   }
 }

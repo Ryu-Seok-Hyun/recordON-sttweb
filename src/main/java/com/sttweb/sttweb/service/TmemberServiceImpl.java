@@ -38,6 +38,8 @@ public class TmemberServiceImpl implements TmemberService {
   private final PasswordEncoder passwordEncoder;
   private final HttpSession session;
   private final TbranchService branchSvc;
+  private final TmemberRepository memberRepo;
+
   private final PermissionService permissionService;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
   private static final String PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$";
@@ -392,5 +394,15 @@ public class TmemberServiceImpl implements TmemberService {
       e.setUserPass(passwordEncoder.encode(rawPassword));
     }
     repo.saveAll(all);
+  }
+
+  /**
+   * DB에서 userId로 엔티티 조회 (재인증용)
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public TmemberEntity findEntityByUserId(String userId) {
+    return memberRepo.findByUserId(userId)
+        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
   }
 }

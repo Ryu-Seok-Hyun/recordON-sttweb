@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/service/TmemberService.java
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TmemberDto.Info;
@@ -57,5 +56,9 @@ public interface TmemberService {
 
     /** 추가: 지점명으로 검색 */
     Page<Info> searchUsersByBranchName(String branchName, Pageable pageable);
+
+    TmemberEntity findEntityByUserId(String userId);
+
+
 
 }

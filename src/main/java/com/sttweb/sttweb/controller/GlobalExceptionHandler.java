@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/controller/GlobalExceptionHandler.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.exception.ForbiddenException;
@@ -9,41 +8,48 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-// 예외파트
+import java.util.Collections;
+import java.util.Map;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
   @ExceptionHandler(IllegalArgumentException.class)
-  public ResponseEntity<String> handleBadCredentials(IllegalArgumentException ex) {
+  public ResponseEntity<Map<String, String>> handleBadCredentials(IllegalArgumentException ex) {
     // 로그인 실패(아이디/비번 불일치)
     return ResponseEntity
         .status(HttpStatus.UNAUTHORIZED)
-        .contentType(MediaType.TEXT_PLAIN)
-        .body(ex.getMessage());
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(Collections.singletonMap("msg", ex.getMessage()));
   }
 
   @ExceptionHandler(IllegalStateException.class)
-  public ResponseEntity<String> handleDisabledUser(IllegalStateException ex) {
+  public ResponseEntity<Map<String, String>> handleDisabledUser(IllegalStateException ex) {
     // 비활성 계정 차단
     return ResponseEntity
         .status(HttpStatus.FORBIDDEN)
-        .contentType(MediaType.TEXT_PLAIN)
-        .body(ex.getMessage());
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(Collections.singletonMap("msg", ex.getMessage()));
   }
 
   @ExceptionHandler(UnauthorizedException.class)
-  public ResponseEntity<String> handle401(UnauthorizedException ex) {
+  public ResponseEntity<Map<String, String>> handle401(UnauthorizedException ex) {
     return ResponseEntity
         .status(HttpStatus.UNAUTHORIZED)
-        .contentType(MediaType.TEXT_PLAIN)
-        .body(ex.getReason());
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(Collections.singletonMap("msg", ex.getReason()));
   }
 
   @ExceptionHandler(ForbiddenException.class)
-  public ResponseEntity<String> handle403(ForbiddenException ex) {
+  public ResponseEntity<Map<String, String>> handle403(ForbiddenException ex) {
+    String reason = ex.getReason();
+    String msg = reason.contains("재인증")
+        ? "REAUTH_REQUIRED"
+        : "ACCESS_DENIED";
+
     return ResponseEntity
         .status(HttpStatus.FORBIDDEN)
-        .contentType(MediaType.TEXT_PLAIN)
-        .body(ex.getReason());
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(Collections.singletonMap("msg", msg));
   }
 }

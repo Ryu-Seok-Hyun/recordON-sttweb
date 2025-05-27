@@ -31,9 +31,10 @@ public class UserPermission {
   @Column(name = "perm_level", nullable = false)
   private Integer permLevel;
 
-  /** 추가된 생성 시각 컬럼 */
-  @Column(name = "crtime", nullable = false, updatable = false,
+  @Column(name = "crtime",
+      nullable = false,
+      updatable = false,
+      insertable = false,
       columnDefinition = "DATETIME DEFAULT CURRENT_TIMESTAMP")
   private LocalDateTime crtime;
-
 }
