@@ -203,6 +203,17 @@ public class TrecordServiceImpl implements TrecordService {
     return toDto(e);
   }
 
+  /**
+   * 다중 번호(equal) 검색 구현
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByNumbers(List<String> numbers, Pageable pageable) {
+    return repo
+        .findByNumber1InOrNumber2In(numbers, numbers, pageable)
+        .map(this::toDto);
+  }
+
   @Override
   @Transactional
   public TrecordDto create(TrecordDto dto) {

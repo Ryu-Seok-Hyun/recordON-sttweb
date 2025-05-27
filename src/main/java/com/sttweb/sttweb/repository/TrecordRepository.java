@@ -2,6 +2,7 @@ package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TrecordEntity;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -64,6 +65,15 @@ public interface TrecordRepository
       @Param("start")   LocalDateTime start,
       @Param("end")     LocalDateTime end,
       Pageable                    pageable
+  );
+
+  /**
+   * 다중 번호(equal) 검색
+   */
+  Page<TrecordEntity> findByNumber1InOrNumber2In(
+      List<String> numbers1,
+      List<String> numbers2,
+      Pageable pageable
   );
 
 }

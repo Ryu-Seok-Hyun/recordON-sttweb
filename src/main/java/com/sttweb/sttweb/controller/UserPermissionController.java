@@ -9,6 +9,7 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.repository.UserPermissionRepository;
 import com.sttweb.sttweb.service.TmemberService;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -26,10 +27,9 @@ import java.util.stream.Collectors;
 public class UserPermissionController {
 
   private final UserPermissionRepository repo;
-  private final TmemberService           memberSvc;
-  private final JwtTokenProvider         jwtTokenProvider;  // JWT 검증용
+  private final TmemberService memberSvc;
+  private final JwtTokenProvider jwtTokenProvider;
 
-  // --- JWT 토큰 추출/검증 + 로그인된 사용자 확인 ---
   private String extractToken(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
@@ -41,16 +41,11 @@ public class UserPermissionController {
     return token;
   }
 
-  private Info getCurrentUserFromToken(String authHeader) {
-    String token  = extractToken(authHeader);
+  private Info requireLogin(String authHeader) {
+    String token = extractToken(authHeader);
     String userId = jwtTokenProvider.getUserId(token);
     return memberSvc.getMyInfoByUserId(userId);
   }
-
-  private Info requireLogin(String authHeader) {
-    return getCurrentUserFromToken(authHeader);
-  }
-  // --------------------------------------------------
 
   @LogActivity(type = "role", activity = "부여", contents = "권한부여")
   @PostMapping
@@ -59,12 +54,10 @@ public class UserPermissionController {
     UserPermission up = repo
         .findByGranteeUserIdAndTargetUserId(dto.getGranteeUserId(), dto.getTargetUserId())
         .orElseGet(UserPermission::new);
-
     up.setGranteeUserId(dto.getGranteeUserId());
     up.setTargetUserId(dto.getTargetUserId());
     up.setPermLevel(dto.getPermLevel());
     repo.save(up);
-
     return ResponseEntity.ok().build();
   }
 
@@ -76,79 +69,63 @@ public class UserPermissionController {
     return ResponseEntity.noContent().build();
   }
 
-  // granteeUserId 로 권한 레코드만 DTO 로 변환
-  private List<UserPermissionViewDto> listByGrantee(String granteeUserId) {
-    return repo.findByGranteeUserId(granteeUserId).stream()
-        .map(up -> new UserPermissionViewDto(
-            up.getTargetUserId(),
-            up.getPermLevel() >= 2,
-            up.getPermLevel() >= 3,
-            up.getPermLevel() >= 4
-        ))
-        .collect(Collectors.toList());
+  private List<UserPermissionViewDto> listByGrantee(String grantee) {
+    return repo.findByGranteeUserId(grantee).stream()
+        .map(up -> UserPermissionViewDto.builder()
+            .userId(up.getTargetUserId())
+            .canRead(up.getPermLevel() >= 2)
+            .canListen(up.getPermLevel() >= 3)
+            .canDownload(up.getPermLevel() >= 4)
+            .crtime(up.getCrtime())        // ← 엔티티의 getCrtime() 사용
+            .build()
+        ).collect(Collectors.toList());
   }
 
-  /**
-   * hqadmin 같은 granteeUserId 에 대해
-   * 모든 회원을 순회하며 permLevel을 체크해서 리턴
-   *
-   * - GET /api/user-permissions/{granteeUserId}
-   * - GET /api/user-permissions?granteeUserId=...
-   */
   @LogActivity(type = "role", activity = "조회", contents = "권한조회")
   @GetMapping({"/{granteeUserId}", ""})
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<List<UserPermissionViewDto>> viewPermissions(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-      @PathVariable(value = "granteeUserId", required = false) String fromPath,
-      @RequestParam(value = "granteeUserId", required = false) String fromParam
+      @PathVariable(value = "granteeUserId", required = false) String p,
+      @RequestParam(value = "granteeUserId", required = false) String q
   ) {
-    // 1) 토큰 검증 + AOP 로그 기록용
-    Info me = requireLogin(authHeader);
-
-    // 2) path-variable 우선, 없으면 query-param
-    String grantee = (fromPath != null) ? fromPath : fromParam;
+    requireLogin(authHeader);
+    String grantee = (p != null ? p : q);
     if (grantee == null || grantee.isBlank()) {
       return ResponseEntity.badRequest().build();
     }
-
-    // 3) 실제 권한 부여된 대상 리스트 반환
-    List<UserPermissionViewDto> list = listByGrantee(grantee);
-    return ResponseEntity.ok(list);
+    return ResponseEntity.ok(listByGrantee(grantee));
   }
 
   @GetMapping({"/all/{granteeUserId}", "/all"})
   @PreAuthorize("hasRole('ADMIN')")
   public ResponseEntity<List<UserPermissionViewDto>> viewAllWithDefaults(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-      @PathVariable(value = "granteeUserId", required = false) String fromPath,
-      @RequestParam(value = "granteeUserId", required = false) String fromParam
+      @PathVariable(value = "granteeUserId", required = false) String p,
+      @RequestParam(value = "granteeUserId", required = false) String q
   ) {
-    Info me = requireLogin(authHeader);
-    String grantee = (fromPath != null) ? fromPath : fromParam;
+    requireLogin(authHeader);
+    String grantee = (p != null ? p : q);
     if (grantee == null || grantee.isBlank()) {
       return ResponseEntity.badRequest().build();
     }
-
-    // 전체 회원 조회 (자신 제외)
-    List<Info> allMembers = memberSvc.getAllMembers();
+    List<Info> all = memberSvc.getAllMembers();
     return ResponseEntity.ok(
-        allMembers.stream()
+        all.stream()
             .filter(m -> !m.getUserId().equals(grantee))
             .map(m -> {
-              // 권한 레코드가 있으면 레벨 읽어오고, 없으면 1(NONE)
-              int level = repo.findByGranteeUserIdAndTargetUserId(grantee, m.getUserId())
-                  .map(UserPermission::getPermLevel)
-                  .orElse(1);
-              return new UserPermissionViewDto(
-                  m.getUserId(),
-                  level >= 2,
-                  level >= 3,
-                  level >= 4
-              );
-            })
-            .collect(Collectors.toList())
+              int lvl = repo.findByGranteeUserIdAndTargetUserId(grantee, m.getUserId())
+                  .map(UserPermission::getPermLevel).orElse(1);
+              LocalDateTime ct = repo.findByGranteeUserIdAndTargetUserId(grantee, m.getUserId())
+                  .map(UserPermission::getCrtime).orElse(null);
+              return UserPermissionViewDto.builder()
+                  .userId(m.getUserId())
+                  .canRead(lvl >= 2)
+                  .canListen(lvl >= 3)
+                  .canDownload(lvl >= 4)
+                  .crtime(ct)
+                  .build();
+            }).collect(Collectors.toList())
     );
   }
-
 }

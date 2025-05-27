@@ -6,8 +6,10 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.DynamicInsert;
 
 @Entity
@@ -51,6 +53,11 @@ public class TbranchEntity {
 
   @Column(name = "discd", columnDefinition = "INT default 0")
   private Integer discd;
+
+  /** 생성 시각 (자동 채워짐) */
+  @CreationTimestamp                                    // ← 추가
+  @Column(name = "crtime", updatable = false)           // 변경: columnDefinition 대신 updatable=false
+  private LocalDateTime crtime;
 
 //  @Column(name = "db_type")
 //  private Integer dbType;

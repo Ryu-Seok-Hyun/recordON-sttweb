@@ -10,10 +10,12 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -131,30 +133,72 @@ public class TrecordController {
   }
 
 
-  /** 번호 검색 (legacy) */
+
+  /**
+   * 번호 검색
+   * - 다중 검색: numbers 파라미터(예: "0333,0334,01044543333")
+   * - 단일 검색: number1, number2 파라미터
+   */
   @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
   @GetMapping("/search")
-  public ResponseEntity<Page<TrecordDto>> searchByNumber(
-      @RequestParam(name = "number1") String number1,
-      @RequestParam(name = "number2") String number2,
+  public ResponseEntity<Page<TrecordDto>> searchByNumbers(
+      @RequestParam(value = "numbers", required = false) String numbersCsv,
+      @RequestParam(value = "number1",  required = false) String number1,
+      @RequestParam(value = "number2",  required = false) String number2,
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "page", defaultValue = "0") int page,
-      @RequestParam(name = "size", defaultValue = "10") int size
+      @RequestParam(value = "page", defaultValue = "0") int page,
+      @RequestParam(value = "size", defaultValue = "10") int size
   ) {
     Info me = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    PageRequest pr = PageRequest.of(page, size);
+    Pageable pr = PageRequest.of(page, size);
 
-    if (roleSeq >= 2) {
-      return ResponseEntity.ok(recordSvc.searchByNumber(number1, number2, pr));
-    } else {
-      String myNum = me.getNumber();
-      if (!myNum.equals(number1) && !myNum.equals(number2)) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료 외에 검색할 수 없습니다.");
+    // 1) 다중검색 모드
+    if (numbersCsv != null) {
+      List<String> nums = Arrays.stream(numbersCsv.split(","))
+          .map(String::trim)
+          .filter(s -> !s.isEmpty())
+          .toList();
+
+      if (roleSeq < 2 && nums.stream().anyMatch(n -> !n.equals(me.getNumber()))) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+            "본인 자료만 검색 가능합니다.");
       }
+      return ResponseEntity.ok(recordSvc.searchByNumbers(nums, pr));
+    }
+
+    // 2) 단일검색 모드
+    // 둘 다 없으면 전체조회
+    if (number1 == null && number2 == null) {
+      return ResponseEntity.ok(recordSvc.findAll(pr));
+    }
+
+    // 권한 검사 (일반 사용자는 자신의 번호만)
+    if (roleSeq < 2) {
+      String myNum = me.getNumber();
+      if ((number1 != null && !number1.equals(myNum)) ||
+          (number2 != null && !number2.equals(myNum))) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+            "본인 자료 외에 검색할 수 없습니다.");
+      }
+    }
+
+    // 2-1) number1 & number2 둘 다 있을 때
+    if (number1 != null && number2 != null) {
       return ResponseEntity.ok(recordSvc.searchByNumber(number1, number2, pr));
     }
+    // 2-2) number1만 있을 때
+    else if (number1 != null) {
+      return ResponseEntity.ok(recordSvc.searchByNumber(number1, null, pr));
+    }
+    // 2-3) number2만 있을 때
+    else {
+      return ResponseEntity.ok(recordSvc.searchByNumber(null, number2, pr));
+    }
   }
+
+
+
 
   /** 단건 조회 */
   @LogActivity(type = "record", activity = "조회", contents = "단건 조회")

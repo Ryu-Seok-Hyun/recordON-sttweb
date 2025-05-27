@@ -3,6 +3,7 @@ package com.sttweb.sttweb.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(
@@ -29,4 +30,10 @@ public class UserPermission {
 
   @Column(name = "perm_level", nullable = false)
   private Integer permLevel;
+
+  /** 추가된 생성 시각 컬럼 */
+  @Column(name = "crtime", nullable = false, updatable = false,
+      columnDefinition = "DATETIME DEFAULT CURRENT_TIMESTAMP")
+  private LocalDateTime crtime;
+
 }

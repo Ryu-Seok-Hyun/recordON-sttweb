@@ -13,6 +13,6 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
 
   Page<TbranchEntity> findByCompanyNameContainingIgnoreCase(String name, Pageable pageable);
 
-  Optional<TbranchEntity> findBypIp(String pIp); // ✅ 맞음 (소문자 p)
+  Optional<TbranchEntity> findBypIp(String pIp); //  맞음 (소문자 p)
 
 }

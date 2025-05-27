@@ -4,6 +4,7 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.repository.TbranchRepository;
+import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +33,8 @@ public class TbranchServiceImpl implements TbranchService {
         .pPort(e.getPPort())
         .hqYn(e.getHqYn())
         .discd(e.getDiscd())
+        .crtime(e.getCrtime()
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
         .build();
   }
 
