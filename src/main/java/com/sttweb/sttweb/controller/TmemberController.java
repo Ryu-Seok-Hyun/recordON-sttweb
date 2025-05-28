@@ -131,54 +131,97 @@ public class TmemberController {
   }
 
   // ---------------------------------------
-  // 2) 로그인
-  // ---------------------------------------
+// 2) 로그인
+// ---------------------------------------
   @LogActivity(type = "member", activity = "로그인")
   @PostMapping("/login")
   public ResponseEntity<?> login(
       @RequestBody LoginRequest req,
       HttpServletRequest request
   ) {
-    String rawIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
-        .filter(h -> !h.isBlank())
-        .orElse(request.getRemoteAddr());
-    final String lookupIp = ("::1".equals(rawIp) || "0:0:0:0:0:0:0:1".equals(rawIp))
-        ? "127.0.0.1"
-        : rawIp;
-
-    TbranchEntity branch = null;
-    try {
-      branch = branchSvc.findBypIp(lookupIp)
-          .orElseThrow(() ->
-              new IllegalArgumentException("해당 IP에 해당하는 지사가 없습니다: " + lookupIp)
-          );
-    } catch (IllegalArgumentException ignored) {}
-
+    // 1) 로그인 검증 (아이디/비번 체크)
     TmemberEntity user = svc.login(req);
     Info info = Info.fromEntity(user);
-    if (branch != null) {
-      info.setBranchName(branch.getCompanyName());
+
+    // 2) 클라이언트 IP와 서버 호스트 모두 가져오기
+    String clientIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
+        .filter(h -> !h.isBlank())
+        .orElse(request.getRemoteAddr());
+
+    String serverHost = Optional.ofNullable(request.getHeader("Host"))
+        .map(h -> h.split(":")[0])
+        .orElse(request.getLocalAddr());
+
+    // 3) p_ip → pb_ip 순서로 먼저 clientIp, 그다음 serverHost 기준으로 지점 조회
+    Optional<TbranchEntity> branchOpt = branchSvc.findBypIp(clientIp);
+    if (branchOpt.isEmpty()) {
+      branchOpt = branchSvc.findByPbIp(clientIp);
     }
+    if (branchOpt.isEmpty()) {
+      branchOpt = branchSvc.findBypIp(serverHost);
+    }
+    if (branchOpt.isEmpty()) {
+      branchOpt = branchSvc.findByPbIp(serverHost);
+    }
+
+    // 4) 지점 미매칭 시 접근 차단
+    if (branchOpt.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN,
+          "접근 가능한 지점이 아닙니다 (client=" + clientIp + ", server=" + serverHost + ")"
+      );
+    }
+    TbranchEntity branch = branchOpt.get();
+
+    // 5) 지점 일치 검증 → HQ("0")는 예외, 그 외에는 user.branchSeq 와 비교
+    String lvl     = info.getUserLevel();
+    Integer userBs = info.getBranchSeq();
+    if (!"0".equals(lvl) &&
+        (userBs == null || !userBs.equals(branch.getBranchSeq()))) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN,
+          "해당 지점 사용자가 아닙니다: user.branchSeq=" + userBs
+              + ", branchSeq=" + branch.getBranchSeq()
+      );
+    }
+
+    // 6) 지점명 세팅
+    info.setBranchName(branch.getCompanyName());
+
+    // 7) 임시 비밀번호 검사
     boolean isTemp = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTemp);
 
+    // 8) JWT 생성
     String token = jwtTokenProvider.createTokenFromInfo(info);
     info.setToken(token);
     info.setTokenType("Bearer");
 
+    // 9) 응답 본문 구성
     Map<String, Object> res = new HashMap<>();
     res.put("user", info);
     if (isTemp) {
-      res.put("message", "초기화 된 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 비밀번호를 변경하세요.");
+      res.put("message",
+          "초기화 된 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 비밀번호를 변경하세요."
+      );
     }
-    if (branch != null && branch.getPIp() != null && branch.getPPort() != null) {
-      String redirectUrl = "http://" + branch.getPIp()
-          + ":" + branch.getPPort()
-          + "?token=" + token;
-      res.put("redirectUrl", redirectUrl);
+
+    // 10) Redirect URL 조립 (serverHost 기준 internal vs public)
+    String host, port;
+    if (serverHost.equals(branch.getPIp())) {
+      host = branch.getPIp();
+      port = branch.getPPort();
+    } else {
+      host = branch.getPbIp();
+      port = branch.getPbPort();
     }
+    res.put("redirectUrl", "http://" + host + ":" + port + "?token=" + token);
+
     return ResponseEntity.ok(res);
   }
+
+
+
 
   // ---------------------------------------
   // 3) 내 비밀번호 변경

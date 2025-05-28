@@ -65,9 +65,9 @@ public class TrecordController {
     return getCurrentUser(token);
   }
 
-  /**
-   * 전체 녹취 + 필터링 + IN/OUT 카운트
-   */
+  // ---------------------------------------
+// 1) 전체 녹취 + 필터링 + IN/OUT 카운트
+// ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
   public ResponseEntity<Map<String,Object>> listAll(
@@ -88,49 +88,76 @@ public class TrecordController {
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     PageRequest pr = PageRequest.of(page, size);
 
-    // 1) 페이징된 데이터 조회
-    Page<TrecordDto> paged = (roleSeq < 2)
-        ? recordSvc.search(me.getNumber(), me.getNumber(), direction, numberKind, q, start, end, pr)
-        : recordSvc.search(null, null,                  direction, numberKind, q, start, end, pr);
+    // ─────────────────────────────────────────────────────────
+    // 수정 포인트: q에 쉼표(,)가 들어 있으면 multi-number 모드로 분기
+    // ─────────────────────────────────────────────────────────
+    Page<TrecordDto> paged;
+    boolean multi = (q != null && q.contains(","));
+    if (multi) {
+      // 1) q를 쉼표로 split → 번호 리스트
+      List<String> numbers = Arrays.stream(q.split(","))
+          .map(String::trim)
+          .filter(s -> !s.isEmpty())
+          .toList();
+      // 2) 일반 사용자는 자신의 번호만 허용
+      if (roleSeq < 2) {
+        numbers = numbers.stream()
+            .filter(n -> n.equals(me.getNumber()))
+            .toList();
+      }
+      // 3) multi-number 전용 검색
+      paged = recordSvc.searchByNumbers(numbers, pr);
+    }
+    else {
+      // 기존 단일/전체 조회 그대로
+      paged = (roleSeq < 2)
+          ? recordSvc.search(me.getNumber(), me.getNumber(),
+          direction, numberKind, q, start, end, pr)
+          : recordSvc.search(null, null,
+              direction, numberKind, q, start, end, pr);
+    }
 
-    // 2) IN/OUT 별 총건수 조회
-    long inCount  = recordSvc.search(
-        roleSeq<2 ? me.getNumber() : null,
-        roleSeq<2 ? me.getNumber() : null,
-        "IN", numberKind, q, start, end,
-        PageRequest.of(0,1)
-    ).getTotalElements();
+    // IN/OUT 카운트도 마찬가지로 multi 여부에 따라 다르게 처리할 수 있지만,
+    // 우선 single-mode 때만 예전 로직, multi-mode 일 때는 전체 건수만 찍어줍니다.
+    long inCount, outCount;
+    if (!multi) {
+      inCount = recordSvc.search(
+          roleSeq<2 ? me.getNumber() : null,
+          roleSeq<2 ? me.getNumber() : null,
+          "IN", numberKind, q, start, end,
+          PageRequest.of(0,1)
+      ).getTotalElements();
+      outCount = recordSvc.search(
+          roleSeq<2 ? me.getNumber() : null,
+          roleSeq<2 ? me.getNumber() : null,
+          "OUT", numberKind, q, start, end,
+          PageRequest.of(0,1)
+      ).getTotalElements();
+    } else {
+      // multi-mode 땐 IN/OUT 구분이 없으므로, 총건수를 both 카운트에 동일하게 설정
+      inCount  = paged.getTotalElements();
+      outCount = paged.getTotalElements();
+    }
 
-    long outCount = recordSvc.search(
-        roleSeq<2 ? me.getNumber() : null,
-        roleSeq<2 ? me.getNumber() : null,
-        "OUT", numberKind, q, start, end,
-        PageRequest.of(0,1)
-    ).getTotalElements();
-
-    // 3) 응답 본문 조립 (LinkedHashMap으로 삽입 순서 유지)
+    // 3) 응답 조립
     Map<String,Object> body = new LinkedHashMap<>();
-    // 1) 실제 데이터
     body.put("content",          paged.getContent());
-    // 2) 페이징 메타
     body.put("totalElements",    paged.getTotalElements());
     body.put("totalPages",       paged.getTotalPages());
     body.put("size",             paged.getSize());
     body.put("number",           paged.getNumber());
     body.put("numberOfElements", paged.getNumberOfElements());
     body.put("empty",            paged.isEmpty());
-    // 3) IN/OUT 카운트
     body.put("inboundCount",     inCount);
     body.put("outboundCount",    outCount);
-    // 4) 첫/마지막 여부
     body.put("first",            paged.isFirst());
     body.put("last",             paged.isLast());
-    // 5) 이제 맨 아래에 pageable, sort
     body.put("pageable",         paged.getPageable());
     body.put("sort",             paged.getSort());
 
     return ResponseEntity.ok(body);
   }
+
 
 
 

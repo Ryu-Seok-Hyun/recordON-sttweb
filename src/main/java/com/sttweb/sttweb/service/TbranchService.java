@@ -28,4 +28,9 @@ public interface TbranchService {
   TbranchDto findByPublicIp(String ip);
 
   Optional<TbranchEntity> findBypIp(String pIp);
+
+  /** pb_ip 로 지점 조회 */
+  Optional<TbranchEntity> findByPbIp(String pbIp);
+
+
 }

@@ -15,4 +15,6 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
 
   Optional<TbranchEntity> findBypIp(String pIp); //  맞음 (소문자 p)
 
+  Optional<TbranchEntity> findByPbIp(String pbIp);
+
 }
