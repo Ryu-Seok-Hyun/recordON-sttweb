@@ -59,6 +59,7 @@ public interface TmemberService {
 
     TmemberEntity findEntityByUserId(String userId);
 
-
+    /** 본사 관리자: 지점명 + 키워드 검색 */
+    Page<Info> searchUsersByBranchNameAndKeyword(String branchName, String keyword, Pageable pageable);
 
 }

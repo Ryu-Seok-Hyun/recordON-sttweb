@@ -58,4 +58,22 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
 
   // <<< 추가 >>> 브랜치별, userId 중복 개수 조회
   long countByUserIdAndBranchSeq(String userId, Integer branchSeq);
+
+  /**
+   * 본사: 지점명에 포함되고 (userId OR number) 에 keyword 가 포함된 레코드 페이징 조회
+   */
+  @Query("""
+  SELECT m
+    FROM TmemberEntity m
+    JOIN TbranchEntity b ON m.branchSeq = b.branchSeq
+   WHERE LOWER(b.companyName) LIKE LOWER(CONCAT('%', :branchName, '%'))
+     AND (m.userId   LIKE %:kw%
+       OR m.number   LIKE %:kw%)
+""")
+  Page<TmemberEntity> findByBranchNameContainingAndKeyword(
+      @Param("branchName") String branchName,
+      @Param("kw")         String keyword,
+      Pageable pageable
+  );
+
 }

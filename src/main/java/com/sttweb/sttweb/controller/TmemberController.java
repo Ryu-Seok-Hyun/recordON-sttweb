@@ -277,31 +277,50 @@ public class TmemberController {
   @GetMapping
   public ResponseEntity<?> listOrSearchUsers(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "keyword", required = false) String keyword,
+      @RequestParam(name = "keyword",    required = false) String keyword,
       @RequestParam(name = "branchName", required = false) String branchName,
-      @RequestParam(name = "page", defaultValue = "0") int page,
-      @RequestParam(name = "size", defaultValue = "10") int size
+      @RequestParam(name = "page",       defaultValue = "0")  int page,
+      @RequestParam(name = "size",       defaultValue = "10") int size
   ) {
-    Info me = requireLogin(authHeader);
+    Info me  = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);
 
+    // 본사 관리자(0)인 경우: branchName + keyword 조합 처리
     if ("0".equals(lvl)) {
+      boolean hasKw = keyword    != null && !keyword.isBlank();
+      boolean hasBn = branchName != null && !branchName.isBlank();
       Page<Info> p;
-      if (keyword != null && !keyword.isBlank()) {
+
+      if (hasBn && hasKw) {
+        // 1) 지점명 + 키워드 조합 검색
+        p = svc.searchUsersByBranchNameAndKeyword(
+            branchName.trim(), keyword.trim(), pr
+        );
+      }
+      else if (hasKw) {
+        // 2) 키워드만
         p = svc.searchUsers(keyword.trim(), pr);
-      } else if (branchName != null && !branchName.isBlank()) {
+      }
+      else if (hasBn) {
+        // 3) 지점명만
         p = svc.searchUsersByBranchName(branchName.trim(), pr);
-      } else {
+      }
+      else {
+        // 4) 전체 조회
         p = svc.listAllUsers(pr);
       }
+
       return ResponseEntity.ok(p);
     }
 
+    // 지사 관리자(1)인 경우: 자신의 지사 내에서만 keyword 검색 또는 전체 조회
     if ("1".equals(lvl)) {
       Integer bs = me.getBranchSeq();
       if (bs == null) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("내 지사 정보가 없습니다.");
+        return ResponseEntity
+            .status(HttpStatus.FORBIDDEN)
+            .body("내 지사 정보가 없습니다.");
       }
       Page<Info> p = (keyword != null && !keyword.isBlank())
           ? svc.searchUsersInBranch(keyword.trim(), bs, pr)
@@ -309,9 +328,15 @@ public class TmemberController {
       return ResponseEntity.ok(p);
     }
 
-    Page<Info> self = new PageImpl<>(List.of(me), PageRequest.of(0, 1), 1);
+    // 일반 유저(2)인 경우: 자기 자신만
+    Page<Info> self = new PageImpl<>(
+        List.of(me),
+        PageRequest.of(0, 1),
+        1
+    );
     return ResponseEntity.ok(self);
   }
+
 
   // ---------------------------------------
   // 10) 회원정보 종합 수정
@@ -354,7 +379,7 @@ public class TmemberController {
   // 11) 회원 상세조회
   // ---------------------------------------
   @LogActivity(type = "member", activity = "조회", contents = "회원 상세조회")
-  @GetMapping("/{memberSeq}")
+  @GetMapping("/{memberSeq:\\d+}")
   public ResponseEntity<Info> getMemberDetail(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @PathVariable("memberSeq") Integer memberSeq

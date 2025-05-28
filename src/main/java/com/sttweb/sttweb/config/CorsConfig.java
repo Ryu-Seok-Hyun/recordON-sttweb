@@ -3,6 +3,7 @@ package com.sttweb.sttweb.config;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.web.servlet.error.ErrorViewResolver;
 import org.springframework.context.annotation.Bean;
@@ -24,9 +25,10 @@ public class CorsConfig {
     configuration.setAllowedOrigins(Arrays.asList(
         "http://localhost:5173", "http://localhost:39090"
     ));
-    configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(Arrays.asList("*"));
+    configuration.setAllowedOriginPatterns(List.of("*")); // 또는 frontend 주소 지정
     configuration.setAllowCredentials(true);
+    configuration.setAllowedHeaders(List.of("*"));
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
 
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);

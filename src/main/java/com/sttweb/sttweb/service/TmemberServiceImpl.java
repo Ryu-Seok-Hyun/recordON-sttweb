@@ -237,6 +237,14 @@ public class TmemberServiceImpl implements TmemberService {
     return dto;
   }
 
+  @Override
+  public Page<Info> searchUsersByBranchNameAndKeyword(
+      String branchName, String keyword, Pageable pageable
+  ) {
+    return repo.findByBranchNameContainingAndKeyword(branchName, keyword, pageable)
+        .map(this::toDtoWithBranchNameAndPosition);
+  }
+
   /** 상태 변경 */
   @Override
   @Transactional
