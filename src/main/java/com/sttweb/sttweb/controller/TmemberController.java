@@ -152,19 +152,21 @@ public class TmemberController {
         .map(h -> h.split(":")[0])
         .orElse(request.getLocalAddr());
 
-    // 3) p_ip → pb_ip 순서로 먼저 clientIp, 그다음 serverHost 기준으로 지점 조회
-    Optional<TbranchEntity> branchOpt = branchSvc.findBypIp(clientIp);
-    if (branchOpt.isEmpty()) {
-      branchOpt = branchSvc.findByPbIp(clientIp);
+    // 3) IPv6 루프백(::1)을 IPv4(127.0.0.1)로 치환
+    if ("0:0:0:0:0:0:0:1".equals(clientIp) || "::1".equals(clientIp)) {
+      clientIp = "127.0.0.1";
     }
-    if (branchOpt.isEmpty()) {
-      branchOpt = branchSvc.findBypIp(serverHost);
-    }
-    if (branchOpt.isEmpty()) {
-      branchOpt = branchSvc.findByPbIp(serverHost);
+    if ("0:0:0:0:0:0:0:1".equals(serverHost) || "::1".equals(serverHost)) {
+      serverHost = "127.0.0.1";
     }
 
-    // 4) 지점 미매칭 시 접근 차단
+    // 4) p_ip → pb_ip → serverHost 기준 순으로 지점 조회
+    Optional<TbranchEntity> branchOpt = branchSvc.findBypIp(clientIp);
+    if (branchOpt.isEmpty()) branchOpt = branchSvc.findByPbIp(clientIp);
+    if (branchOpt.isEmpty()) branchOpt = branchSvc.findBypIp(serverHost);
+    if (branchOpt.isEmpty()) branchOpt = branchSvc.findByPbIp(serverHost);
+
+    // 5) 지점 미매칭 시 접근 차단
     if (branchOpt.isEmpty()) {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN,

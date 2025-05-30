@@ -9,12 +9,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import static org.springframework.security.config.Customizer.withDefaults;
-
 
 @Configuration
 @RequiredArgsConstructor
@@ -27,45 +26,49 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-        .cors(withDefaults())  // ← 이거 없으면 CORS 설정 안 먹힘!
-        // 1) CSRF 비활성, 세션은 Stateless
+        // 1) WebMvcConfigurer 에서 정의한 CORS 정책 적용
+        .cors(Customizer.withDefaults())
+        // 2) CSRF 비활성화 & 세션은 STATELESS
         .csrf(csrf -> csrf.disable())
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-        // 2) 권한 설정
+        // 3) 요청별 권한 설정
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/members/confirm-password").permitAll()
+            // 3.1) 프리플라이트 요청은 무조건 통과
+            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
+            // 3.2) 로그인·회원가입 등 인증 없이 허용
             .requestMatchers(
                 "/api/members/signup",
                 "/api/members/login",
                 "/api/members/logout",
+                "/api/members/confirm-password",
                 "/api/user-permissions/**",
                 "/api/test/**"
             ).permitAll()
-            .requestMatchers(HttpMethod.GET, "/api/members/login").denyAll()
+
+            // 3.3) 그 외 요청은 모두 인증 필요
             .anyRequest().authenticated()
         )
 
-        // 3) JWT 필터 등록
+        // 4) JWT 필터 등록 (위 permitAll URL들은 필터에서 건너뛸 겁니다)
         .addFilterBefore(
             new JwtAuthenticationFilter(jwtTokenProvider, jwtEntryPoint),
             UsernamePasswordAuthenticationFilter.class
         )
 
-        // 4) 401 / 403 응답 커스터마이징
+        // 5) 401/403 에러 핸들러
         .exceptionHandling(ex -> ex
-            // 토큰 없거나 만료 시 401 처리
             .authenticationEntryPoint(jwtEntryPoint)
-            // 권한 없거나 재인증 필요 시 403 처리
             .accessDeniedHandler(accessDeniedHandler)
         )
 
-        // 5) /logout 엔드포인트 처리
+        // 6) 로그아웃 처리
         .logout(ld -> ld
             .logoutUrl("/api/members/logout")
-            .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
-        )
-    ;
+            .logoutSuccessHandler((req, res, auth) ->
+                res.setStatus(HttpServletResponse.SC_OK))
+        );
 
     return http.build();
   }

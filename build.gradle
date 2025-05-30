@@ -28,7 +28,7 @@ war {
 	// default plain-war 에 붙는 "-plain" classifier 를 지웁니다
 	archiveClassifier = ''
 	// 톰캣에 올릴 파일명을 명시적으로 지정
-	archiveFileName = 'sttweb.war'
+	archiveFileName = 'ROOT.war'
 }
 
 configurations {
