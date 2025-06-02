@@ -124,7 +124,6 @@ public class TmemberController {
       @RequestBody LoginRequest req,
       HttpServletRequest request
   ) {
-    // ────────────────────────────────────────────────────────────
     // 1) 아이디/비밀번호 검증
     TmemberEntity user;
     try {
@@ -133,48 +132,46 @@ public class TmemberController {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 잘못되었습니다.");
     }
 
-    // 2) Info DTO로 변환 (userLevel, branchSeq 등 포함)
+    // 2) Info DTO 변환
     Info info = Info.fromEntity(user);
 
-    // ────────────────────────────────────────────────────────────
-    // 3) 클라이언트 IP 읽어오기 (X-Forwarded-For 우선, 없으면 getRemoteAddr())
+    // 3) clientIp 얻기 (X-Forwarded-For 우선, 없으면 getRemoteAddr())
     String clientIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
         .filter(h -> !h.isBlank())
         .orElse(request.getRemoteAddr());
 
-    // IPv6-IPv4 매핑 (예: "::ffff:192.168.55.180" -> "192.168.55.180")
+    // IPv6-IPv4 매핑
     if (clientIp != null && clientIp.startsWith("::ffff:")) {
       clientIp = clientIp.substring(7);
     }
-    // IPv6 루프백(::1) -> 127.0.0.1 치환
+    // IPv6 루프백(::1) → 127.0.0.1
     if ("::1".equals(clientIp) || "0:0:0:0:0:0:0:1".equals(clientIp)) {
       clientIp = "127.0.0.1";
     }
 
-    // ────────────────────────────────────────────────────────────
-    // 4) “127.0.0.1” 로컬 루프백인 경우, 실제 서버 머신의 첫 번째 사설망 IP로 바꿔치기
+    // 4) “127.0.0.1”인 경우, 실제로 DB에 등록된 지사 IP가 붙어 있는 NIC를 찾아 대체
     if ("127.0.0.1".equals(clientIp)) {
-      String detectedIp = detectFirstNonLoopbackIPv4();
-      if (detectedIp != null) {
-        System.out.println("[DEBUG] loopback 감지됨 → 서버 네트워크 인터페이스 IP로 대체: " + detectedIp);
-        clientIp = detectedIp;
+      String replaced = detectBranchIpFromLocalNics();
+      if (replaced != null) {
+        System.out.println("[DEBUG] loopback detected → 대체할 지사 IP = " + replaced);
+        clientIp = replaced;
       } else {
-        System.out.println("[DEBUG] loopback 감지되었으나, 비루프백 IP를 찾을 수 없어 그대로 127.0.0.1 유지");
+        System.out.println("[DEBUG] loopback detected, 그러나 지사 IP로 매칭되는 NIC를 찾지 못함 → clientIp 그대로 127.0.0.1 유지");
       }
     }
 
     System.out.println("[DEBUG] 최종 clientIp = " + clientIp);
 
-    // ────────────────────────────────────────────────────────────
-    // 5) 본사 사용자(userLevel == "0")인지 판단
+    // 5) 본사 여부 판단
     boolean isHqUser = "0".equals(info.getUserLevel());
 
     if (!isHqUser) {
-      // ────────────────────────────────────────────────────────────
-      // 6) 지사 사용자일 때: clientIp로 Branch 조회 (사설망 기준만 적용)
-      //    (필요하면 공인망 pb_ip 도 함께 검사하도록 확장 가능)
-
+      // 6) 지사 사용자인 경우, clientIp로 지사 조회 (p_ip 기준)
       Optional<TbranchEntity> reqBranchOpt = branchSvc.findBypIp(clientIp);
+      if (reqBranchOpt.isEmpty()) {
+        // p_ip 매칭 실패하면, 공인망 pb_ip로도 시도
+        reqBranchOpt = branchSvc.findByPbIp(clientIp);
+      }
       if (reqBranchOpt.isEmpty()) {
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN,
@@ -186,8 +183,7 @@ public class TmemberController {
       System.out.println("[DEBUG] clientIp로 조회된 지사 → branchSeq="
           + reqBranch.getBranchSeq() + ", companyName=" + reqBranch.getCompanyName());
 
-      // ────────────────────────────────────────────────────────────
-      // 7) “조회된 지사”의 branchSeq 와 “로그인 시도 사용자”의 branchSeq 비교
+      // 7) “조회된 지사”와 “로그인 시도 사용자”의 branchSeq 비교
       Integer userBranchSeq = info.getBranchSeq();
       if (userBranchSeq == null || !userBranchSeq.equals(reqBranch.getBranchSeq())) {
         throw new ResponseStatusException(
@@ -196,13 +192,11 @@ public class TmemberController {
                 + ", 요청 지사=" + reqBranch.getBranchSeq()
         );
       }
-
-      // 지사 사용자 권한 검사 통과 → branchName 세팅
+      // 권한 검사 통과 → branchName 세팅
       info.setBranchName(reqBranch.getCompanyName());
     }
-    // ────────────────────────────────────────────────────────────
-    // (isHqUser == true) → 본사 사용자, IP 검증 없이 바로 통과
     else {
+      // 본사인 경우, IP 검증 없이 바로 통과
       Integer userBranchSeq = info.getBranchSeq();
       if (userBranchSeq != null) {
         TbranchEntity branch = branchSvc.findEntityBySeq(userBranchSeq);
@@ -212,8 +206,7 @@ public class TmemberController {
       }
     }
 
-    // ────────────────────────────────────────────────────────────
-    // 8) JWT 토큰 생성 및 Info 세팅
+    // 8) JWT 토큰 생성
     boolean isTempPassword = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTempPassword);
 
@@ -221,23 +214,19 @@ public class TmemberController {
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    // ────────────────────────────────────────────────────────────
-    // 9) Redirect URL 생성 (지사 p_ip/p_port 또는 본사 개발용 localhost:8080)
+    // 9) Redirect URL 생성
     String hostForRedirect, portForRedirect;
     if (isHqUser) {
-      // 본사 개발 테스트용 호스트/포트
       hostForRedirect = "127.0.0.1";
       portForRedirect = "8080";
     } else {
-      // 지사 사용자 → 지사 p_ip/p_port
       TbranchEntity userBranch = branchSvc.findEntityBySeq(info.getBranchSeq());
       hostForRedirect = userBranch.getPIp();
       portForRedirect = userBranch.getPPort();
     }
     String redirectUrl = "http://" + hostForRedirect + ":" + portForRedirect + "?token=" + token;
 
-    // ────────────────────────────────────────────────────────────
-    // 10) 로그인 성공 응답
+    // 10) 응답
     Map<String, Object> result = new HashMap<>();
     result.put("user", info);
     result.put("hqUser", isHqUser);
@@ -250,23 +239,35 @@ public class TmemberController {
   }
 
   /**
-   * 서버 머신에 연결된 첫 번째 Non-Loopback IPv4 주소를 찾아 반환.
+   * “127.0.0.1” 로 들어왔을 때, 서버에 붙어 있는 모든 NIC(IP) 중에서
+   * DB에 등록된 지사의 p_ip 혹은 pb_ip로 사용 가능한 주소를 찾아 반환.
    * 없으면 null.
    */
-  private String detectFirstNonLoopbackIPv4() {
+  private String detectBranchIpFromLocalNics() {
     try {
+      // 서버의 모든 네트워크 인터페이스를 순회
       Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
       while (nics.hasMoreElements()) {
         NetworkInterface ni = nics.nextElement();
+        // loopback, 비활성화된 인터페이스는 건너뜀
         if (ni.isLoopback() || !ni.isUp()) continue;
 
+        // 그 인터페이스의 모든 InetAddress 탐색
         Enumeration<InetAddress> addrs = ni.getInetAddresses();
         while (addrs.hasMoreElements()) {
           InetAddress addr = addrs.nextElement();
-          if (addr.isLoopbackAddress()) continue;
-          // IPv4인지 확인
+          if (addr.isLoopbackAddress()) continue; // 루프백 건너뜀
+
           String ip = addr.getHostAddress();
-          if (ip.contains(".") && !ip.startsWith("127.")) {
+          // IPv4만 살펴봄 (“.” 포함, 예: “192.168.0.61”)
+          if (!ip.contains(".")) continue;
+
+          // 1) DB의 tbranch.p_ip 컬럼에 해당 IP가 있는지 검사
+          if (branchSvc.findBypIp(ip).isPresent()) {
+            return ip;
+          }
+          // 2) DB의 tbranch.pb_ip 컬럼에 해당 IP가 있는지 검사
+          if (branchSvc.findByPbIp(ip).isPresent()) {
             return ip;
           }
         }
