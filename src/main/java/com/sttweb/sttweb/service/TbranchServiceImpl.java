@@ -102,6 +102,14 @@ public class TbranchServiceImpl implements TbranchService {
     return toDto(repo.save(e));
   }
 
+  /**
+   * hqYn = "0"인 본사 지점을 하나 가져온다.
+   */
+  @Override
+  public Optional<TbranchEntity> findHqBranch() {
+    return repo.findTopByHqYn("0");
+  }
+
   /** 지점 정보 업데이트 */
   @Override
   @Transactional
@@ -128,5 +136,11 @@ public class TbranchServiceImpl implements TbranchService {
         .orElseThrow(() -> new IllegalStateException("지점을 찾을 수 없습니다: " + branchSeq));
     e.setDiscd(active ? 0 : 1);
     repo.save(e);
+  }
+
+  @Override
+  public TbranchEntity findEntityBySeq(Integer branchSeq) {
+    return repo.findById(branchSeq)
+        .orElseThrow(() -> new IllegalArgumentException("지점 정보를 찾을 수 없습니다: " + branchSeq));
   }
 }

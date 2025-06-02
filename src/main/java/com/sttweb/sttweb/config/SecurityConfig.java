@@ -5,6 +5,7 @@ import com.sttweb.sttweb.jwt.JwtAuthenticationEntryPoint;
 import com.sttweb.sttweb.jwt.JwtAuthenticationFilter;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +15,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @RequiredArgsConstructor
@@ -26,18 +30,19 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-        // 1) WebMvcConfigurer 에서 정의한 CORS 정책 적용
+        // ✅ 1. CORS 허용 (WebMvcConfigurer 기반 설정 적용됨)
         .cors(Customizer.withDefaults())
-        // 2) CSRF 비활성화 & 세션은 STATELESS
+
+        // ✅ 2. CSRF 비활성화 & 세션 Stateless
         .csrf(csrf -> csrf.disable())
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-        // 3) 요청별 권한 설정
+        // ✅ 3. URL 별 접근 허용/제한
         .authorizeHttpRequests(auth -> auth
-            // 3.1) 프리플라이트 요청은 무조건 통과
+            // 프리플라이트 요청 허용
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-            // 3.2) 로그인·회원가입 등 인증 없이 허용
+            // 인증 없이 허용할 API
             .requestMatchers(
                 "/api/members/signup",
                 "/api/members/login",
@@ -47,29 +52,42 @@ public class SecurityConfig {
                 "/api/test/**"
             ).permitAll()
 
-            // 3.3) 그 외 요청은 모두 인증 필요
+            // 그 외는 인증 필요
             .anyRequest().authenticated()
         )
 
-        // 4) JWT 필터 등록 (위 permitAll URL들은 필터에서 건너뛸 겁니다)
+        // ✅ 4. JWT 인증 필터 추가
         .addFilterBefore(
             new JwtAuthenticationFilter(jwtTokenProvider, jwtEntryPoint),
             UsernamePasswordAuthenticationFilter.class
         )
 
-        // 5) 401/403 에러 핸들러
+        // ✅ 5. 인증/인가 실패 핸들링
         .exceptionHandling(ex -> ex
             .authenticationEntryPoint(jwtEntryPoint)
             .accessDeniedHandler(accessDeniedHandler)
         )
 
-        // 6) 로그아웃 처리
+        // ✅ 6. 로그아웃 설정
         .logout(ld -> ld
             .logoutUrl("/api/members/logout")
-            .logoutSuccessHandler((req, res, auth) ->
-                res.setStatus(HttpServletResponse.SC_OK))
+            .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
         );
 
     return http.build();
   }
+
+  @Bean
+  public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOrigins(List.of("http://localhost:39080")); // 정확히 명시
+    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+    config.setAllowedHeaders(List.of("*"));
+    config.setAllowCredentials(true);
+
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", config);
+    return source;
+  }
+
 }

@@ -17,4 +17,6 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
 
   Optional<TbranchEntity> findByPbIp(String pbIp);
 
+  /** hqYn 컬럼이 0(본사)인 지점 중 첫 번째 엔티티를 Optional 로 가져온다 */
+  Optional<TbranchEntity> findTopByHqYn(String hqYn);
 }

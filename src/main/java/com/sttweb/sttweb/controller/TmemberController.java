@@ -30,7 +30,6 @@ import java.util.*;
 @RequiredArgsConstructor
 public class TmemberController {
 
-  /** 비밀번호 정책: 최소 8자, 영어 소문자·숫자·특수문자 포함 */
   private static final String PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$";
 
   private final TmemberService svc;
@@ -39,18 +38,17 @@ public class TmemberController {
   private final PasswordEncoder passwordEncoder;
   private final HttpServletRequest request;
 
-  /** 재인증 요청 DTO */
+
   @Data
   public static class ReauthRequest { private String password; }
 
-  /** 재인증 응답 DTO */
-  @Data @AllArgsConstructor
+  @Data
+  @AllArgsConstructor
   public static class ReauthResponse {
     private String reauthToken;
-    private long expiresIn;  // 초 단위
+    private long expiresIn;
   }
 
-  /** "Bearer " 제거 + JWT 유효성 검사 */
   private String extractToken(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
@@ -62,53 +60,34 @@ public class TmemberController {
     return token;
   }
 
-  /** 토큰에서 userId 추출 후 내 정보 조회 */
   private Info getCurrentUserFromToken(String authHeader) {
     String token = extractToken(authHeader);
     String userId = jwtTokenProvider.getUserId(token);
     return svc.getMyInfoByUserId(userId);
   }
 
-  /** 로그인된 사용자만 허용 **/
   private Info requireLogin(String authHeader) {
     return getCurrentUserFromToken(authHeader);
   }
 
-  /** 민감 작업 전: X-ReAuth-Token 헤더 검사 **/
   private void requireReAuth() {
     String reauth = request.getHeader("X-ReAuth-Token");
     String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
-
     boolean ok = false;
-    // 1) 재인증 토큰이 VALID 한 경우
-    if (reauth != null && jwtTokenProvider.validateReAuthToken(reauth)) {
-      ok = true;
-    }
-    // 2) 아니면 로그인 토큰이 VALID 한 경우
+    if (reauth != null && jwtTokenProvider.validateReAuthToken(reauth)) ok = true;
     else if (authHeader != null && authHeader.startsWith("Bearer ")) {
       String token = authHeader.substring(7).trim();
-      if (jwtTokenProvider.validateToken(token)) {
-        ok = true;
-      }
+      if (jwtTokenProvider.validateToken(token)) ok = true;
     }
-
-    if (!ok) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "재인증이 필요합니다.");
-    }
+    if (!ok) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "재인증이 필요합니다.");
   }
 
-  // ---------------------------------------
-  // 1) 회원가입
-  // ---------------------------------------
   @LogActivity(type = "member", activity = "등록", contents = "사용자 등록")
   @PostMapping("/signup")
-  public ResponseEntity<String> signup(
-      @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestBody SignupRequest req
-  ) {
+  public ResponseEntity<String> signup(@RequestHeader(value = "Authorization", required = false) String authHeader,
+      @RequestBody SignupRequest req) {
     if (req.getUserPass() == null || !req.getUserPass().matches(PASSWORD_PATTERN)) {
-      return ResponseEntity.badRequest()
-          .body("비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다.");
+      return ResponseEntity.badRequest().body("비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다.");
     }
     Info me = requireLogin(authHeader);
     String lvl = me.getUserLevel();
@@ -119,107 +98,121 @@ public class TmemberController {
       return ResponseEntity.status(HttpStatus.CONFLICT).body("이미 존재하는 ID 입니다.");
     }
     String originalLevel = req.getUserLevel();
-    if ("1".equals(lvl)) {
-      req.setUserLevel("2"); // 지사 관리자는 일반(2)만
-    }
+    if ("1".equals(lvl)) req.setUserLevel("2");
     svc.signupWithGrants(req, me.getMemberSeq(), me.getUserId());
     if (!originalLevel.equals(req.getUserLevel())) {
-      return ResponseEntity.ok("가입 완료. 지사 관리자는 일반(2)만 생성할 수 있어, 요청하신 권한(" +
-          originalLevel + ") 대신 일반(2)로 처리되었습니다.");
+      return ResponseEntity.ok("가입 완료. 지사 관리자는 일반(2)만 생성할 수 있어, 요청하신 권한(" + originalLevel + ") 대신 일반(2)로 처리되었습니다.");
     }
     return ResponseEntity.ok("가입 및 권한부여 완료");
   }
 
-  // ---------------------------------------
-// 2) 로그인
-// ---------------------------------------
+  /**
+   *  로그인 (POST /api/members/login)
+   */
   @LogActivity(type = "member", activity = "로그인")
   @PostMapping("/login")
-  public ResponseEntity<?> login(
-      @RequestBody LoginRequest req,
-      HttpServletRequest request
-  ) {
-    // 1) 로그인 검증 (아이디/비번 체크)
+  public ResponseEntity<?> login(@RequestBody LoginRequest req, HttpServletRequest request) {
+    // 1) 아이디/비밀번호 검증 → 예외 발생 시 400~500 에러
     TmemberEntity user = svc.login(req);
     Info info = Info.fromEntity(user);
 
-    // 2) 클라이언트 IP와 서버 호스트 모두 가져오기
+    // 2) IP 정규화
     String clientIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
         .filter(h -> !h.isBlank())
         .orElse(request.getRemoteAddr());
-
     String serverHost = Optional.ofNullable(request.getHeader("Host"))
         .map(h -> h.split(":")[0])
         .orElse(request.getLocalAddr());
 
-    // 3) IPv6 루프백(::1)을 IPv4(127.0.0.1)로 치환
-    if ("0:0:0:0:0:0:0:1".equals(clientIp) || "::1".equals(clientIp)) {
+    if ("::1".equals(clientIp) || "0:0:0:0:0:0:0:1".equals(clientIp)) {
       clientIp = "127.0.0.1";
     }
-    if ("0:0:0:0:0:0:0:1".equals(serverHost) || "::1".equals(serverHost)) {
+    if ("::1".equals(serverHost) || "0:0:0:0:0:0:0:1".equals(serverHost)) {
       serverHost = "127.0.0.1";
     }
 
-    // 4) p_ip → pb_ip → serverHost 기준 순으로 지점 조회
-    Optional<TbranchEntity> branchOpt = branchSvc.findBypIp(clientIp);
-    if (branchOpt.isEmpty()) branchOpt = branchSvc.findByPbIp(clientIp);
-    if (branchOpt.isEmpty()) branchOpt = branchSvc.findBypIp(serverHost);
-    if (branchOpt.isEmpty()) branchOpt = branchSvc.findByPbIp(serverHost);
+    // 3) 지점(BranchEntity)을 담을 Optional 선언
+    Optional<TbranchEntity> branchOpt = Optional.empty();
 
-    // 5) 지점 미매칭 시 접근 차단
-    if (branchOpt.isEmpty()) {
-      throw new ResponseStatusException(
-          HttpStatus.FORBIDDEN,
-          "접근 가능한 지점이 아닙니다 (client=" + clientIp + ", server=" + serverHost + ")"
-      );
+    // 4) 본사 관리자(userLevel == "0")라면 → DB에서 hqYn = "0"인 본사 지점(HQ) 하나만 꺼내온다
+    boolean isHqUser = "0".equals(info.getUserLevel());
+    if (isHqUser) {
+      branchOpt = branchSvc.findHqBranch();
+      if (branchOpt.isEmpty()) {
+        throw new ResponseStatusException(
+            HttpStatus.FORBIDDEN,
+            "본사 지점(HQ)이 등록되지 않았습니다. 관리자에게 문의하세요."
+        );
+      }
     }
+    // 5) 지사 관리자·일반 사용자(userLevel != "0")라면 → IP 기반으로 지점 조회
+    else {
+      // 5-1) clientIp → pIp / pbIp 순서대로 조회
+      branchOpt = branchSvc.findBypIp(clientIp);
+      if (branchOpt.isEmpty()) branchOpt = branchSvc.findByPbIp(clientIp);
+      // 5-2) serverHost → pIp / pbIp 순서대로 조회
+      if (branchOpt.isEmpty()) branchOpt = branchSvc.findBypIp(serverHost);
+      if (branchOpt.isEmpty()) branchOpt = branchSvc.findByPbIp(serverHost);
+      // 5-3) 로컬(127.0.0.1) 접속 + 일반 사용자라면 → “내 지점” fallback
+      if (branchOpt.isEmpty()
+          && "127.0.0.1".equals(clientIp)
+          && !"0".equals(info.getUserLevel())) {
+        branchOpt = Optional.ofNullable(branchSvc.findEntityBySeq(info.getBranchSeq()));
+      }
+      // 5-4) 여전히 조회가 안 되면 403 FORBIDDEN
+      if (branchOpt.isEmpty()) {
+        throw new ResponseStatusException(
+            HttpStatus.FORBIDDEN,
+            "접근 가능한 지점이 아닙니다 (clientIp=" + clientIp + ", serverHost=" + serverHost + ")"
+        );
+      }
+    }
+
+    // 6) 최종 지점 검증:
+    //    • 본사 관리자는 이미 HQ 지점을 받아왔으므로 별도 검증 불필요
+    //    • 지사/일반 사용자는 반드시 “자기 지점”이어야만 로그인 허용
     TbranchEntity branch = branchOpt.get();
-
-    // 5) 지점 일치 검증 → HQ("0")는 예외, 그 외에는 user.branchSeq 와 비교
-    String lvl     = info.getUserLevel();
-    Integer userBs = info.getBranchSeq();
-    if (!"0".equals(lvl) &&
-        (userBs == null || !userBs.equals(branch.getBranchSeq()))) {
-      throw new ResponseStatusException(
-          HttpStatus.FORBIDDEN,
-          "해당 지점 사용자가 아닙니다: user.branchSeq=" + userBs
-              + ", branchSeq=" + branch.getBranchSeq()
-      );
+    if (!isHqUser) {
+      boolean sameBranch = info.getBranchSeq() != null
+          && info.getBranchSeq().equals(branch.getBranchSeq());
+      if (!sameBranch) {
+        throw new ResponseStatusException(
+            HttpStatus.FORBIDDEN,
+            "해당 지점 사용자가 아닙니다: user.branchSeq=" + info.getBranchSeq()
+                + ", branchSeq=" + branch.getBranchSeq()
+        );
+      }
     }
 
-    // 6) 지점명 세팅
+    // 7) JWT 토큰·정보 세팅
     info.setBranchName(branch.getCompanyName());
-
-    // 7) 임시 비밀번호 검사
     boolean isTemp = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTemp);
 
-    // 8) JWT 생성
     String token = jwtTokenProvider.createTokenFromInfo(info);
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    // 9) 응답 본문 구성
-    Map<String, Object> res = new HashMap<>();
-    res.put("user", info);
+    // 8) Redirect URL 생성
+    //    서버 호스트가 branch.getPIp()와 같으면 PIP/PPORT, 아니면 PBIP/PBPORT를 쓴다
+    String hostForRedirect = serverHost.equals(branch.getPIp())
+        ? branch.getPIp()
+        : branch.getPbIp();
+    String portForRedirect = serverHost.equals(branch.getPIp())
+        ? branch.getPPort()
+        : branch.getPbPort();
+    String redirectUrl = "http://" + hostForRedirect + ":" + portForRedirect + "?token=" + token;
+
+    // 9) 응답 JSON으로 내보내기
+    Map<String,Object> result = new HashMap<>();
+    result.put("user", info);
+    result.put("hqUser", isHqUser);
     if (isTemp) {
-      res.put("message",
-          "초기화 된 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 비밀번호를 변경하세요."
-      );
+      result.put("message", "초기화된 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 비밀번호를 변경하세요.");
     }
+    result.put("redirectUrl", redirectUrl);
 
-    // 10) Redirect URL 조립 (serverHost 기준 internal vs public)
-    String host, port;
-    if (serverHost.equals(branch.getPIp())) {
-      host = branch.getPIp();
-      port = branch.getPPort();
-    } else {
-      host = branch.getPbIp();
-      port = branch.getPbPort();
-    }
-    res.put("redirectUrl", "http://" + host + ":" + port + "?token=" + token);
-
-    return ResponseEntity.ok(res);
+    return ResponseEntity.ok(result);
   }
 
 
