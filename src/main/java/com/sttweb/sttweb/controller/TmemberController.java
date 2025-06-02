@@ -186,10 +186,18 @@ public class TmemberController {
       // 7) “조회된 지사”와 “로그인 시도 사용자”의 branchSeq 비교
       Integer userBranchSeq = info.getBranchSeq();
       if (userBranchSeq == null || !userBranchSeq.equals(reqBranch.getBranchSeq())) {
+        // 사용자 지사 이름 조회를 위해 TbranchEntity를 한 번 더 로드
+        TbranchEntity userBranch = branchSvc.findEntityBySeq(userBranchSeq);
+        String userBranchName = (userBranch != null)
+            ? userBranch.getCompanyName()
+            : "알 수 없음"; // 혹은 빈 문자열
+
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN,
-            "해당 지사 사용자가 아닙니다. 사용자 지사=" + userBranchSeq
-                + ", 요청 지사=" + reqBranch.getBranchSeq()
+            "해당 지사 사용자가 아닙니다. 사용자 지사="
+                + userBranchName
+                + ", 요청 지사="
+                + reqBranch.getCompanyName()
         );
       }
       // 권한 검사 통과 → branchName 세팅
