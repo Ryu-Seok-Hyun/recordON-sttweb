@@ -8,6 +8,9 @@ import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -107,8 +110,13 @@ public class TmemberController {
   }
 
   /**
-   *  로그인 엔드포인트
-   *  POST /api/members/login
+   * 로그인 엔드포인트 (클라이언트 IP 기준으로 지사 제한)
+   *
+   * - 본사(userLevel="0")인 경우 → IP 검증 없이 어디서든 로그인 허용
+   * - 지사 사용자(userLevel!="0")인 경우 →
+   *     1) clientIp로 Branch 엔티티를 조회
+   *     2) 조회된 Branch.branchSeq와 user.branchSeq가 같을 때만 로그인 허용
+   *     3) 다르면 403 Forbidden
    */
   @LogActivity(type = "member", activity = "로그인")
   @PostMapping("/login")
@@ -116,91 +124,96 @@ public class TmemberController {
       @RequestBody LoginRequest req,
       HttpServletRequest request
   ) {
+    // ────────────────────────────────────────────────────────────
     // 1) 아이디/비밀번호 검증
     TmemberEntity user;
     try {
       user = svc.login(req);
     } catch (IllegalArgumentException e) {
-      // 아이디/비번 불일치 시 401
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 잘못되었습니다.");
     }
 
-    // 2) Info DTO 변환
+    // 2) Info DTO로 변환 (userLevel, branchSeq 등 포함)
     Info info = Info.fromEntity(user);
 
-    // 3) 클라이언트 IP 정규화
+    // ────────────────────────────────────────────────────────────
+    // 3) 클라이언트 IP 읽어오기 (X-Forwarded-For 우선, 없으면 getRemoteAddr())
     String clientIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
         .filter(h -> !h.isBlank())
         .orElse(request.getRemoteAddr());
+
+    // IPv6-IPv4 매핑 (예: "::ffff:192.168.55.180" -> "192.168.55.180")
     if (clientIp != null && clientIp.startsWith("::ffff:")) {
       clientIp = clientIp.substring(7);
     }
+    // IPv6 루프백(::1) -> 127.0.0.1 치환
     if ("::1".equals(clientIp) || "0:0:0:0:0:0:0:1".equals(clientIp)) {
       clientIp = "127.0.0.1";
     }
 
-    // 4) 서버 호스트 정규화
-    String serverHost = Optional.ofNullable(request.getHeader("Host"))
-        .map(h -> h.split(":")[0])
-        .orElse(request.getLocalAddr());
-    if (serverHost != null && serverHost.startsWith("::ffff:")) {
-      serverHost = serverHost.substring(7);
-    }
-    if ("::1".equals(serverHost) || "0:0:0:0:0:0:0:1".equals(serverHost)) {
-      serverHost = "127.0.0.1";
-    }
-
-    // ────────────────────────────────────────────────────
-    // 5) 디버깅용 로그
-    System.out.println("[DEBUG] 요청 clientIp=" + clientIp + ", serverHost=" + serverHost);
-
-    // 6) 사용자가 속한 지사(branchSeq) 조회
-    Integer userBranchSeq = info.getBranchSeq();
-    if (userBranchSeq == null) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "소속 지사 정보가 없습니다.");
-    }
-    TbranchEntity branch = branchSvc.findEntityBySeq(userBranchSeq);
-    if (branch == null) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "DB에서 지사 정보를 찾을 수 없습니다.");
+    // ────────────────────────────────────────────────────────────
+    // 4) “127.0.0.1” 로컬 루프백인 경우, 실제 서버 머신의 첫 번째 사설망 IP로 바꿔치기
+    if ("127.0.0.1".equals(clientIp)) {
+      String detectedIp = detectFirstNonLoopbackIPv4();
+      if (detectedIp != null) {
+        System.out.println("[DEBUG] loopback 감지됨 → 서버 네트워크 인터페이스 IP로 대체: " + detectedIp);
+        clientIp = detectedIp;
+      } else {
+        System.out.println("[DEBUG] loopback 감지되었으나, 비루프백 IP를 찾을 수 없어 그대로 127.0.0.1 유지");
+      }
     }
 
-    // ────────────────────────────────────────────────────
-    // 7) 본사 유저인지 체크
+    System.out.println("[DEBUG] 최종 clientIp = " + clientIp);
+
+    // ────────────────────────────────────────────────────────────
+    // 5) 본사 사용자(userLevel == "0")인지 판단
     boolean isHqUser = "0".equals(info.getUserLevel());
 
     if (!isHqUser) {
-      // ─ 지사 사용자라면 “127.0.0.1 예외 처리” 추가
-      //    → 원격 데스크톱이나 로컬 테스트 목적: "localhost"로 접속된 경우 branchSeq만 보면 된다
-      if (!"127.0.0.1".equals(clientIp) && !"127.0.0.1".equals(serverHost)) {
-        // 클라이언트 IP가 127.0.0.1이 아니고, 서버 호스트도 127.0.0.1이 아니면
-        // (즉, 실제 운영 환경 혹은 외부 접속 환경이라면) 아래 정상 IP 비교 로직 실행
-        String branchPip   = branch.getPIp();   // 사설망 IP
-        String branchPubip = branch.getPbIp();  // 공인망 IP
+      // ────────────────────────────────────────────────────────────
+      // 6) 지사 사용자일 때: clientIp로 Branch 조회 (사설망 기준만 적용)
+      //    (필요하면 공인망 pb_ip 도 함께 검사하도록 확장 가능)
 
-        System.out.println("[DEBUG] DB에 저장된 지사 사설망 IP=" + branchPip + ", 공인망 IP=" + branchPubip);
+      Optional<TbranchEntity> reqBranchOpt = branchSvc.findBypIp(clientIp);
+      if (reqBranchOpt.isEmpty()) {
+        throw new ResponseStatusException(
+            HttpStatus.FORBIDDEN,
+            "접근할 수 있는 지사가 아닙니다. 요청 IP=" + clientIp
+        );
+      }
+      TbranchEntity reqBranch = reqBranchOpt.get();
 
-        boolean matchPrivClient = branchPip   != null && branchPip.equals(clientIp);
-        boolean matchPubClient  = branchPubip != null && branchPubip.equals(clientIp);
-        boolean matchPrivServer = branchPip   != null && branchPip.equals(serverHost);
-        boolean matchPubServer  = branchPubip != null && branchPubip.equals(serverHost);
+      System.out.println("[DEBUG] clientIp로 조회된 지사 → branchSeq="
+          + reqBranch.getBranchSeq() + ", companyName=" + reqBranch.getCompanyName());
 
-        if (!(matchPrivClient || matchPubClient || matchPrivServer || matchPubServer)) {
-          throw new ResponseStatusException(
-              HttpStatus.FORBIDDEN,
-              "접근 권한이 없습니다. 요청 IP=" + clientIp +
-                  ", 서버 호스트=" + serverHost +
-                  " / 허용된 사설망 IP=" + branchPip +
-                  ", 허용된 공인망 IP=" + branchPubip
-          );
+      // ────────────────────────────────────────────────────────────
+      // 7) “조회된 지사”의 branchSeq 와 “로그인 시도 사용자”의 branchSeq 비교
+      Integer userBranchSeq = info.getBranchSeq();
+      if (userBranchSeq == null || !userBranchSeq.equals(reqBranch.getBranchSeq())) {
+        throw new ResponseStatusException(
+            HttpStatus.FORBIDDEN,
+            "해당 지사 사용자가 아닙니다. 사용자 지사=" + userBranchSeq
+                + ", 요청 지사=" + reqBranch.getBranchSeq()
+        );
+      }
+
+      // 지사 사용자 권한 검사 통과 → branchName 세팅
+      info.setBranchName(reqBranch.getCompanyName());
+    }
+    // ────────────────────────────────────────────────────────────
+    // (isHqUser == true) → 본사 사용자, IP 검증 없이 바로 통과
+    else {
+      Integer userBranchSeq = info.getBranchSeq();
+      if (userBranchSeq != null) {
+        TbranchEntity branch = branchSvc.findEntityBySeq(userBranchSeq);
+        if (branch != null) {
+          info.setBranchName(branch.getCompanyName());
         }
       }
-      // 만약 clientIp가 127.0.0.1 이거나 serverHost가 127.0.0.1 이라면
-      // ⇒ 원격 데스크톱/로컬 테스트용으로 “branchSeq만 있으면 통과”하므로 추가 검사는 하지 않음
     }
 
-    // ────────────────────────────────────────────────────
-    // 8) JWT 생성 & 응답
-    info.setBranchName(branch.getCompanyName());
+    // ────────────────────────────────────────────────────────────
+    // 8) JWT 토큰 생성 및 Info 세팅
     boolean isTempPassword = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTempPassword);
 
@@ -208,21 +221,60 @@ public class TmemberController {
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    String hostForRedirect = serverHost.equals(branch.getPIp())
-        ? branch.getPIp() : branch.getPbIp();
-    String portForRedirect = serverHost.equals(branch.getPIp())
-        ? branch.getPPort() : branch.getPbPort();
+    // ────────────────────────────────────────────────────────────
+    // 9) Redirect URL 생성 (지사 p_ip/p_port 또는 본사 개발용 localhost:8080)
+    String hostForRedirect, portForRedirect;
+    if (isHqUser) {
+      // 본사 개발 테스트용 호스트/포트
+      hostForRedirect = "127.0.0.1";
+      portForRedirect = "8080";
+    } else {
+      // 지사 사용자 → 지사 p_ip/p_port
+      TbranchEntity userBranch = branchSvc.findEntityBySeq(info.getBranchSeq());
+      hostForRedirect = userBranch.getPIp();
+      portForRedirect = userBranch.getPPort();
+    }
     String redirectUrl = "http://" + hostForRedirect + ":" + portForRedirect + "?token=" + token;
 
+    // ────────────────────────────────────────────────────────────
+    // 10) 로그인 성공 응답
     Map<String, Object> result = new HashMap<>();
     result.put("user", info);
     result.put("hqUser", isHqUser);
     if (isTempPassword) {
-      result.put("message", "초기화된 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 비밀번호를 변경하세요.");
+      result.put("message", "기본 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 변경하세요.");
     }
     result.put("redirectUrl", redirectUrl);
 
     return ResponseEntity.ok(result);
+  }
+
+  /**
+   * 서버 머신에 연결된 첫 번째 Non-Loopback IPv4 주소를 찾아 반환.
+   * 없으면 null.
+   */
+  private String detectFirstNonLoopbackIPv4() {
+    try {
+      Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
+      while (nics.hasMoreElements()) {
+        NetworkInterface ni = nics.nextElement();
+        if (ni.isLoopback() || !ni.isUp()) continue;
+
+        Enumeration<InetAddress> addrs = ni.getInetAddresses();
+        while (addrs.hasMoreElements()) {
+          InetAddress addr = addrs.nextElement();
+          if (addr.isLoopbackAddress()) continue;
+          // IPv4인지 확인
+          String ip = addr.getHostAddress();
+          if (ip.contains(".") && !ip.startsWith("127.")) {
+            return ip;
+          }
+        }
+      }
+    } catch (SocketException e) {
+      e.printStackTrace();
+    }
+    return null;
   }
 
 
