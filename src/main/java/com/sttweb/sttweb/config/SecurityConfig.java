@@ -49,7 +49,9 @@ public class SecurityConfig {
                 "/api/members/logout",
                 "/api/members/confirm-password",
                 "/api/user-permissions/**",
-                "/api/test/**"
+                "/api/test/**",
+                "/api/ini/download",
+                "/api/ini/regenerate"
             ).permitAll()
 
             // 그 외 경로는 모두 인증 필요
