@@ -40,8 +40,7 @@ public class TbranchServiceImpl implements TbranchService {
   @Override
   @Transactional(readOnly = true)
   public Page<TbranchDto> findAll(Pageable pageable) {
-    return repo.findAll(pageable)
-        .map(this::toDto);
+    return repo.findAll(pageable).map(this::toDto);
   }
 
   /** 회사명으로 검색 */
@@ -66,7 +65,7 @@ public class TbranchServiceImpl implements TbranchService {
     return repo.findByPbIp(pbIp);
   }
 
-  /** public IP 로 지점 DTO 반환 */
+  /** public IP 로 DTO 반환 */
   @Override
   @Transactional(readOnly = true)
   public TbranchDto findByPublicIp(String ip) {
@@ -99,12 +98,11 @@ public class TbranchServiceImpl implements TbranchService {
     e.setPbPort(dto.getPbPort());
     e.setHqYn(dto.getHqYn());
     e.setDiscd(0);
+    // e.setCrtime(...) 은 Entity에서 자동으로 생성되도록 되어 있다면 생략 가능
     return toDto(repo.save(e));
   }
 
-  /**
-   * hqYn = "0"인 본사 지점을 하나 가져온다.
-   */
+  /** hqYn = "0"인 본사 지점을 하나 가져온다. */
   @Override
   public Optional<TbranchEntity> findHqBranch() {
     return repo.findTopByHqYn("0");
@@ -138,6 +136,7 @@ public class TbranchServiceImpl implements TbranchService {
     repo.save(e);
   }
 
+  /** branchSeq → entity 조회 */
   @Override
   public TbranchEntity findEntityBySeq(Integer branchSeq) {
     return repo.findById(branchSeq)
