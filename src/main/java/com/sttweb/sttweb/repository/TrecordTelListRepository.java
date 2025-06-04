@@ -2,11 +2,13 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TrecordTelListEntity;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
-
+/**
+ * trecord_tel_list 테이블 전용 JPA Repository
+ */
 @Repository
 public interface TrecordTelListRepository extends JpaRepository<TrecordTelListEntity, Integer> {
   /**

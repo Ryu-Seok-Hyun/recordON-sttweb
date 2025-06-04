@@ -2,6 +2,7 @@
 package com.sttweb.sttweb.entity;
 
 import jakarta.persistence.*;
+import java.util.List;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
@@ -40,4 +41,14 @@ public class TrecordTelListEntity {
   @CreationTimestamp
   @Column(name = "critime", nullable = false, updatable = false)
   private LocalDateTime critime;
+
+  /**
+   * ▶ 하나의 회선에 여러 회원이 권한을 가질 수 있으므로 OneToMany 매핑
+   */
+  @OneToMany(
+      mappedBy = "line",
+      cascade = CascadeType.ALL,
+      orphanRemoval = true
+  )
+  private List<TmemberLinePermEntity> memberPerms;
 }

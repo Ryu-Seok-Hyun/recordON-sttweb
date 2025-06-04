@@ -1,6 +1,7 @@
 package com.sttweb.sttweb.entity;
 
 import jakarta.persistence.*;
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -79,4 +80,16 @@ public class TmemberEntity {
       columnDefinition = "INT NOT NULL DEFAULT 1"
   )
   private Integer roleSeq = 1;
+
+
+
+  /**
+   * ▶ 회원 한 명이 여러 회선에 권한을 가질 수 있으므로 OneToMany 매핑
+   */
+  @OneToMany(
+      mappedBy = "member",
+      cascade = CascadeType.ALL,
+      orphanRemoval = true
+  )
+  private List<TmemberLinePermEntity> linePerms;
 }

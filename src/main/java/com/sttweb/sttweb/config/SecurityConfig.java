@@ -51,7 +51,8 @@ public class SecurityConfig {
                 "/api/user-permissions/**",
                 "/api/test/**",
                 "/api/ini/download",
-                "/api/ini/regenerate"
+                "/api/ini/regenerate",
+                "/api/perm/**"
             ).permitAll()
 
             // 그 외 경로는 모두 인증 필요
