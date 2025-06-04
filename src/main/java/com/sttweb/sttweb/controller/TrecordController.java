@@ -1,3 +1,4 @@
+// src/main/java/com/sttweb/sttweb/controller/TrecordController.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TrecordDto;
@@ -5,6 +6,7 @@ import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
+import com.sttweb.sttweb.service.TrecordScanService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import java.io.IOException;
@@ -13,16 +15,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Pageable;
-import org.springframework.format.annotation.DateTimeFormat;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
@@ -31,18 +31,17 @@ import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import com.sttweb.sttweb.dto.RecordSearchResponseDto;
 
 @RestController
 @RequestMapping("/api/records")
 @RequiredArgsConstructor
 public class TrecordController {
 
-  private final TrecordService recordSvc;
-  private final TmemberService memberSvc;
-  private final JwtTokenProvider jwtTokenProvider;
-  private final PermissionService permService;
-
+  private final TrecordService         recordSvc;
+  private final TrecordScanService     scanSvc;
+  private final TmemberService         memberSvc;
+  private final JwtTokenProvider       jwtTokenProvider;
+  private final PermissionService      permService;
 
   private String extractToken(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -66,8 +65,34 @@ public class TrecordController {
   }
 
   // ---------------------------------------
-// 1) 전체 녹취 + 필터링 + IN/OUT 카운트
-// ---------------------------------------
+  // 0) 신규 녹취 스캔 → DB 저장
+  //    → 이제 GET /api/records/scan 으로 호출합니다.
+  // ---------------------------------------
+  @LogActivity(type = "record", activity = "등록", contents = "디스크 스캔하여 DB 저장")
+  @GetMapping("/scan")
+  public ResponseEntity<Map<String, Object>> scanAndSaveNewRecords(
+      @RequestHeader(value = "Authorization", required = false) String authHeader
+  ) {
+    // (1) 로그인/토큰 확인 (필요하다면)
+    Info me = requireLogin(authHeader);
+
+    // (2) 실제 스캔 & 저장
+    Map<String, Object> resp = new HashMap<>();
+    try {
+      int inserted = scanSvc.scanAndSaveNewRecords();
+      resp.put("inserted", inserted);
+      resp.put("message", "신규 녹취 " + inserted + "건이 DB에 저장되었습니다.");
+      return ResponseEntity.ok(resp);
+    } catch (IOException e) {
+      resp.put("inserted", 0);
+      resp.put("message", "스캔 중 오류 발생: " + e.getMessage());
+      return ResponseEntity.status(500).body(resp);
+    }
+  }
+
+  // ---------------------------------------
+  // 1) 전체 녹취 + 필터링 + IN/OUT 카운트
+  // ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
   public ResponseEntity<Map<String,Object>> listAll(
@@ -81,35 +106,29 @@ public class TrecordController {
       @RequestParam(name = "end",   required = false) String endStr
   ) {
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    LocalDateTime start = startStr != null ? LocalDateTime.parse(startStr, fmt) : null;
-    LocalDateTime end   = endStr   != null ? LocalDateTime.parse(endStr,   fmt) : null;
+    LocalDateTime start = (startStr != null ? LocalDateTime.parse(startStr, fmt) : null);
+    LocalDateTime end   = (endStr   != null ? LocalDateTime.parse(endStr,   fmt) : null);
 
     Info me = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     PageRequest pr = PageRequest.of(page, size);
 
-    // ─────────────────────────────────────────────────────────
-    // 수정 포인트: q에 쉼표(,)가 들어 있으면 multi-number 모드로 분기
-    // ─────────────────────────────────────────────────────────
+    // q에 쉼표가 있으면 multi-number 모드
     Page<TrecordDto> paged;
     boolean multi = (q != null && q.contains(","));
     if (multi) {
-      // 1) q를 쉼표로 split → 번호 리스트
       List<String> numbers = Arrays.stream(q.split(","))
           .map(String::trim)
           .filter(s -> !s.isEmpty())
           .toList();
-      // 2) 일반 사용자는 자신의 번호만 허용
       if (roleSeq < 2) {
         numbers = numbers.stream()
             .filter(n -> n.equals(me.getNumber()))
             .toList();
       }
-      // 3) multi-number 전용 검색
       paged = recordSvc.searchByNumbers(numbers, pr);
     }
     else {
-      // 기존 단일/전체 조회 그대로
       paged = (roleSeq < 2)
           ? recordSvc.search(me.getNumber(), me.getNumber(),
           direction, numberKind, q, start, end, pr)
@@ -117,29 +136,25 @@ public class TrecordController {
               direction, numberKind, q, start, end, pr);
     }
 
-    // IN/OUT 카운트도 마찬가지로 multi 여부에 따라 다르게 처리할 수 있지만,
-    // 우선 single-mode 때만 예전 로직, multi-mode 일 때는 전체 건수만 찍어줍니다.
     long inCount, outCount;
     if (!multi) {
-      inCount = recordSvc.search(
-          roleSeq<2 ? me.getNumber() : null,
-          roleSeq<2 ? me.getNumber() : null,
+      inCount  = recordSvc.search(
+          (roleSeq < 2 ? me.getNumber() : null),
+          (roleSeq < 2 ? me.getNumber() : null),
           "IN", numberKind, q, start, end,
           PageRequest.of(0,1)
       ).getTotalElements();
       outCount = recordSvc.search(
-          roleSeq<2 ? me.getNumber() : null,
-          roleSeq<2 ? me.getNumber() : null,
+          (roleSeq < 2 ? me.getNumber() : null),
+          (roleSeq < 2 ? me.getNumber() : null),
           "OUT", numberKind, q, start, end,
           PageRequest.of(0,1)
       ).getTotalElements();
     } else {
-      // multi-mode 땐 IN/OUT 구분이 없으므로, 총건수를 both 카운트에 동일하게 설정
       inCount  = paged.getTotalElements();
       outCount = paged.getTotalElements();
     }
 
-    // 3) 응답 조립
     Map<String,Object> body = new LinkedHashMap<>();
     body.put("content",          paged.getContent());
     body.put("totalElements",    paged.getTotalElements());
@@ -158,13 +173,8 @@ public class TrecordController {
     return ResponseEntity.ok(body);
   }
 
-
-
-
   /**
-   * 번호 검색
-   * - 다중 검색: numbers 파라미터(예: "0333,0334,01044543333")
-   * - 단일 검색: number1, number2 파라미터
+   * 번호 검색 (다중/단일)
    */
   @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
   @GetMapping("/search")
@@ -180,7 +190,7 @@ public class TrecordController {
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     Pageable pr = PageRequest.of(page, size);
 
-    // 1) 다중검색 모드
+    // 1) 다중 검색 모드
     if (numbersCsv != null) {
       List<String> nums = Arrays.stream(numbersCsv.split(","))
           .map(String::trim)
@@ -194,13 +204,10 @@ public class TrecordController {
       return ResponseEntity.ok(recordSvc.searchByNumbers(nums, pr));
     }
 
-    // 2) 단일검색 모드
-    // 둘 다 없으면 전체조회
+    // 2) 단일 검색 모드
     if (number1 == null && number2 == null) {
       return ResponseEntity.ok(recordSvc.findAll(pr));
     }
-
-    // 권한 검사 (일반 사용자는 자신의 번호만)
     if (roleSeq < 2) {
       String myNum = me.getNumber();
       if ((number1 != null && !number1.equals(myNum)) ||
@@ -209,23 +216,14 @@ public class TrecordController {
             "본인 자료 외에 검색할 수 없습니다.");
       }
     }
-
-    // 2-1) number1 & number2 둘 다 있을 때
     if (number1 != null && number2 != null) {
       return ResponseEntity.ok(recordSvc.searchByNumber(number1, number2, pr));
-    }
-    // 2-2) number1만 있을 때
-    else if (number1 != null) {
+    } else if (number1 != null) {
       return ResponseEntity.ok(recordSvc.searchByNumber(number1, null, pr));
-    }
-    // 2-3) number2만 있을 때
-    else {
+    } else {
       return ResponseEntity.ok(recordSvc.searchByNumber(null, number2, pr));
     }
   }
-
-
-
 
   /** 단건 조회 */
   @LogActivity(type = "record", activity = "조회", contents = "단건 조회")
@@ -237,13 +235,16 @@ public class TrecordController {
     Info me = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     TrecordDto dto = recordSvc.findById(id);
-    if (roleSeq < 2 && !me.getNumber().equals(dto.getNumber1()) && !me.getNumber().equals(dto.getNumber2())) {
+    if (roleSeq < 2
+        && !me.getNumber().equals(dto.getNumber1())
+        && !me.getNumber().equals(dto.getNumber2())
+    ) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료 외에 조회할 수 없습니다.");
     }
     return ResponseEntity.ok(dto);
   }
 
-  /** 청취 (LISTEN 이상) */
+  /** 청취 (LISTEN 이상 권한) */
   @LogActivity(type = "record", activity = "청취", contents = "녹취 청취")
   @GetMapping(value = "/{id}/listen", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
   public ResponseEntity<ResourceRegion> streamAudio(
@@ -272,12 +273,13 @@ public class TrecordController {
     }
 
     return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-        .contentType(MediaTypeFactory.getMediaType(audio).orElse(MediaType.APPLICATION_OCTET_STREAM))
+        .contentType(MediaTypeFactory.getMediaType(audio)
+            .orElse(MediaType.APPLICATION_OCTET_STREAM))
         .eTag("\"" + id + "-" + region.getPosition() + "\"")
         .body(region);
   }
 
-  /** 다운로드 (DOWNLOAD 이상) */
+  /** 다운로드 (DOWNLOAD 이상 권한) */
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
   @GetMapping("/{id}/download")
   public ResponseEntity<Resource> downloadById(
@@ -289,7 +291,8 @@ public class TrecordController {
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
 
     boolean hasDownloadRole = roleSeq >= 4;
-    boolean isOwner        = me.getNumber().equals(dto.getNumber1()) || me.getNumber().equals(dto.getNumber2());
+    boolean isOwner        = me.getNumber().equals(dto.getNumber1())
+        || me.getNumber().equals(dto.getNumber2());
     boolean isBranchAdmin  = "1".equals(me.getUserLevel())
         && me.getBranchSeq() != null
         && me.getBranchSeq().equals(dto.getBranchSeq());
@@ -302,7 +305,8 @@ public class TrecordController {
 
     Resource file = recordSvc.getFile(id);
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"")
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"" + file.getFilename() + "\"")
         .body(file);
   }
 }

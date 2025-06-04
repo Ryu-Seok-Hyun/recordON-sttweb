@@ -40,7 +40,7 @@ public class MemberLinePermController {
   /**
    * 1-1) 회원별 전체 회선 + 권한 유무 조회
    * GET /api/perm/member/{memberSeq}/all-lines
-   * → 회원이 매핑된 회선은 실제 권한, 매핑 없는 회선은 NONE으로 나옵니다.
+   * → 회원이 매핑된 회선은 실제 권한, 매핑 없는 회선은 NONE으로 나옴
    */
   @GetMapping("/member/{memberSeq}/all-lines")
   public ResponseEntity<List<MemberLinePermDto>> getAllLinesWithPerm(
@@ -52,7 +52,7 @@ public class MemberLinePermController {
   /**
    * 1-2) 모든 회원에 대해서, 전체 회선 + 권한 유무 조회
    * GET /api/perm/all-members-lines
-   * → 전체 회원 × 전체 회선 조합을 반환합니다.
+   * → 전체 회원 × 전체 회선 조합을 반환.
    */
   @GetMapping("/all-members-lines")
   public ResponseEntity<List<MemberLinePermDto>> getAllMembersAllLinesPerm() {
