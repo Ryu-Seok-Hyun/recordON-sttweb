@@ -8,6 +8,7 @@ import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import jakarta.persistence.EntityNotFoundException;
 import java.net.MalformedURLException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Time;
@@ -16,11 +17,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -31,21 +30,17 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TrecordServiceImpl implements TrecordService {
 
-// 태경씨 임시 청취 배포후 삭제.
-  @Value("${audio.base-directory}")
-  private String audioBaseDir;
-
-
-  // 상대경로
-//  @Value("${app.audio.base-dir:\\\\192.168.55.180\\RecOnData}")
-//  private String audioBaseDir;
+  // ───────────────────────────────────────────────────────────────
+  // 드라이브 순회하여 RecOnData 폴더 찾기용 상수
+  // ───────────────────────────────────────────────────────────────
+  private static final String[] SEARCH_DRIVES   = { "C:", "D:", "E:" };
+  private static final String   REC_ON_DATA_SUB = "\\RecOnData";
 
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
-  private final TmemberService memberSvc;
+  private final TmemberService    memberSvc;
 
-  private static final DateTimeFormatter DT_FMT =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   public TrecordServiceImpl(TrecordRepository repo,
       TmemberRepository memberRepo,
@@ -119,16 +114,14 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> search(
-      String number1,
+  public Page<TrecordDto> search(String number1,
       String number2,
       String direction,
       String numberKind,
       String query,
       LocalDateTime start,
       LocalDateTime end,
-      Pageable pageable
-  ) {
+      Pageable pageable) {
     Boolean inbound = null;
     if ("IN".equalsIgnoreCase(direction))  inbound = true;
     if ("OUT".equalsIgnoreCase(direction)) inbound = false;
@@ -148,51 +141,38 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> advancedSearch(
-      String direction,
+  public Page<TrecordDto> advancedSearch(String direction,
       String numberKind,
       String q,
       Pageable pageable,
-      Info me
-  ) {
-    // JpaSpecificationExecutor 사용을 위해 TrecordRepository가 extends JpaSpecificationExecutor<TrecordEntity>여야 합니다.
+      Info me) {
     Specification<TrecordEntity> spec = Specification.where(null);
 
-    // 1) direction 필터: 'IN' = ioDiscdVal 'I', 'OUT' = 'O'
     if ("IN".equalsIgnoreCase(direction)) {
       spec = spec.and((root, query, cb) ->
-          cb.equal(root.get("ioDiscdVal"), "I")
-      );
+          cb.equal(root.get("ioDiscdVal"), "I"));
     } else if ("OUT".equalsIgnoreCase(direction)) {
       spec = spec.and((root, query, cb) ->
-          cb.equal(root.get("ioDiscdVal"), "O")
-      );
+          cb.equal(root.get("ioDiscdVal"), "O"));
     }
 
-    // 2) numberKind 필터: 'EXT' = 내선(길이<=4), 'PHONE' = 전화번호(길이>4)
     if ("EXT".equalsIgnoreCase(numberKind)) {
       spec = spec.and((root, query, cb) ->
-          cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4)
-      );
+          cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4));
     } else if ("PHONE".equalsIgnoreCase(numberKind)) {
       spec = spec.and((root, query, cb) ->
-          cb.greaterThan(cb.length(root.get("number1")), 4)
-      );
+          cb.greaterThan(cb.length(root.get("number1")), 4));
     }
 
-    // 3) q 필터: callStatus에 키워드 포함
     if (q != null && !q.isBlank()) {
       String pattern = "%" + q + "%";
       spec = spec.and((root, query, cb) ->
-          cb.like(root.get("callStatus"), pattern)
-      );
+          cb.like(root.get("callStatus"), pattern));
     }
 
-    // 4) 페이징 조회
     Page<TrecordEntity> page = repo.findAll(spec, pageable);
     return page.map(this::toDto);
   }
-
 
   @Override
   @Transactional(readOnly = true)
@@ -203,14 +183,10 @@ public class TrecordServiceImpl implements TrecordService {
     return toDto(e);
   }
 
-  /**
-   * 다중 번호(equal) 검색 구현
-   */
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> searchByNumbers(List<String> numbers, Pageable pageable) {
-    return repo
-        .findByNumber1InOrNumber2In(numbers, numbers, pageable)
+    return repo.findByNumber1InOrNumber2In(numbers, numbers, pageable)
         .map(this::toDto);
   }
 
@@ -307,10 +283,23 @@ public class TrecordServiceImpl implements TrecordService {
         .orElseThrow(() -> new ResponseStatusException(
             HttpStatus.NOT_FOUND, "녹취를 찾을 수 없습니다: " + recordSeq));
 
-    // DB에 저장된 상대경로 예: "20240125\\0334-O-950_20240125103148.wav"
+    // DB에 저장된 상대경로 예: "../20240125/0334-O-950_20240125103148.wav"
     String raw = e.getAudioFileDir().replace("\\", "/");
-    Path base = Paths.get(audioBaseDir);
-    Path full = base.resolve(raw).normalize();
+
+    // "../" 접두어 제거
+    if (raw.startsWith("../")) {
+      raw = raw.substring(3);
+    }
+
+    // (1) C:, D:, E: 드라이브 중 RecOnData 루트를 찾는다
+    Path recOnRoot = findRecOnDataRoot();
+    if (recOnRoot == null) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+          "서버에서 RecOnData 폴더를 찾을 수 없습니다.");
+    }
+
+    // (2) RecOnData 루트 아래에 raw(예: "20240125/0334-O-950_20240125103148.wav")를 붙여 실제 경로 생성
+    Path full = recOnRoot.resolve(raw).normalize();
 
     try {
       UrlResource res = new UrlResource(full.toUri());
@@ -325,5 +314,17 @@ public class TrecordServiceImpl implements TrecordService {
     }
   }
 
-
+  /**
+   * C:, D:, E: 드라이브 중에서 "\RecOnData" 폴더를 찾아 Path로 반환.
+   * 없으면 null 반환.
+   */
+  private Path findRecOnDataRoot() {
+    for (String drv : SEARCH_DRIVES) {
+      Path candidate = Paths.get(drv + REC_ON_DATA_SUB);
+      if (Files.exists(candidate) && Files.isDirectory(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
 }

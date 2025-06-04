@@ -17,19 +17,13 @@ public class MemberLinePermController {
 
   private final MemberLinePermService service;
 
-  /**
-   * 0) 전체 매핑 조회
-   *   → tmember_line_perm 테이블에 저장된 실 등록 매핑만 반환
-   */
+  /** 0) 전체 매핑 조회 */
   @GetMapping
   public ResponseEntity<List<MemberLinePermDto>> getAllMappings() {
     return ResponseEntity.ok(service.getAllMappings());
   }
 
-  /**
-   * 1) 회원이 실제로 부여받은 회선별 권한만 조회
-   * GET /api/perm/member/{memberSeq}
-   */
+  /** 1) 회원별 실제로 부여된 매핑 조회 */
   @GetMapping("/member/{memberSeq}")
   public ResponseEntity<List<MemberLinePermDto>> getByMember(
       @PathVariable("memberSeq") Integer memberSeq
@@ -37,11 +31,7 @@ public class MemberLinePermController {
     return ResponseEntity.ok(service.getPermissionsByMember(memberSeq));
   }
 
-  /**
-   * 1-1) 회원별 전체 회선 + 권한 유무 조회
-   * GET /api/perm/member/{memberSeq}/all-lines
-   * → 회원이 매핑된 회선은 실제 권한, 매핑 없는 회선은 NONE으로 나옴
-   */
+  /** 1-1) 회원별 전체 회선 + 권한 유무 조회 */
   @GetMapping("/member/{memberSeq}/all-lines")
   public ResponseEntity<List<MemberLinePermDto>> getAllLinesWithPerm(
       @PathVariable("memberSeq") Integer memberSeq
@@ -49,20 +39,13 @@ public class MemberLinePermController {
     return ResponseEntity.ok(service.getAllLinesWithPerm(memberSeq));
   }
 
-  /**
-   * 1-2) 모든 회원에 대해서, 전체 회선 + 권한 유무 조회
-   * GET /api/perm/all-members-lines
-   * → 전체 회원 × 전체 회선 조합을 반환.
-   */
+  /** 1-2) 모든 회원 × 전체 회선 조합 조회 */
   @GetMapping("/all-members-lines")
   public ResponseEntity<List<MemberLinePermDto>> getAllMembersAllLinesPerm() {
     return ResponseEntity.ok(service.getAllMembersAllLinesPerm());
   }
 
-  /**
-   * 2) 회선별 매핑 조회
-   * GET /api/perm/line/{lineId}
-   */
+  /** 2) 회선별 매핑 조회 */
   @GetMapping("/line/{lineId}")
   public ResponseEntity<List<MemberLinePermDto>> getByLine(
       @PathVariable("lineId") Integer lineId
@@ -70,10 +53,7 @@ public class MemberLinePermController {
     return ResponseEntity.ok(service.getPermissionsByLine(lineId));
   }
 
-  /**
-   * 3) 회선 권한 부여
-   * POST /api/perm/grant-line
-   */
+  /** 3) 회선 권한 부여 */
   @PostMapping("/grant-line")
   public ResponseEntity<String> grantLinePermission(@RequestBody GrantLineDto dto) {
     boolean granted = service.grantLinePermission(
@@ -83,14 +63,11 @@ public class MemberLinePermController {
       return ResponseEntity.ok("회선 권한이 부여되었습니다.");
     } else {
       return ResponseEntity.badRequest()
-          .body("이미 권한이 부여되었거나, 잘못된 요청입니다.");
+          .body("잘못된 요청입니다.");
     }
   }
 
-  /**
-   * 4) 회선 권한 회수
-   * DELETE /api/perm/revoke-line
-   */
+  /** 4) 회선 권한 회수 */
   @DeleteMapping("/revoke-line")
   public ResponseEntity<String> revokeLinePermission(@RequestBody GrantLineDto dto) {
     boolean revoked = service.revokeLinePermission(

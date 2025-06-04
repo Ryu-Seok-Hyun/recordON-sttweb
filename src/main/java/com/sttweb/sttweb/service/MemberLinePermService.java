@@ -22,13 +22,43 @@ import java.util.stream.Collectors;
 public class MemberLinePermService {
 
   private final TmemberLinePermRepository permRepository;
-  private final TmemberRepository memberRepository;
+  private final TmemberRepository        memberRepository;
   private final TrecordTelListRepository telListRepository;
-  private final TmemberRoleRepository roleRepository;
+  private final TmemberRoleRepository     roleRepository;
+
+  /**
+   * Helper: TmemberLinePermEntity → MemberLinePermDto 로 변환
+   */
+  private MemberLinePermDto entityToDto(TmemberLinePermEntity e) {
+    // 1) “권한을 부여받은” 회원 정보
+    TmemberEntity member = e.getMember();
+    String mapperUserId   = (member.getUserId() == null ? "" : member.getUserId());
+    String mapperUserName = mapperUserId; // 현재 user_name 칼럼이 회원 테이블에 없으므로 userId 대체
+
+    Integer mapperBranchSeq = member.getBranchSeq(); // ★ 여기서 branchSeq 가져오기
+
+    // 2) “회선”(내선) 정보
+    TrecordTelListEntity line = e.getLine();
+    String callNum       = line.getCallNum();
+    String callOwnerName = (line.getUserName() == null ? "" : line.getUserName());
+
+    return MemberLinePermDto.builder()
+        .memberSeq       (member.getMemberSeq())
+        .userId          (mapperUserId)
+        .userName        (mapperUserName)
+        .branchSeq       (mapperBranchSeq)
+        .lineId          (line.getId())
+        .callNum         (callNum)
+        .callOwnerName   (callOwnerName)
+        .roleSeq         (e.getRole().getRoleSeq())
+        .roleCode        (e.getRole().getRoleCode())
+        .roleDescription (e.getRole().getDescription())
+        .regtime         (e.getRegtime())
+        .build();
+  }
 
   /**
    * 0) 전체 매핑 조회
-   *   → tmember_line_perm 테이블의 모든 행을 DTO 리스트로 반환
    */
   @Transactional(readOnly = true)
   public List<MemberLinePermDto> getAllMappings() {
@@ -38,7 +68,7 @@ public class MemberLinePermService {
   }
 
   /**
-   * 1) 특정 회원(memberSeq)이 가진 회선별 권한 목록(실제 부여된 것만) 반환
+   * 1) 특정 회원이 실제로 부여받은 권한 목록 조회
    */
   @Transactional(readOnly = true)
   public List<MemberLinePermDto> getPermissionsByMember(Integer memberSeq) {
@@ -48,7 +78,7 @@ public class MemberLinePermService {
   }
 
   /**
-   * 2) 특정 회선(lineId)에 매핑된 회원별 권한 목록 반환
+   * 2) 특정 회선에 매핑된 회원별 권한 목록 조회
    */
   @Transactional(readOnly = true)
   public List<MemberLinePermDto> getPermissionsByLine(Integer lineId) {
@@ -59,7 +89,6 @@ public class MemberLinePermService {
 
   /**
    * 3) 회원(memberSeq)에게 회선(lineId)에 대한 권한(roleSeq)을 부여
-   *    - 이미 부여되어 있으면 false, 성공하면 true
    */
   @Transactional
   public boolean grantLinePermission(Integer memberSeq, Integer lineId, Integer roleSeq) {
@@ -73,23 +102,24 @@ public class MemberLinePermService {
     TmemberLinePermEntity existing =
         permRepository.findByMemberMemberSeqAndLineId(memberSeq, lineId);
     if (existing != null) {
-      // 이미 권한이 부여된 상태
-      return false;
+      // 이미 매핑이 있으면 role만 업데이트
+      existing.setRole(role);
+      permRepository.save(existing);
+      return true;
     }
 
+    // 매핑이 없으면 새로 INSERT
     TmemberLinePermEntity newPerm = TmemberLinePermEntity.builder()
         .member(member)
         .line(line)
         .role(role)
-        // regtime은 @CreationTimestamp가 자동 설정됨
         .build();
     permRepository.save(newPerm);
     return true;
   }
 
   /**
-   * 4) 회원(memberSeq)이 회선(lineId)에 대해 가진 권한 매핑을 삭제
-   * @return true=삭제 성공, false=존재하지 않음
+   * 4) 회원이 회선에 대해 가진 권한 매핑을 삭제
    */
   @Transactional
   public boolean revokeLinePermission(Integer memberSeq, Integer lineId) {
@@ -102,75 +132,73 @@ public class MemberLinePermService {
     return true;
   }
 
-  /** Helper: 엔티티 → DTO 변환 */
-  private MemberLinePermDto entityToDto(TmemberLinePermEntity e) {
-    return MemberLinePermDto.builder()
-        .memberSeq      (e.getMember().getMemberSeq())
-        .userId         (e.getMember().getUserId())
-        .lineId         (e.getLine().getId())
-        .callNum        (e.getLine().getCallNum())
-        .roleSeq        (e.getRole().getRoleSeq())
-        .roleCode       (e.getRole().getRoleCode())
-        .roleDescription(e.getRole().getDescription())
-        .regtime        (e.getRegtime())
-        .build();
-  }
-
   /**
-   * 5) 전체 회선 목록 + 해당 회원이 가진 권한 유무를 모두 리턴
-   *    → 회원(memberSeq)에 매핑된 권한이 있으면 해당 권한,
-   *       매핑이 없으면 기본 “NONE”으로 표시
+   * 5) 특정 회원의 “전체 회선 + 권한 유무” 조회
    */
   @Transactional(readOnly = true)
   public List<MemberLinePermDto> getAllLinesWithPerm(Integer memberSeq) {
-    // 1) 회원이 이미 부여받은 권한 매핑을 모두 조회
+    // (1) 해당 회원이 이미 부여받은 매핑 목록
     List<TmemberLinePermEntity> existingPerms =
         permRepository.findByMemberMemberSeq(memberSeq);
 
-    // 2) lineId → 그 권한 엔티티 맵으로 변환
+    // (2) lineId → 매핑 엔티티 맵핑
     Map<Integer, TmemberLinePermEntity> permByLineId = existingPerms.stream()
         .collect(Collectors.toMap(
-            e -> e.getLine().getId(),
-            e -> e
+            perm -> perm.getLine().getId(),
+            perm -> perm
         ));
 
-    // 3) 전체 회선 목록 조회
+    // (3) 전체 회선 목록
     List<TrecordTelListEntity> allLines = telListRepository.findAll();
 
-    // 4) 회원 userId 조회 (매핑이 없을 때에도 포함하기 위함)
-    String memberUserId = memberRepository.findById(memberSeq)
-        .map(TmemberEntity::getUserId)
-        .orElse(""); // 회원 자체가 없으면 빈 문자열로 처리
+    // (4) “권한 조회를 요청한” 회원 정보 (회원이 없을 수 있으므로 null 체크)
+    TmemberEntity requestMemberEntity = memberRepository.findById(memberSeq).orElse(null);
+    String requestUserId   = (requestMemberEntity == null ? "" : requestMemberEntity.getUserId());
+    String requestUserName = requestUserId;
+    Integer requestBranchSeq = (requestMemberEntity == null ? null : requestMemberEntity.getBranchSeq());
 
-    // 5) 모든 회선을 순회하면서, 매핑이 있으면 실제 권한, 없으면 “NONE”으로 DTO 생성
     List<MemberLinePermDto> result = new ArrayList<>();
 
     for (TrecordTelListEntity line : allLines) {
       TmemberLinePermEntity perm = permByLineId.get(line.getId());
       if (perm != null) {
-        // 이미 권한 매핑이 있는 경우 → 실제 권한 정보 사용
+        // (가) 매핑이 있는 경우 → 실제 매핑된 값으로 내려줌
+        TmemberEntity m        = perm.getMember();
+        String        mUserId  = (m.getUserId() == null ? "" : m.getUserId());
+        String        mUserName = mUserId;
+        Integer       mBranchSeq = m.getBranchSeq();
+        String        ownerName = (line.getUserName() == null ? "" : line.getUserName());
+
         result.add(MemberLinePermDto.builder()
-            .memberSeq(memberSeq)
-            .userId(memberUserId)
-            .lineId(line.getId())
-            .callNum(line.getCallNum())
-            .roleSeq(perm.getRole().getRoleSeq())
-            .roleCode(perm.getRole().getRoleCode())
-            .roleDescription(perm.getRole().getDescription())
-            .regtime(perm.getRegtime())
+            .memberSeq       (m.getMemberSeq())
+            .userId          (mUserId)
+            .userName        (mUserName)
+            .branchSeq       (mBranchSeq)
+            .lineId          (line.getId())
+            .callNum         (line.getCallNum())
+            .callOwnerName   (ownerName)
+            .roleSeq         (perm.getRole().getRoleSeq())
+            .roleCode        (perm.getRole().getRoleCode())
+            .roleDescription (perm.getRole().getDescription())
+            .regtime         (perm.getRegtime())
             .build()
         );
       } else {
-        // 매핑이 없는 경우 → NONE 처리
+        // (나) 매핑이 없는 경우 → NONE 권한으로 내려줌
+        String ownerName = (line.getUserName() == null ? "" : line.getUserName());
+
         result.add(MemberLinePermDto.builder()
-            .memberSeq(memberSeq)
-            .userId(memberUserId)
-            .lineId(line.getId())
-            .callNum(line.getCallNum())
-            .roleSeq(1)               // roleSeq=1(=NONE)이라고 가정
-            .roleCode("NONE")
-            .roleDescription("권한 없음")
-            .regtime(null)            // 매핑이 없으므로 regtime도 null
+            .memberSeq       (memberSeq)
+            .userId          (requestUserId)
+            .userName        (requestUserName)
+            .branchSeq       (requestBranchSeq)
+            .lineId          (line.getId())
+            .callNum         (line.getCallNum())
+            .callOwnerName   (ownerName)
+            .roleSeq         (1)                    // NONE
+            .roleCode        ("NONE")
+            .roleDescription ("권한 없음")
+            .regtime         (null)
             .build()
         );
       }
@@ -180,25 +208,17 @@ public class MemberLinePermService {
   }
 
   /**
-   * 6) 전체 회원(member)에 대해서도 “전체 회선+권한 유무”를 리턴하고 싶다면,
-   *    아래 메서드를 추가로 구현할 수 있습니다.
-   *    → 회원 목록을 순회하면서 getAllLinesWithPerm()을 호출하도록 구성
-   *
-   * @return memberSeq, userId, lineId, callNum, roleSeq, roleCode, roleDescription, regtime 을 담은 DTO 리스트
+   * 6) 모든 회원 × 모든 회선 권한 조회
    */
   @Transactional(readOnly = true)
   public List<MemberLinePermDto> getAllMembersAllLinesPerm() {
     List<MemberLinePermDto> combined = new ArrayList<>();
+    List<TmemberEntity>     allMembers = memberRepository.findAll();
 
-    // 1) 모든 회원 조회
-    List<TmemberEntity> allMembers = memberRepository.findAll();
-    // 2) 회원별로 getAllLinesWithPerm() 호출 후 결과를 합친다
     for (TmemberEntity member : allMembers) {
       Integer memberSeq = member.getMemberSeq();
-      List<MemberLinePermDto> perMemberList = getAllLinesWithPerm(memberSeq);
-      combined.addAll(perMemberList);
+      combined.addAll(getAllLinesWithPerm(memberSeq));
     }
-
     return combined;
   }
 }

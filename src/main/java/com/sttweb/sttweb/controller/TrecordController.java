@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/controller/TrecordController.java
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TrecordDto;
@@ -37,11 +36,11 @@ import org.springframework.web.server.ResponseStatusException;
 @RequiredArgsConstructor
 public class TrecordController {
 
-  private final TrecordService         recordSvc;
-  private final TrecordScanService     scanSvc;
-  private final TmemberService         memberSvc;
-  private final JwtTokenProvider       jwtTokenProvider;
-  private final PermissionService      permService;
+  private final TrecordService     recordSvc;
+  private final TrecordScanService scanSvc;
+  private final TmemberService     memberSvc;
+  private final JwtTokenProvider   jwtTokenProvider;
+  private final PermissionService  permService;
 
   private String extractToken(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -66,14 +65,14 @@ public class TrecordController {
 
   // ---------------------------------------
   // 0) 신규 녹취 스캔 → DB 저장
-  //    → 이제 GET /api/records/scan 으로 호출합니다.
+  //    → GET /api/records/scan
   // ---------------------------------------
   @LogActivity(type = "record", activity = "등록", contents = "디스크 스캔하여 DB 저장")
   @GetMapping("/scan")
   public ResponseEntity<Map<String, Object>> scanAndSaveNewRecords(
       @RequestHeader(value = "Authorization", required = false) String authHeader
   ) {
-    // (1) 로그인/토큰 확인 (필요하다면)
+    // (1) 로그인/토큰 확인
     Info me = requireLogin(authHeader);
 
     // (2) 실제 스캔 & 저장
@@ -138,7 +137,7 @@ public class TrecordController {
 
     long inCount, outCount;
     if (!multi) {
-      inCount  = recordSvc.search(
+      inCount = recordSvc.search(
           (roleSeq < 2 ? me.getNumber() : null),
           (roleSeq < 2 ? me.getNumber() : null),
           "IN", numberKind, q, start, end,
