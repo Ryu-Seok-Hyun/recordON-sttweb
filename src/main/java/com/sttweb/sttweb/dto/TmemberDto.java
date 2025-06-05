@@ -136,6 +136,15 @@ public class TmemberDto {
     private String targetDomain;
   }
 
+  @Data
+  @AllArgsConstructor
+  public static class LoginResponse {
+    private String token;
+    private boolean hqUser;
+    private String redirectUrl;
+    private String message;
+  }
+
   /**
    * 비밀번호 변경 요청용 DTO
    */
@@ -146,6 +155,8 @@ public class TmemberDto {
     private String oldPassword;
     private String newPassword;
   }
+
+
 
   /**
    * 활성/비활성 상태 변경 요청용 DTO

@@ -2,20 +2,18 @@ package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
+import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordScanService;
 import com.sttweb.sttweb.service.TrecordService;
-import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceRegion;
@@ -65,17 +63,13 @@ public class TrecordController {
 
   // ---------------------------------------
   // 0) 신규 녹취 스캔 → DB 저장
-  //    → GET /api/records/scan
   // ---------------------------------------
   @LogActivity(type = "record", activity = "등록", contents = "디스크 스캔하여 DB 저장")
   @GetMapping("/scan")
   public ResponseEntity<Map<String, Object>> scanAndSaveNewRecords(
       @RequestHeader(value = "Authorization", required = false) String authHeader
   ) {
-    // (1) 로그인/토큰 확인
     Info me = requireLogin(authHeader);
-
-    // (2) 실제 스캔 & 저장
     Map<String, Object> resp = new HashMap<>();
     try {
       int inserted = scanSvc.scanAndSaveNewRecords();
@@ -91,6 +85,8 @@ public class TrecordController {
 
   // ---------------------------------------
   // 1) 전체 녹취 + 필터링 + IN/OUT 카운트
+  //
+  //    ● maskFlag 파라미터 추가: 0이면 “number2 마스킹 활성”, 1이면 “마스킹 비활성”
   // ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
@@ -102,7 +98,10 @@ public class TrecordController {
       @RequestParam(name = "numberKind", defaultValue = "ALL") String numberKind,
       @RequestParam(name = "q", required = false) String q,
       @RequestParam(name = "start", required = false) String startStr,
-      @RequestParam(name = "end",   required = false) String endStr
+      @RequestParam(name = "end",   required = false) String endStr,
+
+      /** 0 = 마스킹 활성(**** 처리), 1 = 마스킹 비활성(원래 번호 유지) */
+      @RequestParam(name = "maskFlag", defaultValue = "0") int maskFlag
   ) {
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null ? LocalDateTime.parse(startStr, fmt) : null);
@@ -135,6 +134,13 @@ public class TrecordController {
               direction, numberKind, q, start, end, pr);
     }
 
+    // 조회된 페이지 목록을 List<TrecordDto>로 가져오고, maskFlag==0이면 모든 요소에 대해 maskNumber2() 호출
+    List<TrecordDto> content = paged.getContent();
+    if (maskFlag == 0) {
+      content.forEach(TrecordDto::maskNumber2);
+    }
+
+    // IN/OUT 카운트 계산 (원래 로직 그대로)
     long inCount, outCount;
     if (!multi) {
       inCount = recordSvc.search(
@@ -154,8 +160,9 @@ public class TrecordController {
       outCount = paged.getTotalElements();
     }
 
+    // 페이지 관련 정보를 Map에 담아서 응답
     Map<String,Object> body = new LinkedHashMap<>();
-    body.put("content",          paged.getContent());
+    body.put("content",          content);
     body.put("totalElements",    paged.getTotalElements());
     body.put("totalPages",       paged.getTotalPages());
     body.put("size",             paged.getSize());
@@ -172,9 +179,10 @@ public class TrecordController {
     return ResponseEntity.ok(body);
   }
 
-  /**
-   * 번호 검색 (다중/단일)
-   */
+
+  // ---------------------------------------
+  // 2) 번호 검색 (다중/단일) → 여기도 maskFlag 파라미터 적용 예시
+  // ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
   @GetMapping("/search")
   public ResponseEntity<Page<TrecordDto>> searchByNumbers(
@@ -183,13 +191,16 @@ public class TrecordController {
       @RequestParam(value = "number2",  required = false) String number2,
       @RequestHeader(value = "Authorization", required = false) String authHeader,
       @RequestParam(value = "page", defaultValue = "0") int page,
-      @RequestParam(value = "size", defaultValue = "10") int size
+      @RequestParam(value = "size", defaultValue = "10") int size,
+
+      /** 0 = 마스킹 활성, 1 = 마스킹 비활성 */
+      @RequestParam(name = "maskFlag", defaultValue = "0") int maskFlag
   ) {
     Info me = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
     Pageable pr = PageRequest.of(page, size);
 
-    // 1) 다중 검색 모드
+    Page<TrecordDto> paged;
     if (numbersCsv != null) {
       List<String> nums = Arrays.stream(numbersCsv.split(","))
           .map(String::trim)
@@ -200,36 +211,50 @@ public class TrecordController {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
             "본인 자료만 검색 가능합니다.");
       }
-      return ResponseEntity.ok(recordSvc.searchByNumbers(nums, pr));
-    }
-
-    // 2) 단일 검색 모드
-    if (number1 == null && number2 == null) {
-      return ResponseEntity.ok(recordSvc.findAll(pr));
-    }
-    if (roleSeq < 2) {
-      String myNum = me.getNumber();
-      if ((number1 != null && !number1.equals(myNum)) ||
-          (number2 != null && !number2.equals(myNum))) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-            "본인 자료 외에 검색할 수 없습니다.");
+      paged = recordSvc.searchByNumbers(nums, pr);
+    } else {
+      if (number1 == null && number2 == null) {
+        paged = recordSvc.findAll(pr);
+      } else {
+        // 단일 검색 로직 생략… (기존 코드 그대로)
+        if (roleSeq < 2) {
+          String myNum = me.getNumber();
+          if ((number1 != null && !number1.equals(myNum)) ||
+              (number2 != null && !number2.equals(myNum))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "본인 자료 외에 검색할 수 없습니다.");
+          }
+        }
+        if (number1 != null && number2 != null) {
+          paged = recordSvc.searchByNumber(number1, number2, pr);
+        } else if (number1 != null) {
+          paged = recordSvc.searchByNumber(number1, null, pr);
+        } else {
+          paged = recordSvc.searchByNumber(null, number2, pr);
+        }
       }
     }
-    if (number1 != null && number2 != null) {
-      return ResponseEntity.ok(recordSvc.searchByNumber(number1, number2, pr));
-    } else if (number1 != null) {
-      return ResponseEntity.ok(recordSvc.searchByNumber(number1, null, pr));
-    } else {
-      return ResponseEntity.ok(recordSvc.searchByNumber(null, number2, pr));
+
+    // maskFlag==0 이면, 페이지에 있는 모든 DTO의 number2를 마스킹
+    if (maskFlag == 0) {
+      paged.getContent().forEach(TrecordDto::maskNumber2);
     }
+
+    return ResponseEntity.ok(paged);
   }
 
-  /** 단건 조회 */
+
+  /**
+   * 단건 조회 (마스킹 조건을 똑같이 빈 파라미터 없을 때 maskFlag=0 처리)
+   * → 여기서는 @RequestParam으로 maskFlag를 받을 필요가 없으니, 내부에서 default 0(마스킹) 처리 예시
+   */
   @LogActivity(type = "record", activity = "조회", contents = "단건 조회")
   @GetMapping("/{id}")
   public ResponseEntity<TrecordDto> getById(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @PathVariable("id") Integer id
+      @PathVariable("id") Integer id,
+      /** 단건 조회 시에도 maskFlag=0/1로 마스킹 제어 가능 */
+      @RequestParam(name = "maskFlag", defaultValue = "0") int maskFlag
   ) {
     Info me = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
@@ -240,10 +265,19 @@ public class TrecordController {
     ) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료 외에 조회할 수 없습니다.");
     }
+
+    // maskFlag == 0 이면 마스킹, 아니면(=1) 원본 그대로 반환
+    if (maskFlag == 0) {
+      dto.maskNumber2();
+    }
+
     return ResponseEntity.ok(dto);
   }
 
-  /** 청취 (LISTEN 이상 권한) */
+
+  // ---------------------------------------
+  // 3) 청취 (LISTEN 이상 권한)
+  // ---------------------------------------
   @LogActivity(type = "record", activity = "청취", contents = "녹취 청취")
   @GetMapping(value = "/{id}/listen", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
   public ResponseEntity<ResourceRegion> streamAudio(
@@ -278,7 +312,9 @@ public class TrecordController {
         .body(region);
   }
 
-  /** 다운로드 (DOWNLOAD 이상 권한) */
+  // ---------------------------------------
+  // 4) 다운로드 (DOWNLOAD 이상 권한)
+  // ---------------------------------------
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
   @GetMapping("/{id}/download")
   public ResponseEntity<Resource> downloadById(

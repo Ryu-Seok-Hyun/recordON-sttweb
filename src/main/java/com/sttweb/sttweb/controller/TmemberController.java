@@ -87,10 +87,13 @@ public class TmemberController {
 
   @LogActivity(type = "member", activity = "등록", contents = "사용자 등록")
   @PostMapping("/signup")
-  public ResponseEntity<String> signup(@RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestBody SignupRequest req) {
+  public ResponseEntity<String> signup(
+      @RequestHeader(value = "Authorization", required = false) String authHeader,
+      @RequestBody SignupRequest req
+  ) {
     if (req.getUserPass() == null || !req.getUserPass().matches(PASSWORD_PATTERN)) {
-      return ResponseEntity.badRequest().body("비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다.");
+      return ResponseEntity.badRequest()
+          .body("비밀번호는 최소 8자 이상이며, 영어 소문자·숫자·특수문자를 포함해야 합니다.");
     }
     Info me = requireLogin(authHeader);
     String lvl = me.getUserLevel();
@@ -104,7 +107,8 @@ public class TmemberController {
     if ("1".equals(lvl)) req.setUserLevel("2");
     svc.signupWithGrants(req, me.getMemberSeq(), me.getUserId());
     if (!originalLevel.equals(req.getUserLevel())) {
-      return ResponseEntity.ok("가입 완료. 지사 관리자는 일반(2)만 생성할 수 있어, 요청하신 권한(" + originalLevel + ") 대신 일반(2)로 처리되었습니다.");
+      return ResponseEntity.ok("가입 완료. 지사 관리자는 일반(2)만 생성할 수 있어, 요청하신 권한(" + originalLevel +
+          ") 대신 일반(2)로 처리되었습니다.");
     }
     return ResponseEntity.ok("가입 및 권한부여 완료");
   }
@@ -113,6 +117,7 @@ public class TmemberController {
    * 로그인 엔드포인트 (클라이언트 IP 기준으로 지사 제한)
    *
    * - 본사(userLevel="0")인 경우 → IP 검증 없이 어디서든 로그인 허용
+   *   + 단, 호스트 헤더(Host)가 지사 IP:Port와 매핑되면 해당 지사로 리다이렉트
    * - 지사 사용자(userLevel!="0")인 경우 →
    *     1) clientIp로 Branch 엔티티를 조회
    *     2) 조회된 Branch.branchSeq와 user.branchSeq가 같을 때만 로그인 허용
@@ -120,7 +125,7 @@ public class TmemberController {
    */
   @LogActivity(type = "member", activity = "로그인")
   @PostMapping("/login")
-  public ResponseEntity<?> login(
+  public ResponseEntity<LoginResponse> login(
       @RequestBody LoginRequest req,
       HttpServletRequest request
   ) {
@@ -132,7 +137,7 @@ public class TmemberController {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 잘못되었습니다.");
     }
 
-    // 2) Info DTO 변환
+    // 2) Info DTO 변환 (MemberEntity → Info)
     Info info = Info.fromEntity(user);
 
     // 3) clientIp 얻기 (X-Forwarded-For 우선, 없으면 getRemoteAddr())
@@ -140,7 +145,7 @@ public class TmemberController {
         .filter(h -> !h.isBlank())
         .orElse(request.getRemoteAddr());
 
-    // IPv6-IPv4 매핑
+    // IPv6-IPv4 매핑 (::ffff:)
     if (clientIp != null && clientIp.startsWith("::ffff:")) {
       clientIp = clientIp.substring(7);
     }
@@ -164,6 +169,10 @@ public class TmemberController {
 
     // 5) 본사 여부 판단
     boolean isHqUser = "0".equals(info.getUserLevel());
+
+    // “리다이렉트 대상 지사 IP/Port”를 결정하기 위한 변수들
+    String resolvedBranchIp = null;   // 지사 IP가 채워지면 해당 지사 콘솔로 리다이렉트
+    String resolvedBranchPort = null; // 지사 Port
 
     if (!isHqUser) {
       // 6) 지사 사용자인 경우, clientIp로 지사 조회 (p_ip 기준)
@@ -190,7 +199,7 @@ public class TmemberController {
         TbranchEntity userBranch = branchSvc.findEntityBySeq(userBranchSeq);
         String userBranchName = (userBranch != null)
             ? userBranch.getCompanyName()
-            : "알 수 없음"; // 혹은 빈 문자열
+            : "알 수 없음";
 
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN,
@@ -202,8 +211,12 @@ public class TmemberController {
       }
       // 권한 검사 통과 → branchName 세팅
       info.setBranchName(reqBranch.getCompanyName());
-    }
-    else {
+
+      // 지사 사용자이므로, 해당 지사 IP/Port를 리다이렉트 대상으로 설정
+      resolvedBranchIp   = reqBranch.getPIp();
+      resolvedBranchPort = String.valueOf(reqBranch.getPPort());
+
+    } else {
       // 본사인 경우, IP 검증 없이 바로 통과
       Integer userBranchSeq = info.getBranchSeq();
       if (userBranchSeq != null) {
@@ -211,6 +224,39 @@ public class TmemberController {
         if (branch != null) {
           info.setBranchName(branch.getCompanyName());
         }
+      }
+
+      // “호스트 헤더”를 검사하여, 만약 지사 IP:Port와 매핑되면 해당 지사로 전환
+      String hostHeader = request.getHeader("Host");
+      if (hostHeader != null) {
+        // 예: "192.168.0.61:39080" 또는 "192.168.0.61"
+        String[] parts = hostHeader.split(":");
+        String headerIp   = parts[0].trim();
+        Integer headerPort = (parts.length > 1)
+            ? Integer.valueOf(parts[1].trim())
+            : null;
+
+        if (!headerIp.isBlank() && headerPort != null) {
+          // 1) p_ip + p_port 매핑 조회
+          Optional<TbranchEntity> br1 = branchSvc.findBypIp(headerIp)
+              .filter(b -> b.getPPort().equals(headerPort));
+          // 2) pb_ip + pb_port 매핑 조회
+          Optional<TbranchEntity> br2 = branchSvc.findByPbIp(headerIp)
+              .filter(b -> b.getPbPort().equals(headerPort));
+          Optional<TbranchEntity> reqBranchOpt2 = (br1.isPresent() ? br1 : br2);
+
+          if (reqBranchOpt2.isPresent()) {
+            TbranchEntity reqBranch = reqBranchOpt2.get();
+            info.setBranchName(reqBranch.getCompanyName());
+            // 리다이렉트 대상 지사 IP/Port로 설정
+            resolvedBranchIp   = reqBranch.getPIp();
+            resolvedBranchPort = String.valueOf(reqBranch.getPPort());
+          }
+        }
+      }
+      // resolvedBranchIp가 null이라면 “본사 콘솔”(127.0.0.1:8080)으로 유지
+      if (resolvedBranchIp == null) {
+        info.setBranchName("본사");
       }
     }
 
@@ -223,27 +269,32 @@ public class TmemberController {
     info.setTokenType("Bearer");
 
     // 9) Redirect URL 생성
+    //    - 지사 사용자의 경우 resolvedBranchIp가 반드시 존재
+    //    - 본사 사용자의 경우, resolvedBranchIp가 “호스트 헤더로 매핑된 지사”면 해당 지사, 아니면 본사 콘솔
     String hostForRedirect, portForRedirect;
-    if (isHqUser) {
+    if (resolvedBranchIp != null) {
+      hostForRedirect = resolvedBranchIp;
+      portForRedirect = resolvedBranchPort;
+    } else {
       hostForRedirect = "127.0.0.1";
       portForRedirect = "8080";
-    } else {
-      TbranchEntity userBranch = branchSvc.findEntityBySeq(info.getBranchSeq());
-      hostForRedirect = userBranch.getPIp();
-      portForRedirect = userBranch.getPPort();
     }
     String redirectUrl = "http://" + hostForRedirect + ":" + portForRedirect + "?token=" + token;
 
-    // 10) 응답
-    Map<String, Object> result = new HashMap<>();
-    result.put("user", info);
-    result.put("hqUser", isHqUser);
+    // 10) 응답을 Map이 아니라 DTO(LoginResponse)로 반환
+    String message = null;
     if (isTempPassword) {
-      result.put("message", "기본 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 변경하세요.");
+      message = "기본 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 변경하세요.";
     }
-    result.put("redirectUrl", redirectUrl);
 
-    return ResponseEntity.ok(result);
+    LoginResponse loginRes = new LoginResponse(
+        token,
+        isHqUser,
+        redirectUrl,
+        message
+    );
+
+    return ResponseEntity.ok(loginRes);
   }
 
   /**
@@ -253,28 +304,22 @@ public class TmemberController {
    */
   private String detectBranchIpFromLocalNics() {
     try {
-      // 서버의 모든 네트워크 인터페이스를 순회
       Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
       while (nics.hasMoreElements()) {
         NetworkInterface ni = nics.nextElement();
-        // loopback, 비활성화된 인터페이스는 건너뜀
         if (ni.isLoopback() || !ni.isUp()) continue;
 
-        // 그 인터페이스의 모든 InetAddress 탐색
         Enumeration<InetAddress> addrs = ni.getInetAddresses();
         while (addrs.hasMoreElements()) {
           InetAddress addr = addrs.nextElement();
-          if (addr.isLoopbackAddress()) continue; // 루프백 건너뜀
+          if (addr.isLoopbackAddress()) continue;
 
           String ip = addr.getHostAddress();
-          // IPv4만 살펴봄 (“.” 포함, 예: “192.168.0.61”)
           if (!ip.contains(".")) continue;
 
-          // 1) DB의 tbranch.p_ip 컬럼에 해당 IP가 있는지 검사
           if (branchSvc.findBypIp(ip).isPresent()) {
             return ip;
           }
-          // 2) DB의 tbranch.pb_ip 컬럼에 해당 IP가 있는지 검사
           if (branchSvc.findByPbIp(ip).isPresent()) {
             return ip;
           }
@@ -285,7 +330,6 @@ public class TmemberController {
     }
     return null;
   }
-
 
 
 
@@ -446,7 +490,6 @@ public class TmemberController {
     );
     return ResponseEntity.ok(self);
   }
-
 
   /**
    * 10) 회원정보 종합 수정

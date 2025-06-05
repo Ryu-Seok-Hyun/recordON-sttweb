@@ -26,6 +26,27 @@ public class TrecordDto {
   private Integer ownerMemberSeq;
   /** 이 녹취가 속한 지점(branchSeq) */
   private Integer branchSeq;
+
+  /**
+   * number2가 10~11자리 휴대폰 번호라고 가정하고
+   * 중간 4자리를 **** 로 마스킹하는 메서드
+   * (ex: 01012345678 → 010****5678)
+   */
+  public void maskNumber2() {
+    if (this.number2 == null) {
+      return;
+    }
+    // 예시: 휴대폰 번호가 10~11자리(예: "01012345678")라면,
+    // 맨 앞 3자리 + "****" + 뒤 4자리 로 바꾼다.
+    String raw = this.number2.trim();
+    // 숫자만 들어온다고 가정한 뒤, 길이가 10 이상인 경우에만 마스킹
+    if (raw.length() >= 7) {
+      String head = raw.substring(0, 3);
+      String tail = raw.substring(raw.length() - 4);
+      this.number2 = head + "****" + tail;
+    }
+    // 만약 7자리 미만이거나 다른 형식이면, 원래 숫자를 그대로 둡니다.
+  }
 }
 
 
