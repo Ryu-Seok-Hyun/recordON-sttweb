@@ -448,9 +448,9 @@ public class TmemberController {
   }
 
 
-  // ---------------------------------------
-  // 10) 회원정보 종합 수정
-  // ---------------------------------------
+  /**
+   * 10) 회원정보 종합 수정
+   */
   @LogActivity(type = "member", activity = "수정", contents = "회원정보 종합 수정")
   @PutMapping("/{memberSeq}")
   public ResponseEntity<Info> updateMember(
@@ -458,14 +458,25 @@ public class TmemberController {
       @PathVariable("memberSeq") Integer memberSeq,
       @RequestBody UpdateRequest req
   ) {
+    // 1) 로그인/재인증 체크
     Info me = requireLogin(authHeader);
     requireReAuth();
+
+    // 2) 대상 사용자 정보 조회
     Info tgt = svc.getMyInfoByMemberSeq(memberSeq);
-    String myLvl = me.getUserLevel(), tgLvl = tgt.getUserLevel();
-    Integer myBs = me.getBranchSeq(), tgBs = tgt.getBranchSeq();
+    String myLvl = me.getUserLevel();
+    String tgLvl = tgt.getUserLevel();
+    Integer myBs = me.getBranchSeq();
+    Integer tgBs = tgt.getBranchSeq();
+
+    // 3) 권한 검사:
+    //    - userLevel=2(일반 유저) 는 수정 불가
     if ("2".equals(myLvl)) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
     }
+
+    //    - userLevel=1(지사 관리자) 은 같은 지사에 속한 사용자만 수정 가능,
+    //      단 본인 수정과 일반(2)만 가능. (지사 관리자는 userLevel 변경 X, roleSeq 변경 X)
     if ("1".equals(myLvl)) {
       if (tgBs == null || !myBs.equals(tgBs)) {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "같은 지점의 사용자만 수정 가능합니다.");
@@ -476,11 +487,22 @@ public class TmemberController {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
             "지사 관리자는 본인 또는 일반유저만 수정 가능합니다.");
       }
+      // 지사 관리자는 userLevel 변경 불가
       if (req.getUserLevel() != null && !req.getUserLevel().equals(tgLvl)) {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN,
             "지사 관리자는 userLevel을 변경할 수 없습니다.");
       }
+      // 지사 관리자는 roleSeq 변경 불가
+      if (req.getRoleSeq() != null) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+            "지사 관리자는 roleSeq를 변경할 수 없습니다.");
+      }
     }
+
+    //    - userLevel=0(본사 관리자) 은 모든 사용자 수정 가능,
+    //      단 roleSeq는 본사 관리자만 변경 허용 (따로 추가 조건 없음)
+
+    // 4) 서비스 호출
     Info updated = svc.updateMemberInfo(memberSeq, req, me.getMemberSeq(), me.getUserId());
     return ResponseEntity.ok(updated);
   }

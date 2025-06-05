@@ -1,4 +1,4 @@
-package com.sttweb.sttweb.service.impl;
+package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.GrantDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
@@ -302,6 +302,15 @@ public class TmemberServiceImpl implements TmemberService {
     if (req.getUserLevel() != null) e.setUserLevel(req.getUserLevel());
     if (req.getActive() != null) e.setDiscd(req.getActive() ? 0 : 1);
 
+    if (req.getRoleSeq() != null) {
+      if (req.getRoleSeq() < 1 || req.getRoleSeq() > 4) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "유효하지 않은 권한 값입니다.");
+      }
+      e.setRoleSeq(req.getRoleSeq());
+    }
+
+    if (req.getUserLevel() != null) e.setUserLevel(req.getUserLevel());
+    if (req.getActive() != null) e.setDiscd(req.getActive() ? 0 : 1);
 
     if (req.getPosition() != null) {
       e.setPosition(StringUtils.hasText(req.getPosition())
