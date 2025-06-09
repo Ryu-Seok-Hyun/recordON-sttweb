@@ -81,4 +81,14 @@ public interface TrecordRepository
       @Param("end")     LocalDateTime end,
       Pageable                    pageable
   );
+
+  // 1) 지점별 페이징 조회
+  Page<TrecordEntity> findAllByBranchSeq(Integer branchSeq, Pageable pageable);
+
+  // 2) 지점별 전체 건수(ALL)
+  long countByBranchSeq(Integer branchSeq);
+
+  // 3) 지점별 IN/OUT 카운트
+  //    - DB 컬럼명이 ioDiscdVal 이라면 아래처럼
+  long countByBranchSeqAndIoDiscdVal(Integer branchSeq, String ioDiscdVal);
 }

@@ -28,6 +28,8 @@ public class TrecordDto {
   /** 이 녹취가 발생한 지점(branchSeq) */
   private Integer branchSeq;
 
+  private String branchName;
+
   /**
    * number2가 휴대폰 번호일 경우 중간 4자리(예: “01012345678” → “010****5678”)를
    * mask 처리하는 메서드

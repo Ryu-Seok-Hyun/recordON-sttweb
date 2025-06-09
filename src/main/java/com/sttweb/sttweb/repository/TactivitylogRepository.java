@@ -9,5 +9,5 @@ import org.springframework.stereotype.Repository;
 public interface TactivitylogRepository
     extends JpaRepository<TactivitylogEntity, Integer>,
     JpaSpecificationExecutor<TactivitylogEntity> {
-  // JpaSpecificationExecutor 추가로 findAll(Specification, Pageable) 사용 가능
+
 }

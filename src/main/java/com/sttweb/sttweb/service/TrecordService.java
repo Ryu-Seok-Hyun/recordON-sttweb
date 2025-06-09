@@ -64,4 +64,8 @@ public interface TrecordService {
 
   /** 다중 번호(equal) 검색 */
   Page<TrecordDto> searchByNumbers(List<String> numbers, Pageable pageable);
+
+  /** 지점별 IN/OUT 카운트 (direction="IN" 또는 "OUT", "ALL"일 땐 전체 건수 반환) */
+  long countByBranchAndDirection(Integer branchSeq, String direction);
+
 }

@@ -7,6 +7,7 @@ import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.service.TmemberService;
+import com.sttweb.sttweb.service.TbranchService;            // 수정됨: import 추가
 import jakarta.persistence.EntityNotFoundException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
@@ -17,7 +18,6 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.stream.Collectors;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
@@ -37,6 +37,7 @@ public class TrecordServiceImpl implements TrecordService {
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
   private final TmemberService    memberSvc;
+  private final TbranchService    branchSvc;          // 수정됨: 필드 추가
 
   private static final DateTimeFormatter DT_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -44,18 +45,27 @@ public class TrecordServiceImpl implements TrecordService {
   public TrecordServiceImpl(
       TrecordRepository repo,
       TmemberRepository memberRepo,
-      TmemberService memberSvc
+      TmemberService memberSvc,
+      TbranchService branchSvc                // 수정됨: 생성자 인자 추가
   ) {
-    this.repo = repo;
+    this.repo       = repo;
     this.memberRepo = memberRepo;
-    this.memberSvc = memberSvc;
+    this.memberSvc  = memberSvc;
+    this.branchSvc  = branchSvc;               // 수정됨: 할당
   }
 
   /**
-   * Entity → DTO 변환 헬퍼: 이제 branchSeq도 채워준다
+   * Entity → DTO 변환 헬퍼: branchSeq, branchName도 채워준다
    */
   private TrecordDto toDto(TrecordEntity e) {
-    TrecordDto.TrecordDtoBuilder b = TrecordDto.builder()
+    Integer bs = e.getBranchSeq();
+    String branchName = null;
+    if (bs != null) {                           // 수정됨: null 체크
+      branchName = branchSvc.findById(bs)
+          .getCompanyName();
+    }
+
+    return TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
         .callStartDateTime(e.getCallStartDateTime() != null
             ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT)
@@ -75,9 +85,9 @@ public class TrecordServiceImpl implements TrecordService {
             ? e.getRegDate().toLocalDateTime().format(DT_FMT)
             : null)
         .ownerMemberSeq(e.getOwnerMemberSeq())
-        .branchSeq(e.getBranchSeq()); // ← 새로 추가된 부분
-
-    return b.build();
+        .branchSeq(bs)                             // 기존 필드
+        .branchName(branchName)                    // 수정됨: branchName 설정
+        .build();
   }
 
   @Override
@@ -220,7 +230,6 @@ public class TrecordServiceImpl implements TrecordService {
     // **주요 추가 로직**: ownerMemberSeq와 branchSeq를 결정하여 저장
     if (dto.getOwnerMemberSeq() != null) {
       e.setOwnerMemberSeq(dto.getOwnerMemberSeq());
-      // 회원 엔티티로부터 branchSeq를 가져와 저장
       TmemberEntity owner = memberRepo.findById(dto.getOwnerMemberSeq())
           .orElseThrow(() -> new EntityNotFoundException(
               "사용자를 찾을 수 없습니다: " + dto.getOwnerMemberSeq()
@@ -374,5 +383,23 @@ public class TrecordServiceImpl implements TrecordService {
   ) {
     return repo.findByBranchSeq(branchSeq, pageable)
         .map(this::toDto);
+  }
+
+  @Override
+  public long countByBranchAndDirection(Integer branchSeq, String direction) {
+    if ("ALL".equalsIgnoreCase(direction)) {
+      return repo.countByBranchSeq(branchSeq);
+    }
+    // IN/OUT → 실제 DB에는 “수신”/“발신” 문자열로 저장되어 있으니 매핑
+    String ioVal = switch(direction.toUpperCase()) {
+      case "IN"  -> "수신";
+      case "OUT" -> "발신";
+      default    -> null;
+    };
+    if (ioVal == null) {
+      // 잘못된 direction 값 들어올 경우
+      throw new IllegalArgumentException("direction must be ALL, IN or OUT");
+    }
+    return repo.countByBranchSeqAndIoDiscdVal(branchSeq, ioVal);
   }
 }

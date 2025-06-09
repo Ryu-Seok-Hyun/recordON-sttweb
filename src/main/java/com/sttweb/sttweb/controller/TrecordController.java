@@ -8,7 +8,7 @@ import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordScanService;
 import com.sttweb.sttweb.service.TrecordService;
-import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;               // 수정됨: HttpServletRequest import
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -83,10 +83,8 @@ public class TrecordController {
   }
 
   // ---------------------------------------
-  // 1) 전체 녹취 + 필터링 + IN/OUT 카운트
-  //
-  //    ※ 더 이상 maskFlag를 파라미터로 받지 않고, “회원의 maskFlag 컬럼 값”을 쓰도록 수정
-  // ---------------------------------------
+// 1) 전체 녹취 + 필터링 + IN/OUT 카운트
+// ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
   public ResponseEntity<Map<String,Object>> listAll(
@@ -103,64 +101,57 @@ public class TrecordController {
     LocalDateTime start = (startStr != null ? LocalDateTime.parse(startStr, fmt) : null);
     LocalDateTime end   = (endStr   != null ? LocalDateTime.parse(endStr,   fmt) : null);
 
+    // ① 로그인 및 사용자 정보
     Info me = requireLogin(authHeader);
-    int roleSeq  = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    Integer maskF = me.getMaskFlag();
-    PageRequest pr = PageRequest.of(page, size);
+    String lvl     = me.getUserLevel();
+    Integer maskF  = me.getMaskFlag();
+    Integer myBranch = me.getBranchSeq();
+    Pageable pr    = PageRequest.of(page, size);
 
+    // ② paged 무조건 초기화
     Page<TrecordDto> paged;
-    boolean multi = (q != null && q.contains(","));
-    if (multi) {
-      // … 기존 multi‐mode 로직 …
-      List<String> numbers = Arrays.stream(q.split(","))
-          .map(String::trim)
-          .filter(s -> !s.isEmpty())
-          .toList();
-      if (roleSeq < 2) {
-        numbers = numbers.stream()
-            .filter(n -> n.equals(me.getNumber()))
-            .toList();
-      }
-      paged = recordSvc.searchByNumbers(numbers, pr);
+
+    if (!"0".equals(lvl)) {
+      // 지사 계정: 본인 지점만 조회
+      paged = recordSvc.findAllByBranch(myBranch, pr);
     } else {
-      // … 기존 단일‐mode 로직 …
-      paged = (roleSeq < 2)
-          ? recordSvc.search(
-          me.getNumber(), me.getNumber(),
-          direction, numberKind, q, start, end, pr
-      )
-          : recordSvc.search(
-              null, null,
-              direction, numberKind, q, start, end, pr
-          );
+      // 본사 계정: 기존 검색 로직
+      boolean multi = (q != null && q.contains(","));
+      if (multi) {
+        List<String> numbers = Arrays.stream(q.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .toList();
+        paged = recordSvc.searchByNumbers(numbers, pr);
+      } else {
+        paged = recordSvc.search(
+            null, null,
+            direction, numberKind, q, start, end,
+            pr
+        );
+      }
     }
 
-    // 1-1) DTO 마스킹 처리 (maskFlag가 0이면 number2를 마스킹)
+    // ③ 마스킹
     List<TrecordDto> content = paged.getContent();
     if (maskF != null && maskF == 0) {
       content.forEach(TrecordDto::maskNumber2);
     }
 
-    // 1-2) IN/OUT 카운트 계산 (기존 로직 그대로)
+    // ④ IN/OUT 카운트
     long inCount, outCount;
-    if (!multi) {
-      inCount = recordSvc.search(
-          (roleSeq < 2 ? me.getNumber() : null),
-          (roleSeq < 2 ? me.getNumber() : null),
-          "IN", numberKind, q, start, end,
-          PageRequest.of(0,1)
-      ).getTotalElements();
-      outCount = recordSvc.search(
-          (roleSeq < 2 ? me.getNumber() : null),
-          (roleSeq < 2 ? me.getNumber() : null),
-          "OUT", numberKind, q, start, end,
-          PageRequest.of(0,1)
-      ).getTotalElements();
-    } else {
+    if (!"0".equals(lvl)) {
+      inCount  = recordSvc.countByBranchAndDirection(myBranch, "IN");
+      outCount = recordSvc.countByBranchAndDirection(myBranch, "OUT");
+    } else if (q != null && q.contains(",")) {
       inCount  = paged.getTotalElements();
       outCount = paged.getTotalElements();
+    } else {
+      inCount = recordSvc.countByBranchAndDirection(null, "IN");   // ALL
+      outCount= recordSvc.countByBranchAndDirection(null, "OUT");  // ALL
     }
 
+    // ⑤ 응답 바디 조립
     Map<String,Object> body = new LinkedHashMap<>();
     body.put("content",          content);
     body.put("totalElements",    paged.getTotalElements());
@@ -181,9 +172,7 @@ public class TrecordController {
 
 
   // ---------------------------------------
-  // 2) 번호 검색 (다중/단일)
-  //
-  //    ※ maskFlag 파라미터를 없애고, 회원의 mask_flag 컬럼값으로만 제어
+  // 2) 번호 검색
   // ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
   @GetMapping("/search")
@@ -197,12 +186,11 @@ public class TrecordController {
   ) {
     Info me     = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    Integer maskF = me.getMaskFlag();   // ← 회원의 마스킹 여부
-    Pageable pr  = PageRequest.of(page, size);
+    Integer maskF = me.getMaskFlag();
+    Pageable pr = PageRequest.of(page, size);
 
     Page<TrecordDto> paged;
     if (numbersCsv != null) {
-      // multi‐mode
       List<String> nums = Arrays.stream(numbersCsv.split(","))
           .map(String::trim)
           .filter(s -> !s.isEmpty())
@@ -213,11 +201,9 @@ public class TrecordController {
       }
       paged = recordSvc.searchByNumbers(nums, pr);
     } else {
-      // single‐mode or 전체 조회
       if (number1 == null && number2 == null) {
         paged = recordSvc.findAll(pr);
       } else {
-        // 단일 검색 로직 (기존과 동일)
         if (roleSeq < 2) {
           String myNum = me.getNumber();
           if ((number1 != null && !number1.equals(myNum)) ||
@@ -236,7 +222,6 @@ public class TrecordController {
       }
     }
 
-    // maskFlag == 0 이면 DTO의 number2 마스킹
     if (maskF != null && maskF == 0) {
       paged.getContent().forEach(TrecordDto::maskNumber2);
     }
@@ -244,11 +229,8 @@ public class TrecordController {
     return ResponseEntity.ok(paged);
   }
 
-
   // ---------------------------------------
-  // 3) 단건 조회 (ID 기준)
-  //
-  //    ※ maskFlag 요청 파라미터 대신 회원의 mask_flag 컬럼 사용
+  // 3) 단건 조회
   // ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "단건 조회")
   @GetMapping("/{id}")
@@ -258,7 +240,7 @@ public class TrecordController {
   ) {
     Info me     = requireLogin(authHeader);
     int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    Integer maskF = me.getMaskFlag();   // ← 회원의 마스킹 여부
+    Integer maskF = me.getMaskFlag();
     TrecordDto dto = recordSvc.findById(id);
 
     if (roleSeq < 2
@@ -268,7 +250,6 @@ public class TrecordController {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료 외에 조회할 수 없습니다.");
     }
 
-    // maskFlag == 0이면 마스킹, 1이면 원본 그대로
     if (maskF != null && maskF == 0) {
       dto.maskNumber2();
     }
@@ -276,16 +257,15 @@ public class TrecordController {
     return ResponseEntity.ok(dto);
   }
 
-
   // ---------------------------------------
-  // 4) 청취(Partial Content) / 5) 다운로드
-  //    ※ 번호 마스킹은 하지 않아도 되는 영역이므로 unchanged
+  // 4) 청취(Partial Content)
   // ---------------------------------------
   @LogActivity(type = "record", activity = "청취", contents = "녹취 청취")
   @GetMapping(value = "/{id}/listen", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
   public ResponseEntity<ResourceRegion> streamAudio(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @RequestHeader HttpHeaders headers,
+      HttpServletRequest request,               // 수정됨: 요청 정보 주입
       @PathVariable("id") Integer id
   ) throws IOException {
     Info me = requireLogin(authHeader);
@@ -315,10 +295,14 @@ public class TrecordController {
         .body(region);
   }
 
+  // ---------------------------------------
+  // 5) 다운로드
+  // ---------------------------------------
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
   @GetMapping("/{id}/download")
   public ResponseEntity<Resource> downloadById(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+      HttpServletRequest request,               // 수정됨: 요청 정보 주입
       @PathVariable("id") Integer id
   ) {
     Info me = requireLogin(authHeader);
@@ -347,7 +331,6 @@ public class TrecordController {
 
   /**
    * 특정 지점에 속한 녹취 목록 조회
-   * GET /api/records/branch/{branchSeq}?page=0&size=10
    */
   @GetMapping("/branch/{branchSeq}")
   public ResponseEntity<?> listByBranch(
@@ -356,23 +339,18 @@ public class TrecordController {
       @RequestParam(name = "page", defaultValue = "0") int page,
       @RequestParam(name = "size", defaultValue = "10") int size
   ) {
-    // 1) 토큰 검사
     String token = extractToken(authHeader);
     Info me = getCurrentUser(token);
 
-    // 2) 권한 검사: 본사 관리자(0) 또는 지사 관리자(1) + 소속 동일 지점만 허용
-    if ("0".equals(me.getUserLevel()) == false) {
-      // 지사 관리자는 자신의 branchSeq와 요청 branchSeq가 일치해야만 조회 가능
+    if (!"0".equals(me.getUserLevel())) {
       if (!("1".equals(me.getUserLevel()) &&
           me.getBranchSeq() != null &&
-          me.getBranchSeq().equals(branchSeq)))
-      {
+          me.getBranchSeq().equals(branchSeq))) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
             .body("권한이 없습니다.");
       }
     }
 
-    // 3) 페이징조회
     Pageable pageable = PageRequest.of(page, size);
     Page<TrecordDto> pagedDtos =
         recordSvc.findAllByBranch(branchSeq, pageable);

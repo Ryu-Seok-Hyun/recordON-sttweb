@@ -284,6 +284,7 @@ public class TbranchController {
     // 4) 결과 매핑
     Map<String, Object> result = new HashMap<>();
     result.put("branchSeq",       branchEntity.getBranchSeq());
+    result.put("branchName",      branchEntity.getCompanyName());
     result.put("isAlive",         branchEntity.getIsAlive());
     result.put("lastHealthCheck", branchEntity.getLastHealthCheck());
     result.put("lastDowntime",    branchEntity.getLastDowntime());

@@ -142,189 +142,147 @@ public class TmemberController {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 잘못되었습니다.");
     }
 
-    // 2) Info DTO 변환 (MemberEntity → Info)
+    // 2) DTO 변환 (회원 소속 branchSeq/branchName 은 여기서 세팅됨)
     Info info = Info.fromEntity(user);
 
-    // 3) clientIp 얻기 (X-Forwarded-For 우선, 없으면 getRemoteAddr())
+    if (info.getBranchSeq() != null) {
+      TbranchEntity orig = branchSvc.findEntityBySeq(info.getBranchSeq());
+      if (orig != null) {
+        info.setBranchName(orig.getCompanyName());
+      }
+    }
+
+    // 3) clientIp 획득
     String clientIp = Optional.ofNullable(request.getHeader("X-Forwarded-For"))
         .filter(h -> !h.isBlank())
         .orElse(request.getRemoteAddr());
-
-    // IPv6-IPv4 매핑 (::ffff:)
-    if (clientIp != null && clientIp.startsWith("::ffff:")) {
+    if (clientIp.startsWith("::ffff:"))
       clientIp = clientIp.substring(7);
-    }
-    // IPv6 루프백(::1) → 127.0.0.1
-    if ("::1".equals(clientIp) || "0:0:0:0:0:0:0:1".equals(clientIp)) {
+    if ("::1".equals(clientIp) || "0:0:0:0:0:0:0:1".equals(clientIp))
       clientIp = "127.0.0.1";
-    }
-
-    // 4) “127.0.0.1”인 경우, 실제로 DB에 등록된 지사 IP가 붙어 있는 NIC를 찾아 대체
     if ("127.0.0.1".equals(clientIp)) {
-      String replaced = detectBranchIpFromLocalNics();
-      if (replaced != null) {
-        System.out.println("[DEBUG] loopback detected → 대체할 지사 IP = " + replaced);
-        clientIp = replaced;
-      } else {
-        System.out.println(
-            "[DEBUG] loopback detected, 그러나 지사 IP로 매칭되는 NIC를 찾지 못함 → clientIp 그대로 127.0.0.1 유지");
+      String repl = detectBranchIpFromLocalNics();
+      if (repl != null)
+        clientIp = repl;
+    }
+
+    // 4) 본사 계정 여부 판단
+    boolean isHqUser = "0".equals(info.getUserLevel());
+
+    // —————— “콘솔 지점” 정보만 currentBranch 에 채워넣는 로직 ——————
+    TbranchEntity reqBranch = null;
+    String resolvedBranchIp = null;
+    String resolvedBranchPort = null;
+
+    // A) Body override
+    if (req.getBranchSeq() != null) {
+      TbranchEntity ov = branchSvc.findEntityBySeq(req.getBranchSeq());
+      if (ov != null) {
+        info.setCurrentBranchSeq(ov.getBranchSeq());
+        info.setCurrentBranchName(ov.getCompanyName());
+        resolvedBranchIp = ov.getPIp();
+        resolvedBranchPort = String.valueOf(ov.getPPort());
+        reqBranch = ov;
       }
     }
 
-    System.out.println("[DEBUG] 최종 clientIp = " + clientIp);
+    // B) HQ + override 없을 때: 서버 NIC 로 자동 감지
+    if (isHqUser && req.getBranchSeq() == null && resolvedBranchIp == null) {
+      String localIp = request.getLocalAddr();
+      Optional<TbranchEntity> auto = branchSvc.findBypIp(localIp)
+          .or(() -> branchSvc.findByPbIp(localIp));
+      if (auto.isPresent()) {
+        TbranchEntity br = auto.get();
+        info.setCurrentBranchSeq(br.getBranchSeq());
+        info.setCurrentBranchName(br.getCompanyName());
+        resolvedBranchIp = br.getPIp();
+        resolvedBranchPort = String.valueOf(br.getPPort());
+        reqBranch = br;
+      }
+    }
 
-    // 5) 본사 여부 판단
-    boolean isHqUser = "0".equals(info.getUserLevel());
-    info.setHqYn(isHqUser);  // ← 추가: DTO 에 본사 여부 세팅
-
-
-    // “리다이렉트 대상 지사 IP/Port”를 결정하기 위한 변수들
-    TbranchEntity reqBranch = null;
-    String resolvedBranchIp = null;   // 지사 IP가 채워지면 해당 지사 콘솔로 리다이렉트
-    String resolvedBranchPort = null; // 지사 Port
-
+    // C) 지사 계정: clientIp 로 조회 후 덮어쓰기
     if (!isHqUser) {
-      // 6) 지사 사용자인 경우, clientIp로 지사 조회 (p_ip 기준)
-      Optional<TbranchEntity> reqBranchOpt = branchSvc.findBypIp(clientIp);
-      if (reqBranchOpt.isEmpty()) {
-        // p_ip 매칭 실패하면, 공인망 pb_ip로도 시도
-        reqBranchOpt = branchSvc.findByPbIp(clientIp);
+      Optional<TbranchEntity> opt = branchSvc.findBypIp(clientIp);
+      if (opt.isEmpty())
+        opt = branchSvc.findByPbIp(clientIp);
+      if (opt.isEmpty()) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+            "접근할 수 있는 지사가 아닙니다. 요청 IP=" + clientIp);
       }
-      if (reqBranchOpt.isEmpty()) {
+      reqBranch = opt.get();
+      if (!info.getBranchSeq().equals(reqBranch.getBranchSeq())) {
+        TbranchEntity ub = branchSvc.findEntityBySeq(info.getBranchSeq());
+        String ubn = ub != null ? ub.getCompanyName() : "알 수 없음";
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN,
-            "접근할 수 있는 지사가 아닙니다. 요청 IP=" + clientIp
+            "해당 지사 사용자가 아닙니다. 사용자 지사=" + ubn + ", 요청 지사=" + reqBranch.getCompanyName()
         );
       }
-      reqBranch = reqBranchOpt.get();
-
-      System.out.println("[DEBUG] clientIp로 조회된 지사 → branchSeq="
-          + reqBranch.getBranchSeq() + ", companyName=" + reqBranch.getCompanyName());
-
-      // 7) “조회된 지사”와 “로그인 시도 사용자”의 branchSeq 비교
-      Integer userBranchSeq = info.getBranchSeq();
-      if (userBranchSeq == null || !userBranchSeq.equals(reqBranch.getBranchSeq())) {
-        // 사용자 지사 이름 조회를 위해 TbranchEntity를 한 번 더 로드
-        TbranchEntity userBranch = branchSvc.findEntityBySeq(userBranchSeq);
-        String userBranchName = (userBranch != null)
-            ? userBranch.getCompanyName()
-            : "알 수 없음";
-
-        throw new ResponseStatusException(
-            HttpStatus.FORBIDDEN,
-            "해당 지사 사용자가 아닙니다. 사용자 지사="
-                + userBranchName
-                + ", 요청 지사="
-                + reqBranch.getCompanyName()
-        );
-      }
-      // 권한 검사 통과 → branchName 세팅
-      info.setBranchName(reqBranch.getCompanyName());
-
-      // 지사 사용자이므로, 해당 지사 IP/Port를 리다이렉트 대상으로 설정
+      info.setCurrentBranchSeq(reqBranch.getBranchSeq());
+      info.setCurrentBranchName(reqBranch.getCompanyName());
       resolvedBranchIp = reqBranch.getPIp();
       resolvedBranchPort = String.valueOf(reqBranch.getPPort());
-
-    } else {
-      // 본사인 경우, IP 검증 없이 바로 통과
-      Integer userBranchSeq = info.getBranchSeq();
-      if (userBranchSeq != null) {
-        TbranchEntity branch = branchSvc.findEntityBySeq(userBranchSeq);
-        if (branch != null) {
-          info.setBranchName(branch.getCompanyName());
+    }
+    // D) 본사 + Host 헤더 매핑
+    else {
+      String hostH = request.getHeader("Host");
+      if (hostH != null) {
+        String[] parts = hostH.split(":");
+        String hip = parts[0].trim();
+        Integer hpt = parts.length > 1 ? Integer.valueOf(parts[1].trim()) : null;
+        Optional<TbranchEntity> m1 = branchSvc.findBypIp(hip).filter(b -> b.getPPort().equals(hpt));
+        Optional<TbranchEntity> m2 = branchSvc.findByPbIp(hip)
+            .filter(b -> b.getPbPort().equals(hpt));
+        Optional<TbranchEntity> mapped = m1.isPresent() ? m1 : m2;
+        if (mapped.isPresent()) {
+          reqBranch = mapped.get();
+          info.setCurrentBranchSeq(reqBranch.getBranchSeq());
+          info.setCurrentBranchName(reqBranch.getCompanyName());
+          resolvedBranchIp = reqBranch.getPIp();
+          resolvedBranchPort = String.valueOf(reqBranch.getPPort());
         }
       }
-
-      // “호스트 헤더”를 검사하여, 만약 지사 IP:Port와 매핑되면 해당 지사로 전환
-      String hostHeader = request.getHeader("Host");
-      if (hostHeader != null) {
-        // 예: "192.168.0.61:39080" 또는 "192.168.0.61"
-        String[] parts = hostHeader.split(":");
-        String headerIp = parts[0].trim();
-        Integer headerPort = (parts.length > 1)
-            ? Integer.valueOf(parts[1].trim())
-            : null;
-
-        if (!headerIp.isBlank() && headerPort != null) {
-          // 1) p_ip + p_port 매핑 조회
-          Optional<TbranchEntity> br1 = branchSvc.findBypIp(headerIp)
-              .filter(b -> b.getPPort().equals(headerPort));
-          // 2) pb_ip + pb_port 매핑 조회
-          Optional<TbranchEntity> br2 = branchSvc.findByPbIp(headerIp)
-              .filter(b -> b.getPbPort().equals(headerPort));
-          Optional<TbranchEntity> reqBranchOpt2 = (br1.isPresent() ? br1 : br2);
-
-          if (reqBranchOpt2.isPresent()) {
-            reqBranch = reqBranchOpt2.get();
-            info.setBranchName(reqBranch.getCompanyName());
-            // 리다이렉트 대상 지사 IP/Port로 설정
-            resolvedBranchIp = reqBranch.getPIp();
-            resolvedBranchPort = String.valueOf(reqBranch.getPPort());
-          }
-        }
-      }
-      // resolvedBranchIp가 null이라면 “본사 콘솔”(127.0.0.1:8080)으로 유지
       if (resolvedBranchIp == null) {
-        info.setBranchName("본사");
+        info.setCurrentBranchSeq(info.getBranchSeq());
+        info.setCurrentBranchName(info.getBranchName());
       }
     }
 
-    // 8) JWT 토큰 생성
+    // 5) JWT 토큰 생성 준비
     boolean isTempPassword = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTempPassword);
 
+    // 6) 최종 hq_yn 계산
+    boolean finalHqYn = isHqUser && (reqBranch == null);
+    info.setHqYn(finalHqYn);
+
+    // 7) JWT 토큰 생성
     String token = jwtTokenProvider.createTokenFromInfo(info);
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    // 9) Redirect URL 생성
-    //    - 지사 사용자의 경우 resolvedBranchIp가 반드시 존재
-    //    - 본사 사용자의 경우, resolvedBranchIp가 “호스트 헤더로 매핑된 지사”면 해당 지사, 아니면 본사 콘솔
-    String hostForRedirect, portForRedirect;
-    if (resolvedBranchIp != null) {
-      hostForRedirect = resolvedBranchIp;
-      portForRedirect = resolvedBranchPort;
-    } else {
-      hostForRedirect = "127.0.0.1";
-      portForRedirect = "8080";
-    }
+    // 8) Redirect URL 생성
+    String hostForRedirect = resolvedBranchIp != null ? resolvedBranchIp : "127.0.0.1";
+    String portForRedirect = resolvedBranchPort != null ? resolvedBranchPort : "8080";
     String redirectUrl = "http://" + hostForRedirect + ":" + portForRedirect + "?token=" + token;
-    info.setToken(token);
-    info.setTokenType("Bearer");
 
-
-    // 10) 응답을 DTO(LoginResponse)로 반환
-    String message = null;
-    if (isTempPassword) {
-      message = "기본 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 변경하세요.";
-    }
-
-    // resolvedBranchIp != null 이면 지사, 아니면 본사
-    // reqBranch 가 null 이면 본사; isHqUser=true인 경우 branchSeq/Name을 조회해도 무방
-    Integer currentSeq = null;
-    String currentName = null;
-    if (resolvedBranchIp != null) {
-      currentSeq = reqBranch.getBranchSeq();
-      currentName = reqBranch.getCompanyName();
-    } else if (isHqUser) {
-      // 본사 관리자는 자신의 branchSeq(=본사)도 내려줄 수 있음
-      currentSeq = info.getBranchSeq();
-      currentName = info.getBranchName(); // “본사”
-    }
-
+    // 9)  DTO(LoginResponse) 반환
     LoginResponse loginRes = new LoginResponse(
         token,
-        isHqUser,
+        finalHqYn,
         redirectUrl,
-        message,
-        currentSeq,
-        currentName
+        isTempPassword ? "기본 비밀번호(1234)를 사용 중입니다. 로그인 후 변경하세요." : null,
+        info.getCurrentBranchSeq(),
+        info.getCurrentBranchName(),
+        info.getBranchSeq(),
+        info.getBranchName()
     );
 
     return ResponseEntity.ok(loginRes);
   }
 
-    /**
+  /**
      * “127.0.0.1” 로 들어왔을 때, 서버에 붙어 있는 모든 NIC(IP) 중에서
      * DB에 등록된 지사의 p_ip 혹은 pb_ip로 사용 가능한 주소를 찾아 반환.
      * 없으면 null.

@@ -144,6 +144,7 @@ public class TmemberDto {
     private String userId;
     private String userPass;
     private String targetDomain;
+    private Integer branchSeq;
   }
 
   @Data
@@ -156,6 +157,8 @@ public class TmemberDto {
     private String message;
     private Integer currentBranchSeq;
     private String  currentBranchName;
+    private Integer branchSeq;
+    private String  branchName;
   }
 
   /**
