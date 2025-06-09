@@ -62,4 +62,10 @@ public interface TmemberService {
     /** 본사 관리자: 지점명 + 키워드 검색 */
     Page<Info> searchUsersByBranchNameAndKeyword(String branchName, String keyword, Pageable pageable);
 
+    /**
+     * 회원(memberSeq)의 마스킹 여부를 변경합니다.
+     * @param memberSeq 변경 대상 회원의 PK
+     * @param maskFlag 0=마스킹 활성, 1=마스킹 비활성
+     */
+    void updateMaskFlag(Integer memberSeq, Integer maskFlag);
 }

@@ -48,6 +48,8 @@ public interface TrecordService {
 
   TrecordDto findById(Integer recordSeq);
 
+  Page<TrecordDto> findAllByBranch(Integer branchSeq, Pageable pageable);
+
   TrecordDto create(TrecordDto dto);
 
   TrecordDto update(Integer recordSeq, TrecordDto dto);

@@ -2,6 +2,7 @@ package com.sttweb.sttweb.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sttweb.sttweb.entity.TbranchEntity;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -34,6 +35,10 @@ public class TbranchDto {
 
   private String crtime; //생성 시간
 
+  private Boolean isAlive;
+  private LocalDateTime lastHealthCheck;
+  private LocalDateTime lastDowntime;
+
 //  private Integer dbType; // DB 타입
 //  private String dbIp; // DB IP 주소
 //  private String dbPort; // DB 포트
@@ -60,8 +65,10 @@ public class TbranchDto {
         .pPort(e.getPPort())
         .hqYn(e.getHqYn())
         .discd(e.getDiscd())
-        .crtime(e.getCrtime()
-            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+        .crtime(e.getCrtime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+        .isAlive(e.getIsAlive())
+        .lastHealthCheck(e.getLastHealthCheck())
+        .lastDowntime(e.getLastDowntime())
         .build();
   }
 }

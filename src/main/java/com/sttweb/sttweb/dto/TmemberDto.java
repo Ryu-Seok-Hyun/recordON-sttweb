@@ -29,6 +29,7 @@ public class TmemberDto {
     private String  crtime;
     private String  udtime;
     private String  reguserId;
+    private Integer maskFlag;
 
     /** 직책(포지션) */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -56,6 +57,13 @@ public class TmemberDto {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String tokenType;
 
+    private Integer currentBranchSeq;
+    private String  currentBranchName;
+
+    @JsonProperty("hq_yn")
+    private Boolean hqYn;
+
+
     /**
      * Entity → DTO 변환 헬퍼 (branchName은 서비스/컨트롤러에서 채워 줌)
      */
@@ -75,6 +83,7 @@ public class TmemberDto {
           .position(e.getPosition())
           .rank(e.getRank())
           .department(e.getDepartment())
+          .maskFlag(e.getMaskFlag())
           .build();
     }
   }
@@ -122,6 +131,7 @@ public class TmemberDto {
 
     /** 선택: 부서 */
     private String department;
+
   }
 
   /**
@@ -140,9 +150,12 @@ public class TmemberDto {
   @AllArgsConstructor
   public static class LoginResponse {
     private String token;
+    @JsonProperty("hq_yn")
     private boolean hqUser;
     private String redirectUrl;
     private String message;
+    private Integer currentBranchSeq;
+    private String  currentBranchName;
   }
 
   /**

@@ -43,11 +43,15 @@ public class TmemberController {
 
 
   @Data
-  public static class ReauthRequest { private String password; }
+  public static class ReauthRequest {
+
+    private String password;
+  }
 
   @Data
   @AllArgsConstructor
   public static class ReauthResponse {
+
     private String reauthToken;
     private long expiresIn;
   }
@@ -77,12 +81,15 @@ public class TmemberController {
     String reauth = request.getHeader("X-ReAuth-Token");
     String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
     boolean ok = false;
-    if (reauth != null && jwtTokenProvider.validateReAuthToken(reauth)) ok = true;
+    if (reauth != null && jwtTokenProvider.validateReAuthToken(reauth))
+      ok = true;
     else if (authHeader != null && authHeader.startsWith("Bearer ")) {
       String token = authHeader.substring(7).trim();
-      if (jwtTokenProvider.validateToken(token)) ok = true;
+      if (jwtTokenProvider.validateToken(token))
+        ok = true;
     }
-    if (!ok) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "재인증이 필요합니다.");
+    if (!ok)
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "재인증이 필요합니다.");
   }
 
   @LogActivity(type = "member", activity = "등록", contents = "사용자 등록")
@@ -104,7 +111,8 @@ public class TmemberController {
       return ResponseEntity.status(HttpStatus.CONFLICT).body("이미 존재하는 ID 입니다.");
     }
     String originalLevel = req.getUserLevel();
-    if ("1".equals(lvl)) req.setUserLevel("2");
+    if ("1".equals(lvl))
+      req.setUserLevel("2");
     svc.signupWithGrants(req, me.getMemberSeq(), me.getUserId());
     if (!originalLevel.equals(req.getUserLevel())) {
       return ResponseEntity.ok("가입 완료. 지사 관리자는 일반(2)만 생성할 수 있어, 요청하신 권한(" + originalLevel +
@@ -115,13 +123,10 @@ public class TmemberController {
 
   /**
    * 로그인 엔드포인트 (클라이언트 IP 기준으로 지사 제한)
-   *
-   * - 본사(userLevel="0")인 경우 → IP 검증 없이 어디서든 로그인 허용
-   *   + 단, 호스트 헤더(Host)가 지사 IP:Port와 매핑되면 해당 지사로 리다이렉트
-   * - 지사 사용자(userLevel!="0")인 경우 →
-   *     1) clientIp로 Branch 엔티티를 조회
-   *     2) 조회된 Branch.branchSeq와 user.branchSeq가 같을 때만 로그인 허용
-   *     3) 다르면 403 Forbidden
+   * <p>
+   * - 본사(userLevel="0")인 경우 → IP 검증 없이 어디서든 로그인 허용 + 단, 호스트 헤더(Host)가 지사 IP:Port와 매핑되면 해당 지사로
+   * 리다이렉트 - 지사 사용자(userLevel!="0")인 경우 → 1) clientIp로 Branch 엔티티를 조회 2) 조회된 Branch.branchSeq와
+   * user.branchSeq가 같을 때만 로그인 허용 3) 다르면 403 Forbidden
    */
   @LogActivity(type = "member", activity = "로그인")
   @PostMapping("/login")
@@ -161,7 +166,8 @@ public class TmemberController {
         System.out.println("[DEBUG] loopback detected → 대체할 지사 IP = " + replaced);
         clientIp = replaced;
       } else {
-        System.out.println("[DEBUG] loopback detected, 그러나 지사 IP로 매칭되는 NIC를 찾지 못함 → clientIp 그대로 127.0.0.1 유지");
+        System.out.println(
+            "[DEBUG] loopback detected, 그러나 지사 IP로 매칭되는 NIC를 찾지 못함 → clientIp 그대로 127.0.0.1 유지");
       }
     }
 
@@ -169,8 +175,11 @@ public class TmemberController {
 
     // 5) 본사 여부 판단
     boolean isHqUser = "0".equals(info.getUserLevel());
+    info.setHqYn(isHqUser);  // ← 추가: DTO 에 본사 여부 세팅
+
 
     // “리다이렉트 대상 지사 IP/Port”를 결정하기 위한 변수들
+    TbranchEntity reqBranch = null;
     String resolvedBranchIp = null;   // 지사 IP가 채워지면 해당 지사 콘솔로 리다이렉트
     String resolvedBranchPort = null; // 지사 Port
 
@@ -187,7 +196,7 @@ public class TmemberController {
             "접근할 수 있는 지사가 아닙니다. 요청 IP=" + clientIp
         );
       }
-      TbranchEntity reqBranch = reqBranchOpt.get();
+      reqBranch = reqBranchOpt.get();
 
       System.out.println("[DEBUG] clientIp로 조회된 지사 → branchSeq="
           + reqBranch.getBranchSeq() + ", companyName=" + reqBranch.getCompanyName());
@@ -213,7 +222,7 @@ public class TmemberController {
       info.setBranchName(reqBranch.getCompanyName());
 
       // 지사 사용자이므로, 해당 지사 IP/Port를 리다이렉트 대상으로 설정
-      resolvedBranchIp   = reqBranch.getPIp();
+      resolvedBranchIp = reqBranch.getPIp();
       resolvedBranchPort = String.valueOf(reqBranch.getPPort());
 
     } else {
@@ -231,7 +240,7 @@ public class TmemberController {
       if (hostHeader != null) {
         // 예: "192.168.0.61:39080" 또는 "192.168.0.61"
         String[] parts = hostHeader.split(":");
-        String headerIp   = parts[0].trim();
+        String headerIp = parts[0].trim();
         Integer headerPort = (parts.length > 1)
             ? Integer.valueOf(parts[1].trim())
             : null;
@@ -246,10 +255,10 @@ public class TmemberController {
           Optional<TbranchEntity> reqBranchOpt2 = (br1.isPresent() ? br1 : br2);
 
           if (reqBranchOpt2.isPresent()) {
-            TbranchEntity reqBranch = reqBranchOpt2.get();
+            reqBranch = reqBranchOpt2.get();
             info.setBranchName(reqBranch.getCompanyName());
             // 리다이렉트 대상 지사 IP/Port로 설정
-            resolvedBranchIp   = reqBranch.getPIp();
+            resolvedBranchIp = reqBranch.getPIp();
             resolvedBranchPort = String.valueOf(reqBranch.getPPort());
           }
         }
@@ -280,56 +289,77 @@ public class TmemberController {
       portForRedirect = "8080";
     }
     String redirectUrl = "http://" + hostForRedirect + ":" + portForRedirect + "?token=" + token;
+    info.setToken(token);
+    info.setTokenType("Bearer");
 
-    // 10) 응답을 Map이 아니라 DTO(LoginResponse)로 반환
+
+    // 10) 응답을 DTO(LoginResponse)로 반환
     String message = null;
     if (isTempPassword) {
       message = "기본 비밀번호(1234)를 사용 중입니다. 로그인 후 반드시 변경하세요.";
+    }
+
+    // resolvedBranchIp != null 이면 지사, 아니면 본사
+    // reqBranch 가 null 이면 본사; isHqUser=true인 경우 branchSeq/Name을 조회해도 무방
+    Integer currentSeq = null;
+    String currentName = null;
+    if (resolvedBranchIp != null) {
+      currentSeq = reqBranch.getBranchSeq();
+      currentName = reqBranch.getCompanyName();
+    } else if (isHqUser) {
+      // 본사 관리자는 자신의 branchSeq(=본사)도 내려줄 수 있음
+      currentSeq = info.getBranchSeq();
+      currentName = info.getBranchName(); // “본사”
     }
 
     LoginResponse loginRes = new LoginResponse(
         token,
         isHqUser,
         redirectUrl,
-        message
+        message,
+        currentSeq,
+        currentName
     );
 
     return ResponseEntity.ok(loginRes);
   }
 
-  /**
-   * “127.0.0.1” 로 들어왔을 때, 서버에 붙어 있는 모든 NIC(IP) 중에서
-   * DB에 등록된 지사의 p_ip 혹은 pb_ip로 사용 가능한 주소를 찾아 반환.
-   * 없으면 null.
-   */
-  private String detectBranchIpFromLocalNics() {
-    try {
-      Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
-      while (nics.hasMoreElements()) {
-        NetworkInterface ni = nics.nextElement();
-        if (ni.isLoopback() || !ni.isUp()) continue;
+    /**
+     * “127.0.0.1” 로 들어왔을 때, 서버에 붙어 있는 모든 NIC(IP) 중에서
+     * DB에 등록된 지사의 p_ip 혹은 pb_ip로 사용 가능한 주소를 찾아 반환.
+     * 없으면 null.
+     */
+    private String detectBranchIpFromLocalNics () {
+      try {
+        Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
+        while (nics.hasMoreElements()) {
+          NetworkInterface ni = nics.nextElement();
+          if (ni.isLoopback() || !ni.isUp())
+            continue;
 
-        Enumeration<InetAddress> addrs = ni.getInetAddresses();
-        while (addrs.hasMoreElements()) {
-          InetAddress addr = addrs.nextElement();
-          if (addr.isLoopbackAddress()) continue;
+          Enumeration<InetAddress> addrs = ni.getInetAddresses();
+          while (addrs.hasMoreElements()) {
+            InetAddress addr = addrs.nextElement();
+            if (addr.isLoopbackAddress())
+              continue;
 
-          String ip = addr.getHostAddress();
-          if (!ip.contains(".")) continue;
+            String ip = addr.getHostAddress();
+            if (!ip.contains("."))
+              continue;
 
-          if (branchSvc.findBypIp(ip).isPresent()) {
-            return ip;
-          }
-          if (branchSvc.findByPbIp(ip).isPresent()) {
-            return ip;
+            if (branchSvc.findBypIp(ip).isPresent()) {
+              return ip;
+            }
+            if (branchSvc.findByPbIp(ip).isPresent()) {
+              return ip;
+            }
           }
         }
+      } catch (SocketException e) {
+        e.printStackTrace();
       }
-    } catch (SocketException e) {
-      e.printStackTrace();
+      return null;
     }
-    return null;
-  }
 
 
 
@@ -603,4 +633,46 @@ public class TmemberController {
     long expiresIn = Duration.ofMinutes(30).getSeconds();
     return ResponseEntity.ok(new ReauthResponse(token, expiresIn));
   }
+
+  /**
+   * 14) 마스킹 여부 수정
+   *    - 로그인된 사용자가 자신의 maskFlag(0=마스킹, 1=마스킹 해제) 값을 변경합니다.
+   *    - 요청: PUT /api/members/mask
+   *    - Body: { "maskFlag": 0 or 1 }
+   */
+  @Data
+  public static class MaskFlagRequest {
+    private Integer maskFlag;
+  }
+
+  @LogActivity(type = "member", activity = "수정", contents = "마스킹 여부 변경")
+  @PutMapping("/mask")
+  public ResponseEntity<String> updateMaskFlag(
+      @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+      @RequestBody MaskFlagRequest req
+  ) {
+    // 1) 로그인된 회원 확인 → memberSeq 얻기
+    String token = extractToken(authHeader);
+    String userId = jwtTokenProvider.getUserId(token);
+    Info me = svc.getMyInfoByUserId(userId);
+    Integer memberSeq = me.getMemberSeq();
+
+    // 2) 요청 값 검증: maskFlag는 0 또는 1이어야 함
+    Integer newFlag = req.getMaskFlag();
+    if (newFlag == null || (newFlag != 0 && newFlag != 1)) {
+      return ResponseEntity.badRequest().body("maskFlag 값은 0(마스킹) 또는 1(마스킹 해제)이어야 합니다.");
+    }
+
+    // 3) 서비스 호출하여 DB 업데이트
+    try {
+      svc.updateMaskFlag(memberSeq, newFlag);
+      String msg = (newFlag == 0)
+          ? "마스킹이 활성화(번호 가운데 4자리 별표 처리)되었습니다."
+          : "마스킹이 비활성화(번호 전체가 노출)되었습니다.";
+      return ResponseEntity.ok(msg);
+    } catch (IllegalArgumentException e) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+  }
+
 }

@@ -3,7 +3,9 @@ package com.sttweb.sttweb.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
+import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ import java.util.stream.Stream;
 public class TrecordScanService {
 
   private final TrecordRepository trecordRepository;
+  private final TmemberRepository memberRepository; // ← 회원 정보를 조회하기 위해 추가
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   // 윈도우상의 RecOnData 경로를 찾기 위해 C:, D:, E: 드라이브 순으로 검색
@@ -55,7 +58,8 @@ public class TrecordScanService {
    * 2) 같은 폴더에 JSON 메타가 있으면 JSON 값을 덮어씀
    * 3) JSON에도 없으면 WAV 헤더에서 재생시간을 계산해서 callEndDateTime, audioPlayTime를 채움
    * 4) callStatus는 JSON에 없으면 기본값 "OK" 설정
-   * 5) DB에 없는 Path라면 INSERT
+   * 5) 파일명+JSON을 통해 number1(ext)를 채웠으면, DB에 없는 녹취라면 INSERT 시에
+   *    → ownerMemberSeq, branchSeq(회원의 지점)를 함께 저장
    *
    * @return 실제로 INSERT된 레코드 수
    */
@@ -98,7 +102,7 @@ public class TrecordScanService {
         continue;
       }
 
-      // 4) 먼저 TrecordEntity 새 인스턴스를 만들고, '파일명 파싱'으로 기본 필드를 채워 둔다.
+      // 4) TrecordEntity 새 인스턴스를 만들고, '파일명 파싱'으로 기본 필드들을 채워 둔다.
       TrecordEntity rec = new TrecordEntity();
       rec.setAudioFileDir(audioFileDir);
       parseFromFilename(wavFullPath.getFileName().toString(), rec, fileNameDtFmt);
@@ -109,7 +113,8 @@ public class TrecordScanService {
       // 6) JSON이 있으면, JSON 속 값으로 덮어쓰기
       if (jsonCandidate != null) {
         try (BufferedReader reader = new BufferedReader(
-            new InputStreamReader(new FileInputStream(jsonCandidate.toFile()), Charset.forName("MS949"))
+            new InputStreamReader(
+                new FileInputStream(jsonCandidate.toFile()), Charset.forName("MS949"))
         )) {
           JsonNode root        = objectMapper.readTree(reader);
           JsonNode paramsNode  = root.path("params");
@@ -127,7 +132,7 @@ public class TrecordScanService {
               // LocalDateTime.parse(...)로 다시 파싱해서 rec.setCallStartDateTime(...) 하면 됩니다.
             }
           }
-          // (1-1) 최상위 callStartDateTime이 있다면 이것으로 덮어쓰기
+          // (1-1) 최상위 callStartDateTime이 있다면 이 값으로 덮어쓰기
           else if (root.has("callStartDateTime") && !root.get("callStartDateTime").asText().isBlank()) {
             LocalDateTime startLdt = LocalDateTime.parse(root.get("callStartDateTime").asText());
             rec.setCallStartDateTime(Timestamp.valueOf(startLdt));
@@ -225,7 +230,23 @@ public class TrecordScanService {
       // 9) reg_date 칼럼은 NOT NULL이므로, 현재 시각으로 자동 세팅
       rec.setRegDate(Timestamp.valueOf(LocalDateTime.now()));
 
-      // 10) DB에 INSERT
+      // ────────────────────────────────────────────────────────────────────
+      // 10) **중요**: ownerMemberSeq, branchSeq(회원 소속 지점) 자동 세팅
+      // 파일명 또는 JSON에서 파싱된 rec.getNumber1() 값(내선번호)을 통해 회원을 조회
+      if (rec.getNumber1() != null && !rec.getNumber1().isBlank()) {
+        Optional<TmemberEntity> ownerOpt = memberRepository.findByNumber(rec.getNumber1().trim());
+        if (ownerOpt.isPresent()) {
+          TmemberEntity owner = ownerOpt.get();
+          // (1) 이 녹취를 생성한 회원
+          rec.setOwnerMemberSeq(owner.getMemberSeq());
+          // (2) 해당 회원의 지점 번호(=branchSeq)
+          rec.setBranchSeq(owner.getBranchSeq());
+        }
+        // 만약 내선번호에 해당하는 회원이 없으면, ownerMemberSeq와 branchSeq는 NULL 그대로 두어도 됩니다.
+      }
+      // ────────────────────────────────────────────────────────────────────
+
+      // 11) DB에 INSERT
       trecordRepository.save(rec);
       insertedCount++;
     }

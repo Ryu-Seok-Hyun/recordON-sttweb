@@ -422,4 +422,17 @@ public class TmemberServiceImpl implements TmemberService {
     return memberRepo.findByUserId(userId)
         .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
   }
+
+  /**
+   * 회원(memberSeq)의 마스킹 여부를 변경합니다.
+   * @param memberSeq 변경 대상 회원의 PK
+   * @param maskFlag 0=마스킹 활성, 1=마스킹 비활성
+   */
+  @Override
+  @Transactional
+  public void updateMaskFlag(Integer memberSeq, Integer maskFlag) {
+    TmemberEntity member = memberRepo.findById(memberSeq)
+        .orElseThrow(() -> new IllegalArgumentException("해당 회원이 없습니다. memberSeq=" + memberSeq));
+    member.setMaskFlag(maskFlag);
+  }
 }

@@ -53,4 +53,17 @@ public class TrecordEntity {
 
   @Column(name = "reg_date", columnDefinition = "DATETIME")
   private Timestamp regDate;
+
+
+  /**
+   * 이 녹취를 생성한 사용자(memberSeq)
+   */
+  @Column(name = "ownerMemberSeq")
+  private Integer ownerMemberSeq;
+
+  /**
+   * 이 녹취가 발생한 지점(branchSeq)
+   */
+  @Column(name = "branch_seq")
+  private Integer branchSeq;
 }

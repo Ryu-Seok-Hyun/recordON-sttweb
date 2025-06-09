@@ -2,11 +2,12 @@ package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
+import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
+import com.sttweb.sttweb.repository.TbranchRepository;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -14,6 +15,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/branches")
@@ -23,6 +29,7 @@ public class TbranchController {
   private final TbranchService branchSvc;
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
+  private final TbranchRepository branchRepository;
 
   /**
    * 1) 공통: Authorization 헤더에 Bearer 토큰 유효성 검사
@@ -59,7 +66,7 @@ public class TbranchController {
   @GetMapping
   public ResponseEntity<?> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "keyword", required = false) String keyword,   // ← 추가
+      @RequestParam(name = "keyword", required = false) String keyword,
       Pageable pageable
   ) {
     // 1) 토큰 검사
@@ -236,4 +243,52 @@ public class TbranchController {
     branchSvc.changeStatus(id, true);
     return ResponseEntity.ok().build();
   }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // 아래는 DB에 저장된 상태 컬럼을 조회해서 반환하는 상태 체크 API
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * 지점 상태 조회 (DB 저장된 is_alive, last_health_check, last_downtime 반환)
+   * 호출 URL: GET /api/branches/{id}/health
+   */
+  @LogActivity(type = "branch", activity = "조회", contents = "지점 Health 조회 (DB 저장값)")
+  @GetMapping("/{id}/health")
+  public ResponseEntity<?> getBranchHealthFromDb(
+      @RequestHeader(value = "Authorization", required = false) String authHeader,
+      @PathVariable("id") Integer id
+  ) {
+    // 1) 토큰 검사
+    ResponseEntity<String> err = checkToken(authHeader);
+    if (err != null) return err;
+
+    // 2) 해당 지점 정보 조회 (엔티티)
+    TbranchEntity branchEntity = branchRepository.findById(id)
+        .orElse(null);
+    if (branchEntity == null) {
+      return ResponseEntity.status(HttpStatus.NOT_FOUND)
+          .body("존재하지 않는 지점입니다. id=" + id);
+    }
+
+    // 3) 권한 검사: 본사(0) or 지사 관리자(1)인 경우만 허용 (자기관할 지점만)
+    Info me = getMe(authHeader);
+    String lvl = me.getUserLevel();
+    Integer myBranchSeq = me.getBranchSeq();
+    if (!"0".equals(lvl)) {
+      if (!("1".equals(lvl) && myBranchSeq != null && myBranchSeq.equals(id))) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body("권한이 없습니다.");
+      }
+    }
+
+    // 4) 결과 매핑
+    Map<String, Object> result = new HashMap<>();
+    result.put("branchSeq",       branchEntity.getBranchSeq());
+    result.put("isAlive",         branchEntity.getIsAlive());
+    result.put("lastHealthCheck", branchEntity.getLastHealthCheck());
+    result.put("lastDowntime",    branchEntity.getLastDowntime());
+
+    return ResponseEntity.ok(result);
+  }
+
 }

@@ -1,11 +1,12 @@
+// src/main/java/com/sttweb/sttweb/service/TrecordServiceImpl.java
 package com.sttweb.sttweb.service;
 
-import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.TrecordDto;
-import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
-import com.sttweb.sttweb.repository.TmemberRepository;
+import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.repository.TrecordRepository;
+import com.sttweb.sttweb.repository.TmemberRepository;
+import com.sttweb.sttweb.service.TmemberService;
 import jakarta.persistence.EntityNotFoundException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
@@ -30,9 +31,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TrecordServiceImpl implements TrecordService {
 
-  // ───────────────────────────────────────────────────────────────
-  // 드라이브 순회하여 RecOnData 폴더 찾기용 상수
-  // ───────────────────────────────────────────────────────────────
   private static final String[] SEARCH_DRIVES   = { "C:", "D:", "E:" };
   private static final String   REC_ON_DATA_SUB = "\\RecOnData";
 
@@ -40,17 +38,22 @@ public class TrecordServiceImpl implements TrecordService {
   private final TmemberRepository memberRepo;
   private final TmemberService    memberSvc;
 
-  private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private static final DateTimeFormatter DT_FMT =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-  public TrecordServiceImpl(TrecordRepository repo,
+  public TrecordServiceImpl(
+      TrecordRepository repo,
       TmemberRepository memberRepo,
-      TmemberService memberSvc) {
+      TmemberService memberSvc
+  ) {
     this.repo = repo;
     this.memberRepo = memberRepo;
     this.memberSvc = memberSvc;
   }
 
-  /** Entity → DTO 변환 헬퍼 */
+  /**
+   * Entity → DTO 변환 헬퍼: 이제 branchSeq도 채워준다
+   */
   private TrecordDto toDto(TrecordEntity e) {
     TrecordDto.TrecordDtoBuilder b = TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
@@ -61,7 +64,8 @@ public class TrecordServiceImpl implements TrecordService {
             ? e.getCallEndDateTime().toLocalDateTime().format(DT_FMT)
             : null)
         .audioPlayTime(e.getAudioPlayTime() != null
-            ? e.getAudioPlayTime().toString() : null)
+            ? e.getAudioPlayTime().toString()
+            : null)
         .ioDiscdVal(e.getIoDiscdVal())
         .number1(e.getNumber1())
         .number2(e.getNumber2())
@@ -69,19 +73,9 @@ public class TrecordServiceImpl implements TrecordService {
         .callStatus(e.getCallStatus())
         .regDate(e.getRegDate() != null
             ? e.getRegDate().toLocalDateTime().format(DT_FMT)
-            : null);
-
-    // 소유자(memberSeq) 및 branchSeq 추가
-    try {
-      Integer ownerSeq = memberSvc.getMemberSeqByNumber(e.getNumber1());
-      if (ownerSeq != null) {
-        TmemberEntity owner = memberRepo.findById(ownerSeq).orElse(null);
-        if (owner != null) {
-          b.ownerMemberSeq(ownerSeq)
-              .branchSeq(owner.getBranchSeq());
-        }
-      }
-    } catch (Exception ignored) {}
+            : null)
+        .ownerMemberSeq(e.getOwnerMemberSeq())
+        .branchSeq(e.getBranchSeq()); // ← 새로 추가된 부분
 
     return b.build();
   }
@@ -89,15 +83,14 @@ public class TrecordServiceImpl implements TrecordService {
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> findAll(Pageable pageable) {
-    return repo.findAll(pageable)
-        .map(this::toDto);
+    return repo.findAll(pageable).map(this::toDto);
   }
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> searchByNumber(String number1,
-      String number2,
-      Pageable pageable) {
+  public Page<TrecordDto> searchByNumber(
+      String number1, String number2, Pageable pageable
+  ) {
     if (number1 != null && number2 != null) {
       return repo.findByNumber1OrNumber2(number1, number2, pageable)
           .map(this::toDto);
@@ -114,14 +107,16 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> search(String number1,
+  public Page<TrecordDto> search(
+      String number1,
       String number2,
       String direction,
       String numberKind,
       String query,
       LocalDateTime start,
       LocalDateTime end,
-      Pageable pageable) {
+      Pageable pageable
+  ) {
     Boolean inbound = null;
     if ("IN".equalsIgnoreCase(direction))  inbound = true;
     if ("OUT".equalsIgnoreCase(direction)) inbound = false;
@@ -141,19 +136,21 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> advancedSearch(String direction,
+  public Page<TrecordDto> advancedSearch(
+      String direction,
       String numberKind,
       String q,
       Pageable pageable,
-      Info me) {
+      com.sttweb.sttweb.dto.TmemberDto.Info me
+  ) {
     Specification<TrecordEntity> spec = Specification.where(null);
 
     if ("IN".equalsIgnoreCase(direction)) {
       spec = spec.and((root, query, cb) ->
-          cb.equal(root.get("ioDiscdVal"), "I"));
+          cb.equal(root.get("ioDiscdVal"), "수신"));
     } else if ("OUT".equalsIgnoreCase(direction)) {
       spec = spec.and((root, query, cb) ->
-          cb.equal(root.get("ioDiscdVal"), "O"));
+          cb.equal(root.get("ioDiscdVal"), "발신"));
     }
 
     if ("EXT".equalsIgnoreCase(numberKind)) {
@@ -170,16 +167,18 @@ public class TrecordServiceImpl implements TrecordService {
           cb.like(root.get("callStatus"), pattern));
     }
 
-    Page<TrecordEntity> page = repo.findAll(spec, pageable);
-    return page.map(this::toDto);
+    return repo.findAll(spec, pageable).map(this::toDto);
   }
 
   @Override
   @Transactional(readOnly = true)
   public TrecordDto findById(Integer recordSeq) {
-    TrecordEntity e = repo.findById(recordSeq)
-        .orElseThrow(() -> new ResponseStatusException(
-            HttpStatus.NOT_FOUND, "녹취를 찾을 수 없습니다: " + recordSeq));
+    TrecordEntity e = repo.findById(recordSeq).orElseThrow(
+        () -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "녹취를 찾을 수 없습니다: " + recordSeq
+        )
+    );
     return toDto(e);
   }
 
@@ -195,13 +194,19 @@ public class TrecordServiceImpl implements TrecordService {
   public TrecordDto create(TrecordDto dto) {
     TrecordEntity e = new TrecordEntity();
     if (dto.getCallStartDateTime() != null) {
-      e.setCallStartDateTime(Timestamp.valueOf(dto.getCallStartDateTime()));
+      e.setCallStartDateTime(
+          Timestamp.valueOf(dto.getCallStartDateTime())
+      );
     }
     if (dto.getCallEndDateTime() != null) {
-      e.setCallEndDateTime(Timestamp.valueOf(dto.getCallEndDateTime()));
+      e.setCallEndDateTime(
+          Timestamp.valueOf(dto.getCallEndDateTime())
+      );
     }
     if (dto.getAudioPlayTime() != null) {
-      e.setAudioPlayTime(Time.valueOf(dto.getAudioPlayTime()));
+      e.setAudioPlayTime(
+          Time.valueOf(dto.getAudioPlayTime())
+      );
     }
     e.setIoDiscdVal(dto.getIoDiscdVal());
     e.setNumber1(dto.getNumber1());
@@ -211,6 +216,18 @@ public class TrecordServiceImpl implements TrecordService {
     if (dto.getRegDate() != null) {
       e.setRegDate(Timestamp.valueOf(dto.getRegDate()));
     }
+
+    // **주요 추가 로직**: ownerMemberSeq와 branchSeq를 결정하여 저장
+    if (dto.getOwnerMemberSeq() != null) {
+      e.setOwnerMemberSeq(dto.getOwnerMemberSeq());
+      // 회원 엔티티로부터 branchSeq를 가져와 저장
+      TmemberEntity owner = memberRepo.findById(dto.getOwnerMemberSeq())
+          .orElseThrow(() -> new EntityNotFoundException(
+              "사용자를 찾을 수 없습니다: " + dto.getOwnerMemberSeq()
+          ));
+      e.setBranchSeq(owner.getBranchSeq());
+    }
+
     TrecordEntity saved = repo.save(e);
     return toDto(saved);
   }
@@ -219,15 +236,24 @@ public class TrecordServiceImpl implements TrecordService {
   @Transactional
   public TrecordDto update(Integer recordSeq, TrecordDto dto) {
     TrecordEntity e = repo.findById(recordSeq)
-        .orElseThrow(() -> new IllegalArgumentException("녹취를 찾을 수 없습니다: " + recordSeq));
+        .orElseThrow(() -> new IllegalArgumentException(
+            "녹취를 찾을 수 없습니다: " + recordSeq
+        ));
+
     if (dto.getCallStartDateTime() != null) {
-      e.setCallStartDateTime(Timestamp.valueOf(dto.getCallStartDateTime()));
+      e.setCallStartDateTime(
+          Timestamp.valueOf(dto.getCallStartDateTime())
+      );
     }
     if (dto.getCallEndDateTime() != null) {
-      e.setCallEndDateTime(Timestamp.valueOf(dto.getCallEndDateTime()));
+      e.setCallEndDateTime(
+          Timestamp.valueOf(dto.getCallEndDateTime())
+      );
     }
     if (dto.getAudioPlayTime() != null) {
-      e.setAudioPlayTime(Time.valueOf(dto.getAudioPlayTime()));
+      e.setAudioPlayTime(
+          Time.valueOf(dto.getAudioPlayTime())
+      );
     }
     e.setIoDiscdVal(dto.getIoDiscdVal());
     e.setNumber1(dto.getNumber1());
@@ -236,6 +262,14 @@ public class TrecordServiceImpl implements TrecordService {
     e.setCallStatus(dto.getCallStatus());
     if (dto.getRegDate() != null) {
       e.setRegDate(Timestamp.valueOf(dto.getRegDate()));
+    }
+    if (dto.getOwnerMemberSeq() != null) {
+      e.setOwnerMemberSeq(dto.getOwnerMemberSeq());
+      TmemberEntity owner = memberRepo.findById(dto.getOwnerMemberSeq())
+          .orElseThrow(() -> new EntityNotFoundException(
+              "사용자를 찾을 수 없습니다: " + dto.getOwnerMemberSeq()
+          ));
+      e.setBranchSeq(owner.getBranchSeq());
     }
     TrecordEntity saved = repo.save(e);
     return toDto(saved);
@@ -256,11 +290,17 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Resource getFileByIdAndUserSeq(Integer recordSeq, Integer targetUserSeq) {
+  public Resource getFileByIdAndUserSeq(
+      Integer recordSeq, Integer targetUserSeq
+  ) {
     TrecordEntity e = repo.findById(recordSeq)
-        .orElseThrow(() -> new EntityNotFoundException("녹취를 찾을 수 없습니다: " + recordSeq));
+        .orElseThrow(() -> new EntityNotFoundException(
+            "녹취를 찾을 수 없습니다: " + recordSeq
+        ));
     TmemberEntity member = memberRepo.findById(targetUserSeq)
-        .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + targetUserSeq));
+        .orElseThrow(() -> new EntityNotFoundException(
+            "사용자를 찾을 수 없습니다: " + targetUserSeq
+        ));
     if (!member.getNumber().equals(e.getNumber1())) {
       throw new SecurityException("다운로드 권한이 없습니다.");
     }
@@ -281,43 +321,42 @@ public class TrecordServiceImpl implements TrecordService {
   public Resource getFile(Integer recordSeq) {
     TrecordEntity e = repo.findById(recordSeq)
         .orElseThrow(() -> new ResponseStatusException(
-            HttpStatus.NOT_FOUND, "녹취를 찾을 수 없습니다: " + recordSeq));
+            HttpStatus.NOT_FOUND,
+            "녹취를 찾을 수 없습니다: " + recordSeq
+        ));
 
-    // DB에 저장된 상대경로 예: "../20240125/0334-O-950_20240125103148.wav"
     String raw = e.getAudioFileDir().replace("\\", "/");
-
-    // "../" 접두어 제거
     if (raw.startsWith("../")) {
       raw = raw.substring(3);
     }
 
-    // (1) C:, D:, E: 드라이브 중 RecOnData 루트를 찾는다
     Path recOnRoot = findRecOnDataRoot();
     if (recOnRoot == null) {
-      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-          "서버에서 RecOnData 폴더를 찾을 수 없습니다.");
+      throw new ResponseStatusException(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "서버에서 RecOnData 폴더를 찾을 수 없습니다."
+      );
     }
 
-    // (2) RecOnData 루트 아래에 raw(예: "20240125/0334-O-950_20240125103148.wav")를 붙여 실제 경로 생성
     Path full = recOnRoot.resolve(raw).normalize();
 
     try {
       UrlResource res = new UrlResource(full.toUri());
       if (!res.exists() || !res.isReadable()) {
-        throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-            "파일을 찾을 수 없습니다: " + full);
+        throw new ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "파일을 찾을 수 없습니다: " + full
+        );
       }
       return res;
     } catch (MalformedURLException ex) {
-      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-          "파일 URL 생성 실패: " + full, ex);
+      throw new ResponseStatusException(
+          HttpStatus.INTERNAL_SERVER_ERROR,
+          "파일 URL 생성 실패: " + full, ex
+      );
     }
   }
 
-  /**
-   * C:, D:, E: 드라이브 중에서 "\RecOnData" 폴더를 찾아 Path로 반환.
-   * 없으면 null 반환.
-   */
   private Path findRecOnDataRoot() {
     for (String drv : SEARCH_DRIVES) {
       Path candidate = Paths.get(drv + REC_ON_DATA_SUB);
@@ -326,5 +365,14 @@ public class TrecordServiceImpl implements TrecordService {
       }
     }
     return null;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> findAllByBranch(
+      Integer branchSeq, Pageable pageable
+  ) {
+    return repo.findByBranchSeq(branchSeq, pageable)
+        .map(this::toDto);
   }
 }

@@ -59,6 +59,20 @@ public class TbranchEntity {
   @Column(name = "crtime", updatable = false)           // 변경: columnDefinition 대신 updatable=false
   private LocalDateTime crtime;
 
+
+  /** 1=Alive, 0=Dead (마지막 체크 시 기준) */
+  @Column(name = "is_alive", nullable = false, columnDefinition = "TINYINT(1) default 0")
+  private Boolean isAlive = false;
+
+  /** 마지막 상태 체크 시각 */
+  @Column(name = "last_health_check", columnDefinition = "DATETIME NULL")
+  private LocalDateTime lastHealthCheck;
+
+  /** 서버 다운 시점 (처음 Dead 상태가 된 시각) */
+  @Column(name = "last_downtime", columnDefinition = "DATETIME NULL")
+  private LocalDateTime lastDowntime;
+
+
 //  @Column(name = "db_type")
 //  private Integer dbType;
 //

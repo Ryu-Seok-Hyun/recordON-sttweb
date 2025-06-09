@@ -33,6 +33,14 @@ public class TbranchServiceImpl implements TbranchService {
         .hqYn(e.getHqYn())
         .discd(e.getDiscd())
         .crtime(e.getCrtime().format(FMT))
+
+        // ================================
+        // ※ 아래 세 줄을 반드시 추가해야 합니다.
+        .isAlive(e.getIsAlive())
+        .lastHealthCheck(e.getLastHealthCheck())
+        .lastDowntime(e.getLastDowntime())
+        // ================================
+
         .build();
   }
 
@@ -40,7 +48,8 @@ public class TbranchServiceImpl implements TbranchService {
   @Override
   @Transactional(readOnly = true)
   public Page<TbranchDto> findAll(Pageable pageable) {
-    return repo.findAll(pageable).map(this::toDto);
+    return repo.findAll(pageable)
+        .map(this::toDto);
   }
 
   /** 회사명으로 검색 */
@@ -98,7 +107,6 @@ public class TbranchServiceImpl implements TbranchService {
     e.setPbPort(dto.getPbPort());
     e.setHqYn(dto.getHqYn());
     e.setDiscd(0);
-    // e.setCrtime(...) 은 Entity에서 자동으로 생성되도록 되어 있다면 생략 가능
     return toDto(repo.save(e));
   }
 

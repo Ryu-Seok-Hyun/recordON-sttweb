@@ -48,6 +48,7 @@ public class JwtTokenProvider {
     claims.put("userLevel",   info.getUserLevel());
     claims.put("number",      info.getNumber());
     claims.put("position",     info.getPosition());
+    claims.put("maskFlag", info.getMaskFlag());
     claims.put("rank",       info.getRank());
     claims.put("department", info.getDepartment());
     claims.put("discd",       info.getDiscd());
@@ -56,6 +57,11 @@ public class JwtTokenProvider {
     claims.put("reguserId",   info.getReguserId());
     claims.put("role_seq",    info.getRoleSeq());
     claims.put("mustChangePassword", info.getMustChangePassword());
+    claims.put("currentBranchSeq",  info.getCurrentBranchSeq());
+    claims.put("currentBranchName", info.getCurrentBranchName());
+    claims.put("hqYn", info.getHqYn());
+
+
 
     Date now    = new Date();
     Date expiry = new Date(now.getTime() + validityInMs);

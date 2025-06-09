@@ -72,4 +72,6 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
       @Param("memberSeq") Integer memberSeq,
       @Param("roleSeq")   Integer roleSeq
   );
+
+
 }
