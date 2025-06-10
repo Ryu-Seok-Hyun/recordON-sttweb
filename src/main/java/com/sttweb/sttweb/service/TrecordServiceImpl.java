@@ -116,6 +116,8 @@ public class TrecordServiceImpl implements TrecordService {
     return repo.findAll(pageable).map(this::toDto);
   }
 
+
+
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> searchByNumber(
@@ -131,6 +133,14 @@ public class TrecordServiceImpl implements TrecordService {
     } else {
       return findAll(pageable);
     }
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByCallNums(List<String> callNums, Pageable pageable) {
+    // number1, number2가 모두 4자리 내선번호라고 가정
+    return repo.findByNumber1InOrNumber2In(callNums, callNums, pageable)
+        .map(this::toDto);
   }
 
   @Override
@@ -411,5 +421,61 @@ public class TrecordServiceImpl implements TrecordService {
       }
     }
     return null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // NEW! 내선번호와 전화번호 구분 검색 메서드 구현
+  // ─────────────────────────────────────────────────────────────
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByBranchAndExtensions(Integer branchSeq, List<String> extensions, Pageable pageable) {
+    if (extensions == null || extensions.isEmpty()) {
+      return Page.empty(pageable);
+    }
+
+    // 4자리 내선번호만 필터링
+    List<String> validExtensions = extensions.stream()
+        .filter(ext -> ext != null && ext.length() == 4)
+        .distinct()
+        .toList();
+
+    if (validExtensions.isEmpty()) {
+      return Page.empty(pageable);
+    }
+
+    return repo.findByBranchAndExtensions(branchSeq, validExtensions, pageable)
+        .map(this::toDto);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByMixedNumbers(List<String> numbers, Pageable pageable) {
+    if (numbers == null || numbers.isEmpty()) {
+      return Page.empty(pageable);
+    }
+
+    // 내선번호(4자리)와 전화번호 분리
+    List<String> extensions = numbers.stream()
+        .filter(num -> num != null && num.length() == 4)
+        .distinct()
+        .toList();
+
+    List<String> phones = numbers.stream()
+        .filter(num -> num != null && num.length() != 4)
+        .distinct()
+        .toList();
+
+    // 둘 다 비어있으면 빈 결과 반환
+    if (extensions.isEmpty() && phones.isEmpty()) {
+      return Page.empty(pageable);
+    }
+
+    // 빈 리스트는 더미 값으로 처리 (JPA 쿼리에서 빈 리스트 방지)
+    List<String> safeExtensions = extensions.isEmpty() ? List.of("__DUMMY_EXT__") : extensions;
+    List<String> safePhones = phones.isEmpty() ? List.of("__DUMMY_PHONE__") : phones;
+
+    return repo.findByExtensionsAndPhones(safeExtensions, safePhones, pageable)
+        .map(this::toDto);
   }
 }

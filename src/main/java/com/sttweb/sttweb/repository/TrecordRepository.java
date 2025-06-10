@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/repository/TrecordRepository.java
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TrecordEntity;
@@ -82,6 +81,10 @@ public interface TrecordRepository
       Pageable                    pageable
   );
 
+  // ─────────────────────────────────────────────────────────────
+  // 4) 지점별 조회 및 카운트 메서드
+  // ─────────────────────────────────────────────────────────────
+
   // 1) 지점별 페이징 조회
   Page<TrecordEntity> findAllByBranchSeq(Integer branchSeq, Pageable pageable);
 
@@ -91,4 +94,66 @@ public interface TrecordRepository
   // 3) 지점별 IN/OUT 카운트
   //    - DB 컬럼명이 ioDiscdVal 이라면 아래처럼
   long countByBranchSeqAndIoDiscdVal(Integer branchSeq, String ioDiscdVal);
+
+  // ─────────────────────────────────────────────────────────────
+  // 5) 내선번호 구분 검색 메서드 (NEW!)
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * 특정 지점의 내선번호(4자리)만 검색
+   */
+  @Query(value = """
+    SELECT t.*
+      FROM trecord t
+     WHERE t.branch_seq = :branchSeq
+       AND ((t.number1 IN :extensions AND LENGTH(t.number1) = 4)
+         OR (t.number2 IN :extensions AND LENGTH(t.number2) = 4))
+    """,
+      countQuery = """
+    SELECT COUNT(*)
+      FROM trecord t
+     WHERE t.branch_seq = :branchSeq
+       AND ((t.number1 IN :extensions AND LENGTH(t.number1) = 4)
+         OR (t.number2 IN :extensions AND LENGTH(t.number2) = 4))
+    """,
+      nativeQuery = true)
+  Page<TrecordEntity> findByBranchAndExtensions(
+      @Param("branchSeq") Integer branchSeq,
+      @Param("extensions") List<String> extensions,
+      Pageable pageable
+  );
+
+  /**
+   * 내선번호와 전화번호를 구분해서 혼합 검색
+   */
+  @Query("""
+    SELECT t FROM TrecordEntity t WHERE
+    (
+      (t.number1 IN :extensions AND LENGTH(t.number1) = 4) OR
+      (t.number2 IN :extensions AND LENGTH(t.number2) = 4) OR
+      (t.number1 IN :phones AND LENGTH(t.number1) != 4) OR
+      (t.number2 IN :phones AND LENGTH(t.number2) != 4)
+    )
+    """)
+  Page<TrecordEntity> findByExtensionsAndPhones(
+      @Param("extensions") List<String> extensions,
+      @Param("phones") List<String> phones,
+      Pageable pageable
+  );
+
+  // 기존 내선번호(4자리)만 대상으로 IN 검색 (레거시 - 지점 구분 없음)
+  @Query(value = """
+    SELECT t.*
+      FROM trecord t
+     WHERE ((t.number1 IN :callNums AND LENGTH(t.number1) = 4)
+         OR  (t.number2 IN :callNums AND LENGTH(t.number2) = 4))
+    """,
+      countQuery = """
+    SELECT COUNT(*)
+      FROM trecord t
+     WHERE ((t.number1 IN :callNums AND LENGTH(t.number1) = 4)
+         OR  (t.number2 IN :callNums AND LENGTH(t.number2) = 4))
+    """,
+      nativeQuery = true)
+  Page<TrecordEntity> findByCallNumsWithFourLength(@Param("callNums") List<String> callNums, Pageable pageable);
 }

@@ -14,7 +14,6 @@ public interface TrecordService {
 
   Page<TrecordDto> searchByNumber(String number1, String number2, Pageable pageable);
 
-
   /**
    * 전체 + 통합검색 + 시간범위
    *
@@ -36,7 +35,6 @@ public interface TrecordService {
       LocalDateTime end,
       Pageable pageable
   );
-
 
   Page<TrecordDto> advancedSearch(
       String direction,
@@ -68,4 +66,20 @@ public interface TrecordService {
   /** 지점별 IN/OUT 카운트 (direction="IN" 또는 "OUT", "ALL"일 땐 전체 건수 반환) */
   long countByBranchAndDirection(Integer branchSeq, String direction);
 
+  /** 서비스에 내선번호 기반 메서드 (레거시 - 지점 구분 없음) */
+  Page<TrecordDto> searchByCallNums(List<String> callNums, Pageable pageable);
+
+  // ─────────────────────────────────────────────────────────────
+  // NEW! 내선번호와 전화번호 구분 검색 메서드들
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * 특정 지점의 내선번호(4자리)만 검색
+   */
+  Page<TrecordDto> searchByBranchAndExtensions(Integer branchSeq, List<String> extensions, Pageable pageable);
+
+  /**
+   * 내선번호와 전화번호를 구분해서 혼합 검색
+   */
+  Page<TrecordDto> searchByMixedNumbers(List<String> numbers, Pageable pageable);
 }
