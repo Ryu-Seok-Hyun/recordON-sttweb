@@ -82,8 +82,10 @@ public class TmemberEntity {
   private Integer roleSeq = 1;
 
 
-  @Column(name = "mask_flag", nullable = false)
-  private Integer maskFlag;
+  /** 마스킹 여부 (0=마스킹, 1=마스킹 안 함) */
+  @Column(name = "mask_flag", nullable = false, columnDefinition = "TINYINT(1) default 0")
+  private Integer maskFlag = 0;
+
 
   /**
    * ▶ 회원 한 명이 여러 회선에 권한을 가질 수 있으므로 OneToMany 매핑

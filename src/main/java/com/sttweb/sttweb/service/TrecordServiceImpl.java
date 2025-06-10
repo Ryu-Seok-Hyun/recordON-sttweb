@@ -1,13 +1,12 @@
-// src/main/java/com/sttweb/sttweb/service/TrecordServiceImpl.java
 package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TrecordDto;
-import com.sttweb.sttweb.entity.TrecordEntity;
 import com.sttweb.sttweb.entity.TmemberEntity;
-import com.sttweb.sttweb.repository.TrecordRepository;
+import com.sttweb.sttweb.entity.TrecordEntity;
 import com.sttweb.sttweb.repository.TmemberRepository;
+import com.sttweb.sttweb.repository.TrecordRepository;
 import com.sttweb.sttweb.service.TmemberService;
-import com.sttweb.sttweb.service.TbranchService;            // 수정됨: import 추가
+import com.sttweb.sttweb.service.TbranchService;
 import jakarta.persistence.EntityNotFoundException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
@@ -33,60 +32,81 @@ public class TrecordServiceImpl implements TrecordService {
 
   private static final String[] SEARCH_DRIVES   = { "C:", "D:", "E:" };
   private static final String   REC_ON_DATA_SUB = "\\RecOnData";
+  private static final DateTimeFormatter DT_FMT =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
   private final TmemberService    memberSvc;
-  private final TbranchService    branchSvc;          // 수정됨: 필드 추가
-
-  private static final DateTimeFormatter DT_FMT =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private final TbranchService    branchSvc;
 
   public TrecordServiceImpl(
       TrecordRepository repo,
       TmemberRepository memberRepo,
       TmemberService memberSvc,
-      TbranchService branchSvc                // 수정됨: 생성자 인자 추가
+      TbranchService branchSvc
   ) {
     this.repo       = repo;
     this.memberRepo = memberRepo;
     this.memberSvc  = memberSvc;
-    this.branchSvc  = branchSvc;               // 수정됨: 할당
+    this.branchSvc  = branchSvc;
   }
 
   /**
-   * Entity → DTO 변환 헬퍼: branchSeq, branchName도 채워준다
+   * Entity → DTO 변환 헬퍼
+   * - e.getBranchSeq()가 null인 레거시는 number1/number2로 회원 조회 후 대체
+   * - 매칭되는 지점 없으면 branchName == null
    */
   private TrecordDto toDto(TrecordEntity e) {
     Integer bs = e.getBranchSeq();
+    if (bs == null) {
+      // legacy: branchSeq == null 이면 number1 기준 회원 검색
+      TmemberEntity m = memberRepo.findByNumber(e.getNumber1())
+          .orElseGet(() -> memberRepo.findByNumber(e.getNumber2()).orElse(null));
+      if (m != null) {
+        bs = m.getBranchSeq();
+      }
+    }
+
     String branchName = null;
-    if (bs != null) {                           // 수정됨: null 체크
-      branchName = branchSvc.findById(bs)
-          .getCompanyName();
+    if (bs != null) {
+      try {
+        branchName = branchSvc.findById(bs).getCompanyName();
+      } catch (Exception ignore) {
+        // 매칭 실패 시 null 유지
+      }
     }
 
     return TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
-        .callStartDateTime(e.getCallStartDateTime() != null
-            ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT)
-            : null)
-        .callEndDateTime(e.getCallEndDateTime() != null
-            ? e.getCallEndDateTime().toLocalDateTime().format(DT_FMT)
-            : null)
-        .audioPlayTime(e.getAudioPlayTime() != null
-            ? e.getAudioPlayTime().toString()
-            : null)
+        .callStartDateTime(
+            e.getCallStartDateTime() != null
+                ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT)
+                : null
+        )
+        .callEndDateTime(
+            e.getCallEndDateTime() != null
+                ? e.getCallEndDateTime().toLocalDateTime().format(DT_FMT)
+                : null
+        )
+        .audioPlayTime(
+            e.getAudioPlayTime() != null
+                ? e.getAudioPlayTime().toString()
+                : null
+        )
         .ioDiscdVal(e.getIoDiscdVal())
         .number1(e.getNumber1())
         .number2(e.getNumber2())
         .audioFileDir(e.getAudioFileDir())
         .callStatus(e.getCallStatus())
-        .regDate(e.getRegDate() != null
-            ? e.getRegDate().toLocalDateTime().format(DT_FMT)
-            : null)
+        .regDate(
+            e.getRegDate() != null
+                ? e.getRegDate().toLocalDateTime().format(DT_FMT)
+                : null
+        )
         .ownerMemberSeq(e.getOwnerMemberSeq())
-        .branchSeq(bs)                             // 기존 필드
-        .branchName(branchName)                    // 수정됨: branchName 설정
+        .branchSeq(bs)
+        .branchName(branchName)
         .build();
   }
 
@@ -105,11 +125,9 @@ public class TrecordServiceImpl implements TrecordService {
       return repo.findByNumber1OrNumber2(number1, number2, pageable)
           .map(this::toDto);
     } else if (number1 != null) {
-      return repo.findByNumber1(number1, pageable)
-          .map(this::toDto);
+      return repo.findByNumber1(number1, pageable).map(this::toDto);
     } else if (number2 != null) {
-      return repo.findByNumber2(number2, pageable)
-          .map(this::toDto);
+      return repo.findByNumber2(number2, pageable).map(this::toDto);
     } else {
       return findAll(pageable);
     }
@@ -136,12 +154,11 @@ public class TrecordServiceImpl implements TrecordService {
     if ("PHONE".equalsIgnoreCase(numberKind)) isExt = false;
 
     return repo.search(
-            number1, number2,
-            inbound, isExt, query,
-            start, end,
-            pageable
-        )
-        .map(this::toDto);
+        number1, number2,
+        inbound, isExt, query,
+        start, end,
+        pageable
+    ).map(this::toDto);
   }
 
   @Override
@@ -194,8 +211,22 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
+  public Page<TrecordDto> findAllByBranch(Integer branchSeq, Pageable pageable) {
+    return repo.findAllByBranchSeq(branchSeq, pageable)
+        .map(this::toDto);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public Page<TrecordDto> searchByNumbers(List<String> numbers, Pageable pageable) {
     return repo.findByNumber1InOrNumber2In(numbers, numbers, pageable)
+        .map(this::toDto);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> findByUserNumber(String number, Pageable pageable) {
+    return repo.findByNumber1OrNumber2(number, number, pageable)
         .map(this::toDto);
   }
 
@@ -227,7 +258,6 @@ public class TrecordServiceImpl implements TrecordService {
       e.setRegDate(Timestamp.valueOf(dto.getRegDate()));
     }
 
-    // **주요 추가 로직**: ownerMemberSeq와 branchSeq를 결정하여 저장
     if (dto.getOwnerMemberSeq() != null) {
       e.setOwnerMemberSeq(dto.getOwnerMemberSeq());
       TmemberEntity owner = memberRepo.findById(dto.getOwnerMemberSeq())
@@ -280,6 +310,7 @@ public class TrecordServiceImpl implements TrecordService {
           ));
       e.setBranchSeq(owner.getBranchSeq());
     }
+
     TrecordEntity saved = repo.save(e);
     return toDto(saved);
   }
@@ -291,17 +322,24 @@ public class TrecordServiceImpl implements TrecordService {
   }
 
   @Override
-  @Transactional(readOnly = true)
-  public Page<TrecordDto> findByUserNumber(String number, Pageable pageable) {
-    return repo.findByNumber1OrNumber2(number, number, pageable)
-        .map(this::toDto);
+  public long countByBranchAndDirection(Integer branchSeq, String direction) {
+    if ("ALL".equalsIgnoreCase(direction)) {
+      return repo.countByBranchSeq(branchSeq);
+    }
+    String ioVal = switch(direction.toUpperCase()) {
+      case "IN"  -> "수신";
+      case "OUT" -> "발신";
+      default    -> null;
+    };
+    if (ioVal == null) {
+      throw new IllegalArgumentException("direction must be ALL, IN or OUT");
+    }
+    return repo.countByBranchSeqAndIoDiscdVal(branchSeq, ioVal);
   }
 
   @Override
   @Transactional(readOnly = true)
-  public Resource getFileByIdAndUserSeq(
-      Integer recordSeq, Integer targetUserSeq
-  ) {
+  public Resource getFileByIdAndUserSeq(Integer recordSeq, Integer targetUserSeq) {
     TrecordEntity e = repo.findById(recordSeq)
         .orElseThrow(() -> new EntityNotFoundException(
             "녹취를 찾을 수 없습니다: " + recordSeq
@@ -311,17 +349,17 @@ public class TrecordServiceImpl implements TrecordService {
             "사용자를 찾을 수 없습니다: " + targetUserSeq
         ));
     if (!member.getNumber().equals(e.getNumber1())) {
-      throw new SecurityException("다운로드 권한이 없습니다.");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
     }
     try {
       Path path = Paths.get(e.getAudioFileDir());
       UrlResource resource = new UrlResource(path.toUri());
       if (!resource.exists() || !resource.isReadable()) {
-        throw new RuntimeException("파일 읽기 오류: " + path);
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "파일 읽기 오류: " + path);
       }
       return resource;
-    } catch (Exception ex) {
-      throw new RuntimeException("파일 로드 오류", ex);
+    } catch (MalformedURLException ex) {
+      throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "파일 URL 생성 실패", ex);
     }
   }
 
@@ -348,7 +386,6 @@ public class TrecordServiceImpl implements TrecordService {
     }
 
     Path full = recOnRoot.resolve(raw).normalize();
-
     try {
       UrlResource res = new UrlResource(full.toUri());
       if (!res.exists() || !res.isReadable()) {
@@ -374,32 +411,5 @@ public class TrecordServiceImpl implements TrecordService {
       }
     }
     return null;
-  }
-
-  @Override
-  @Transactional(readOnly = true)
-  public Page<TrecordDto> findAllByBranch(
-      Integer branchSeq, Pageable pageable
-  ) {
-    return repo.findByBranchSeq(branchSeq, pageable)
-        .map(this::toDto);
-  }
-
-  @Override
-  public long countByBranchAndDirection(Integer branchSeq, String direction) {
-    if ("ALL".equalsIgnoreCase(direction)) {
-      return repo.countByBranchSeq(branchSeq);
-    }
-    // IN/OUT → 실제 DB에는 “수신”/“발신” 문자열로 저장되어 있으니 매핑
-    String ioVal = switch(direction.toUpperCase()) {
-      case "IN"  -> "수신";
-      case "OUT" -> "발신";
-      default    -> null;
-    };
-    if (ioVal == null) {
-      // 잘못된 direction 값 들어올 경우
-      throw new IllegalArgumentException("direction must be ALL, IN or OUT");
-    }
-    return repo.countByBranchSeqAndIoDiscdVal(branchSeq, ioVal);
   }
 }
