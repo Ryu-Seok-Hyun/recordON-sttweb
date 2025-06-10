@@ -42,7 +42,7 @@ public class TbranchEntity {
   @Column(name = "pb_port", length = 10)
   private String pbPort;
 
-  @Column(name = "p_ip", length = 20)
+  @Column(name = "p_ip", nullable = false, unique = true)
   private String pIp;
 
   @Column(name = "p_port", length = 10)

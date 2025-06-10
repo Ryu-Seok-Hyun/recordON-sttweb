@@ -96,6 +96,11 @@ public class TbranchServiceImpl implements TbranchService {
   @Override
   @Transactional
   public TbranchDto createBranch(TbranchDto dto) {
+    // p_ip 중복 검사
+    if (dto.getPIp() != null && repo.existsBypIp(dto.getPIp())) {
+      throw new IllegalArgumentException("이미 사용 중인 내부망 IP(p_ip)입니다: " + dto.getPIp());
+    }
+
     TbranchEntity e = new TbranchEntity();
     e.setCompanyId(dto.getCompanyId());
     e.setPhone(dto.getPhone());

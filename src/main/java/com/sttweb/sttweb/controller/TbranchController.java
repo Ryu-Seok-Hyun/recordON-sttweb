@@ -160,9 +160,13 @@ public class TbranchController {
       return ResponseEntity.status(HttpStatus.FORBIDDEN)
           .body("본사 관리자만 접근 가능합니다.");
     }
-    // 3) 생성
-    TbranchDto created = branchSvc.createBranch(reqDto);
-    return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    // 3) 생성 (중복 예외 핸들)
+    try {
+      TbranchDto created = branchSvc.createBranch(reqDto);
+      return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    } catch (IllegalStateException e) {
+      return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
+    }
   }
 
   /**
