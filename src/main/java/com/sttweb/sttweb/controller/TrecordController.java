@@ -1,10 +1,12 @@
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.dto.GrantDto;
 import com.sttweb.sttweb.dto.MemberLinePermDto;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
+import com.sttweb.sttweb.repository.UserPermissionRepository;
 import com.sttweb.sttweb.service.MemberLinePermService;
 import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
@@ -34,7 +36,9 @@ public class TrecordController {
   private final TmemberService           memberSvc;
   private final JwtTokenProvider         jwtTokenProvider;
   private final PermissionService        permService;
-  private final MemberLinePermService    linePermService;
+  private final MemberLinePermService    linePermService;   // 라인 권한용
+  private final UserPermissionRepository userPermissionRepo;
+
 
   // 토큰에서 페이로드(userId) 검증·추출
   private String extractToken(String authHeader) {
@@ -172,7 +176,7 @@ public class TrecordController {
       paged = recordSvc.searchByNumbers(nums, pr);
 
     } else if ("2".equals(lvl)) {
-      // 일반 유저: 본인 + 사용자간 권한 + 라인 권한
+      // 일반 유저: 본인 + 라인권한 + 사용자간권한 (두 시스템 모두 조회)
       Set<String> nums = new LinkedHashSet<>();
       nums.add(myNum);
 
@@ -180,35 +184,60 @@ public class TrecordController {
       System.out.println("=== 권한 디버깅 ===");
       System.out.println("본인 번호: " + myNum);
       System.out.println("멤버 시퀀스: " + me.getMemberSeq());
+      System.out.println("사용자 ID: " + me.getUserId());
 
-      // 사용자 간 권한 조회
-      List<String> grantedNumbers = permService.findGrantedNumbers(me.getMemberSeq());
-      System.out.println("권한받은 번호들: " + grantedNumbers);
+      // 1) 라인(회선) 권한 조회 - MemberLinePermService 사용
+      try {
+        List<MemberLinePermDto> linePermissions = linePermService.getPermissionsByMember(me.getMemberSeq());
+        System.out.println("라인 권한들: " + linePermissions);
 
-      // 권한받은 번호들을 4자리 내선번호로 변환
-      for (String grantedNum : grantedNumbers) {
-        String normalizedNum = normalizeToFourDigit(grantedNum);
-        if (normalizedNum != null) {
-          nums.add(normalizedNum);
+        List<String> lineNumbers = linePermissions.stream()
+            .map(MemberLinePermDto::getCallNum)
+            .filter(Objects::nonNull)
+            .toList();
+        System.out.println("라인 권한 번호들: " + lineNumbers);
+
+        // 라인 권한 번호들을 4자리로 변환
+        for (String lineNum : lineNumbers) {
+          String normalizedNum = normalizeToFourDigit(lineNum);
+          if (normalizedNum != null) {
+            nums.add(normalizedNum);
+          }
         }
+      } catch (Exception e) {
+        System.out.println("라인 권한 조회 실패: " + e.getMessage());
       }
 
-      // 라인(내선) 권한 조회
-      List<MemberLinePermDto> linePermissions = linePermService.getPermissionsByMember(me.getMemberSeq());
-      System.out.println("라인 권한들: " + linePermissions);
+      // 2) 사용자간 권한 조회 - PermissionService 사용
+      try {
+        List<GrantDto> userGrants = permService.listGrantsFor(me.getUserId());
+        System.out.println("사용자간 권한들: " + userGrants);
 
-      List<String> lineNumbers = linePermissions.stream()
-          .map(MemberLinePermDto::getCallNum)
-          .filter(Objects::nonNull)
-          .toList();
-      System.out.println("라인 권한 번호들: " + lineNumbers);
+        List<String> userPermNumbers = userGrants.stream()
+            .map(GrantDto::getTargetUserId)
+            .filter(Objects::nonNull)
+            .map(targetUserId -> {
+              // targetUserId로 해당 사용자의 번호 조회
+              try {
+                Info targetUser = memberSvc.getMyInfoByUserId(targetUserId);
+                return targetUser != null ? targetUser.getNumber() : null;
+              } catch (Exception ex) {
+                return null;
+              }
+            })
+            .filter(Objects::nonNull)
+            .toList();
+        System.out.println("사용자간 권한 번호들: " + userPermNumbers);
 
-      // 라인 권한 번호들도 4자리 내선번호로 변환
-      for (String lineNum : lineNumbers) {
-        String normalizedNum = normalizeToFourDigit(lineNum);
-        if (normalizedNum != null) {
-          nums.add(normalizedNum);
+        // 사용자간 권한 번호들도 4자리로 변환
+        for (String userNum : userPermNumbers) {
+          String normalizedNum = normalizeToFourDigit(userNum);
+          if (normalizedNum != null) {
+            nums.add(normalizedNum);
+          }
         }
+      } catch (Exception e) {
+        System.out.println("사용자간 권한 조회 실패: " + e.getMessage());
       }
 
       // 최종 검색할 번호 목록
@@ -233,8 +262,37 @@ public class TrecordController {
       }
     }
 
-    // ④ 응답시 전화번호를 내선번호로 변환해서 표시
+    // ④ 응답시 전화번호를 내선번호로 변환 + 청취 권한 설정
+    Set<String> authorizedNumbers = new LinkedHashSet<>();
+    if ("2".equals(lvl)) {
+      // 일반 사용자: 권한이 있는 번호들 수집
+      authorizedNumbers.add(myNum); // 본인
+
+      // 권한받은 번호들
+      List<String> grantedNumbers = permService.findGrantedNumbers(me.getMemberSeq());
+      for (String grantedNum : grantedNumbers) {
+        String normalizedNum = normalizeToFourDigit(grantedNum);
+        if (normalizedNum != null) {
+          authorizedNumbers.add(normalizedNum);
+        }
+      }
+
+      // 라인 권한 번호들
+      List<MemberLinePermDto> linePermissions = linePermService.getPermissionsByMember(me.getMemberSeq());
+      List<String> lineNumbers = linePermissions.stream()
+          .map(MemberLinePermDto::getCallNum)
+          .filter(Objects::nonNull)
+          .toList();
+      for (String lineNum : lineNumbers) {
+        String normalizedNum = normalizeToFourDigit(lineNum);
+        if (normalizedNum != null) {
+          authorizedNumbers.add(normalizedNum);
+        }
+      }
+    }
+
     paged.getContent().forEach(record -> {
+      // 전화번호를 내선번호로 변환
       if (record.getNumber1() != null) {
         String originalNumber1 = record.getNumber1();
         record.setNumber1(convertToExtensionDisplay(originalNumber1));
@@ -242,6 +300,37 @@ public class TrecordController {
       if (record.getNumber2() != null) {
         String originalNumber2 = record.getNumber2();
         record.setNumber2(convertToExtensionDisplay(originalNumber2));
+      }
+
+      // 청취 권한 설정
+      if ("2".equals(lvl)) {
+        // 일반 사용자: 권한 확인
+        String number1 = record.getNumber1();
+        boolean canListen = (number1 != null && authorizedNumbers.contains(number1)) ||
+            "0".equals(lvl) || "1".equals(lvl); // 본사/지사관리자는 항상 가능
+
+        // 청취여부 필드 설정 (필드명은 실제 DTO에 맞게 수정 필요)
+        if (record instanceof TrecordDto) {
+          // TrecordDto에 setListenAuth() 또는 setCanListen() 같은 메서드가 있다면
+          // record.setListenAuth(canListen ? "가능" : "불가능");
+          // 또는 reflection으로 필드 설정
+          try {
+            java.lang.reflect.Field field = record.getClass().getDeclaredField("listenAuth");
+            field.setAccessible(true);
+            field.set(record, canListen ? "가능" : "불가능");
+          } catch (Exception e) {
+            System.out.println("청취권한 필드 설정 실패: " + e.getMessage());
+          }
+        }
+      } else {
+        // 본사/지사관리자: 항상 가능
+        try {
+          java.lang.reflect.Field field = record.getClass().getDeclaredField("listenAuth");
+          field.setAccessible(true);
+          field.set(record, "가능");
+        } catch (Exception e) {
+          System.out.println("청취권한 필드 설정 실패: " + e.getMessage());
+        }
       }
     });
 
