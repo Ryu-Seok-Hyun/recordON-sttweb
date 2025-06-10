@@ -29,4 +29,13 @@ public interface UserPermissionRepository extends JpaRepository<UserPermission, 
   );
 
   List<UserPermission> findByGranteeUserId(String granteeUserId);
+
+
+  /**
+   * granteeUserId 에 대해 permLevel 이상인 권한 레코드를 모두 조회
+   */
+  List<UserPermission> findByGranteeUserIdAndPermLevelGreaterThanEqual(
+      String granteeUserId,
+      int permLevel
+  );
 }

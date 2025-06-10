@@ -69,8 +69,8 @@ public class TrecordController {
   }
 
   // ---------------------------------------
-  // 1) 전체 녹취 + 필터링 + IN/OUT 카운트
-  // ---------------------------------------
+// 1) 전체 녹취 + 필터링 + IN/OUT 카운트
+// ---------------------------------------
   @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
   @GetMapping
   public ResponseEntity<Map<String,Object>> listAll(
@@ -106,8 +106,15 @@ public class TrecordController {
       paged = recordSvc.searchByNumbers(nums, pr);
 
     } else if ("2".equals(lvl)) {
-      // 일반 유저: 본인 내선번호로만 조회
-      paged = recordSvc.findByUserNumber(myNum, pr);
+      // 일반 유저: 본인 번호 + 권한 받은 동료 번호
+      List<String> nums = new ArrayList<>();
+      nums.add(myNum);
+
+      // PermissionService를 통해 사용자 권한 매핑에서 내선번호들 가져오기
+      List<String> grantedNums = permService.findGrantedNumbers(me.getMemberSeq());
+      nums.addAll(grantedNums);
+
+      paged = recordSvc.searchByNumbers(nums, pr);
 
     } else {
       // 본사 관리자: 기존 ALL + 검색 로직
