@@ -165,6 +165,10 @@ public class TrecordController {
     if (!StringUtils.hasText(numberKind)) {
       numberKind = "ALL";
     }
+    // ─── 4자리 순수 숫자 검색(q)이면 강제로 내선 검색으로 ───
+    if (StringUtils.hasText(q) && q.matches("\\d{4}")) {
+      numberKind = "EXT";
+    }
 
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
