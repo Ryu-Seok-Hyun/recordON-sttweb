@@ -158,17 +158,16 @@ public class TrecordController {
       @RequestParam(name = "end", required = false) String endStr
   ) {
 
-    // ★ 빈 문자열이 넘어올 경우에도 "ALL" 로 보정
-    if (!StringUtils.hasText(direction)) {
-      direction = "ALL";
-    }
-    if (!StringUtils.hasText(numberKind)) {
-      numberKind = "ALL";
-    }
-    // ─── 4자리 순수 숫자 검색(q)이면 강제로 내선 검색으로 ───
-    if (StringUtils.hasText(q) && q.matches("\\d{4}")) {
-      numberKind = "EXT";
-    }
+    // ★ 빈 문자열 보정
+    if (!StringUtils.hasText(direction))  direction   = "ALL";
+    if (!StringUtils.hasText(numberKind)) numberKind = "ALL";
+
+
+      // ── q 입력 있고 PHONE 이면 ALL 로 → isExt 필터 제거
+         if (StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
+            numberKind = "ALL";
+           }
+
 
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
@@ -316,6 +315,12 @@ public class TrecordController {
     Pageable pr = PageRequest.of(page, size);
 
     Page<TrecordDto> paged;
+
+    // PHONE + q 입력 시 ALL 로 바꿔서 검색 필터 해제
+        if (StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
+            numberKind = "ALL";
+          }
+
     if ("0".equals(lvl) || "1".equals(lvl)) {
       // ADMIN/지점장: 전체 or CSV → 필터
       if (numbersCsv != null && !numbersCsv.isBlank()) {
