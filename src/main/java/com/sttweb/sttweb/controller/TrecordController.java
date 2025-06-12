@@ -1,31 +1,38 @@
 package com.sttweb.sttweb.controller;
 
-import com.sttweb.sttweb.dto.GrantDto;
-import com.sttweb.sttweb.dto.MemberLinePermDto;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
+import com.sttweb.sttweb.entity.UserPermission;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.repository.UserPermissionRepository;
-import com.sttweb.sttweb.service.MemberLinePermService;
-import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordScanService;
 import com.sttweb.sttweb.service.TrecordService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.data.domain.*;
-import org.springframework.http.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpRange;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.IOException;
+import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+/**
+ * 녹취 관리 컨트롤러
+ * 녹취 데이터의 조회, 검색, 청취, 다운로드 기능을 제공
+ */
 @RestController
 @RequestMapping("/api/records")
 @RequiredArgsConstructor
@@ -35,13 +42,9 @@ public class TrecordController {
   private final TrecordScanService       scanSvc;
   private final TmemberService           memberSvc;
   private final JwtTokenProvider         jwtTokenProvider;
-  private final PermissionService        permService;
-  private final MemberLinePermService    linePermService;   // 라인 권한용
-  private final UserPermissionRepository userPermissionRepo;
+  private final UserPermissionRepository userPermRepo;
 
-
-  // 토큰에서 페이로드(userId) 검증·추출
-  private String extractToken(String authHeader) {
+  private Info requireLogin(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
     }
@@ -49,334 +52,195 @@ public class TrecordController {
     if (!jwtTokenProvider.validateToken(token)) {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
     }
-    return token;
+    return memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
   }
 
-  // 토큰 → 사용자 정보
-  private Info getCurrentUser(String token) {
-    String userId = jwtTokenProvider.getUserId(token);
-    return memberSvc.getMyInfoByUserId(userId);
-  }
+  private List<String> getAccessibleNumbers(String userId) {
+    Set<String> nums = new LinkedHashSet<>();
+    Info me = memberSvc.getMyInfoByUserId(userId);
 
-  // 로그인 필수
-  private Info requireLogin(String authHeader) {
-    String token = extractToken(authHeader);
-    return getCurrentUser(token);
-  }
-
-  /**
-   * 전화번호를 내선번호로 변환 (응답용)
-   * 4자리면 그대로, 아니면 마지막 4자리 또는 그대로 유지
-   */
-  private String convertToExtensionDisplay(String phoneNumber) {
-    if (phoneNumber == null || phoneNumber.trim().isEmpty()) {
-      return phoneNumber;
+    // 본인 내선번호
+    if (me.getNumber() != null && !me.getNumber().trim().isEmpty()) {
+      String n = me.getNumber().replaceAll("[^0-9]", "");
+      if (n.length() == 4) nums.add(n);
+      else if (n.length() == 3) nums.add("0" + n);
+      else if (n.length() > 4) nums.add(n.substring(n.length() - 4));
     }
 
-    // 이미 4자리면 그대로 (내선번호로 간주)
-    if (phoneNumber.length() == 4) {
-      return phoneNumber;
-    }
-
-    // 하이픈으로 분리된 경우 마지막 부분을 내선번호로 표시
-    if (phoneNumber.contains("-")) {
-      String[] parts = phoneNumber.split("-");
-      String lastPart = parts[parts.length - 1];
-      // 마지막 부분이 4자리면 내선번호로 표시
-      if (lastPart.length() == 4) {
-        return lastPart;
+    // 권한받은 회선의 내선번호
+    if (me.getMemberSeq() != null) {
+      for (UserPermission perm : userPermRepo.findByMemberSeq(me.getMemberSeq())) {
+        if (perm.getPermLevel() >= 2) {
+          // line_id는 tmember.number(내선번호)와 같음 (int로 저장되어 있다면 0포함 4자리 String으로 맞춰줘야 함)
+          String lineIdStr = String.format("%04d", perm.getLineId()); // 항상 4자리로
+          nums.add(lineIdStr);
+        }
       }
     }
-
-    // 8자리 이상이면 마지막 4자리를 내선번호로 표시
-    if (phoneNumber.length() >= 8) {
-      return phoneNumber.substring(phoneNumber.length() - 4);
-    }
-
-    // 그 외에는 원본 그대로
-    return phoneNumber;
+    System.out.println("### getAccessibleNumbers(" + userId + ") = " + nums);
+    return new ArrayList<>(nums);
   }
 
-  // ---------------------------------------
-  // 0) 신규 녹취 스캔 → DB 저장
-  // ---------------------------------------
-  @LogActivity(type = "record", activity = "등록", contents = "디스크 스캔하여 DB 저장")
-  @GetMapping("/scan")
-  public ResponseEntity<Map<String,Object>> scanAndSaveNewRecords(
-      @RequestHeader(value="Authorization", required=false) String authHeader
-  ) throws IOException {
-    requireLogin(authHeader);
-    int inserted = scanSvc.scanAndSaveNewRecords();
-    return ResponseEntity.ok(Map.of(
-        "inserted", inserted,
-        "message", "신규 녹취 " + inserted + "건이 DB에 저장되었습니다."
-    ));
+
+  private List<String> makeExtensions(String num) {
+    if (num == null) return Collections.emptyList();
+    String d = num.replaceAll("[^0-9]", "");
+    Set<String> s = new LinkedHashSet<>();
+    if (!d.isEmpty()) {
+      s.add(d);
+      if (d.length() == 3)             s.add("0" + d);
+      if (d.length() > 4)              s.add(d.substring(d.length() - 4));
+    }
+    return new ArrayList<>(s);
   }
 
-  /**
-   * 3자리 번호를 4자리 내선번호로 변환 (3자리는 제외)
-   */
-  private String normalizeToFourDigit(String number) {
-    if (number == null || number.trim().isEmpty()) {
-      return null;
-    }
-
-    // 이미 4자리면 그대로
-    if (number.length() == 4) {
-      return number;
-    }
-
-    // 3자리면 앞에 0 추가해서 4자리로 변환
-    if (number.length() == 3) {
-      return "0" + number; // 271 → 0271
-    }
-
-    // 그 외는 null (제외)
+  private String normalizeToFourDigit(String n) {
+    if (n == null) return null;
+    String d = n.replaceAll("[^0-9]", "");
+    if (d.length() == 4) return d;
+    if (d.length() == 3) return "0" + d;
+    if (d.length() > 4)  return d.substring(d.length() - 4);
     return null;
   }
 
-  // ---------------------------------------
-  // 1) 전체 녹취 + 필터링 + IN/OUT 카운트 (기존 로직 유지 + 응답시 내선번호 변환)
-  // ---------------------------------------
-  @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
+  private String convertToExtensionDisplay(String num) {
+    if (num == null) return null;
+    String t = num.trim();
+    if (t.length() == 4) return t;
+    if (t.contains("-")) {
+      String last = t.substring(t.lastIndexOf('-') + 1);
+      if (last.length() == 4) return last;
+    }
+    if (t.length() > 4) return t.substring(t.length() - 4);
+    if (t.length() == 3) return "0" + t;
+    return t;
+  }
+
+  private boolean hasPermissionForNumber(String userId, String number, int reqLevel) {
+    Info me = memberSvc.getMyInfoByUserId(userId);
+    if (me.getNumber() != null) {
+      for (String m : makeExtensions(me.getNumber())) {
+        if (makeExtensions(number).contains(m)) return true;
+      }
+    }
+    if (me.getMemberSeq() != null) {
+      List<String> tgt = makeExtensions(number);
+      for (var perm : userPermRepo.findByMemberSeq(me.getMemberSeq())) {
+        if (perm.getPermLevel() >= reqLevel) {
+          for (String x : makeExtensions(String.valueOf(perm.getLineId()))) {
+            if (tgt.contains(x)) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  @LogActivity(type="record", activity="조회", contents="전체 녹취 조회")
   @GetMapping
   public ResponseEntity<Map<String,Object>> listAll(
-      @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "page",       defaultValue = "0")   int page,
-      @RequestParam(name = "size",       defaultValue = "10")  int size,
-      @RequestParam(name = "direction",  defaultValue = "ALL") String direction,
-      @RequestParam(name = "numberKind", defaultValue = "ALL") String numberKind,
-      @RequestParam(name = "q",          required = false)    String q,
-      @RequestParam(name = "start",      required = false)    String startStr,
-      @RequestParam(name = "end",        required = false)    String endStr
+      @RequestHeader(value="Authorization", required=false) String authHeader,
+      @RequestParam(name="page",       defaultValue="0")   int page,
+      @RequestParam(name="size",       defaultValue="10")  int size,
+      @RequestParam(name="direction",  defaultValue="ALL") String direction,
+      @RequestParam(name="numberKind", defaultValue="ALL") String numberKind,
+      @RequestParam(name="q",          required=false)    String q,
+      @RequestParam(name="start",      required=false)    String startStr,
+      @RequestParam(name="end",        required=false)    String endStr
   ) {
-    // ① 날짜 파싱
-    DateTimeFormatter fmt   = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    LocalDateTime    start = (startStr!=null ? LocalDateTime.parse(startStr, fmt) : null);
-    LocalDateTime    end   = (  endStr!=null ? LocalDateTime.parse(endStr,   fmt) : null);
+    DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    LocalDateTime start = startStr!=null ? LocalDateTime.parse(startStr, fmt) : null;
+    LocalDateTime end   = endStr  !=null ? LocalDateTime.parse(endStr,   fmt) : null;
 
-    // ② 로그인 및 사용자 정보
-    Info     me    = requireLogin(authHeader);
-    String   lvl   = me.getUserLevel();
-    Integer  maskF = me.getMaskFlag();
-    String   myNum = me.getNumber();
-    Pageable pr    = PageRequest.of(page, size);
+    Info me      = requireLogin(authHeader);
+    String lvl   = me.getUserLevel();
+    Pageable reqPage = PageRequest.of(page, size);
 
-    // 3) 페이징 조회: 본사(0)/지사관리자(1)/일반(2) - 기존 로직 유지
     Page<TrecordDto> paged;
-    if ("1".equals(lvl)) {
-      // 지사 관리자: 본지사 전체 내선 (기존 로직 유지)
+    if ("0".equals(lvl)) {
+      if (q!=null && q.contains(",")) {
+        List<String> nums = Arrays.stream(q.split(",")).map(String::trim).toList();
+        paged = recordSvc.searchByMixedNumbers(nums, reqPage);
+      } else {
+        paged = recordSvc.search(null, null, direction, numberKind, q, start, end, reqPage);
+      }
+
+    } else if ("1".equals(lvl)) {
       List<String> nums = memberSvc
           .listUsersInBranch(me.getBranchSeq(), PageRequest.of(0, Integer.MAX_VALUE))
           .getContent().stream()
           .map(Info::getNumber)
           .filter(Objects::nonNull)
-          .toList();
-
-      paged = recordSvc.searchByNumbers(nums, pr);
-
-    } else if ("2".equals(lvl)) {
-      // 일반 유저: 본인 + 라인권한 + 사용자간권한 (두 시스템 모두 조회)
-      Set<String> nums = new LinkedHashSet<>();
-      nums.add(myNum);
-
-      // 디버깅: 본인 번호 로그
-      System.out.println("=== 권한 디버깅 ===");
-      System.out.println("본인 번호: " + myNum);
-      System.out.println("멤버 시퀀스: " + me.getMemberSeq());
-      System.out.println("사용자 ID: " + me.getUserId());
-
-      // 1) 라인(회선) 권한 조회 - MemberLinePermService 사용
-      try {
-        List<MemberLinePermDto> linePermissions = linePermService.getPermissionsByMember(me.getMemberSeq());
-        System.out.println("라인 권한들: " + linePermissions);
-
-        List<String> lineNumbers = linePermissions.stream()
-            .map(MemberLinePermDto::getCallNum)
-            .filter(Objects::nonNull)
-            .toList();
-        System.out.println("라인 권한 번호들: " + lineNumbers);
-
-        // 라인 권한 번호들을 4자리로 변환
-        for (String lineNum : lineNumbers) {
-          String normalizedNum = normalizeToFourDigit(lineNum);
-          if (normalizedNum != null) {
-            nums.add(normalizedNum);
-          }
-        }
-      } catch (Exception e) {
-        System.out.println("라인 권한 조회 실패: " + e.getMessage());
-      }
-
-      // 2) 사용자간 권한 조회 - PermissionService 사용
-      try {
-        List<GrantDto> userGrants = permService.listGrantsFor(me.getUserId());
-        System.out.println("사용자간 권한들: " + userGrants);
-
-        List<String> userPermNumbers = userGrants.stream()
-            .map(GrantDto::getTargetUserId)
-            .filter(Objects::nonNull)
-            .map(targetUserId -> {
-              // targetUserId로 해당 사용자의 번호 조회
-              try {
-                Info targetUser = memberSvc.getMyInfoByUserId(targetUserId);
-                return targetUser != null ? targetUser.getNumber() : null;
-              } catch (Exception ex) {
-                return null;
-              }
-            })
-            .filter(Objects::nonNull)
-            .toList();
-        System.out.println("사용자간 권한 번호들: " + userPermNumbers);
-
-        // 사용자간 권한 번호들도 4자리로 변환
-        for (String userNum : userPermNumbers) {
-          String normalizedNum = normalizeToFourDigit(userNum);
-          if (normalizedNum != null) {
-            nums.add(normalizedNum);
-          }
-        }
-      } catch (Exception e) {
-        System.out.println("사용자간 권한 조회 실패: " + e.getMessage());
-      }
-
-      // 최종 검색할 번호 목록
-      List<String> finalNumbers = new ArrayList<>(nums);
-      System.out.println("최종 검색 번호들: " + finalNumbers);
-      System.out.println("==================");
-
-      paged = recordSvc.searchByNumbers(finalNumbers, pr);
-    } else {
-      // 본사(0): 전체 조회 or q 콤마 복합 조회 (기존 로직 유지)
-      boolean multi = (q!=null && q.contains(","));
-      if (multi) {
-        List<String> numbers = Arrays.stream(q.split(","))
-            .map(String::trim).filter(s->!s.isEmpty()).toList();
-        paged = recordSvc.searchByNumbers(numbers, pr);
-      } else {
-        paged = recordSvc.search(
-            null, null,
-            direction, numberKind, q, start, end,
-            pr
-        );
-      }
-    }
-
-    // ④ 응답시 전화번호를 내선번호로 변환 + 청취 권한 설정
-    Set<String> authorizedNumbers = new LinkedHashSet<>();
-    if ("2".equals(lvl)) {
-      // 일반 사용자: 권한이 있는 번호들 수집
-      authorizedNumbers.add(myNum); // 본인
-
-      // 권한받은 번호들
-      List<String> grantedNumbers = permService.findGrantedNumbers(me.getMemberSeq());
-      for (String grantedNum : grantedNumbers) {
-        String normalizedNum = normalizeToFourDigit(grantedNum);
-        if (normalizedNum != null) {
-          authorizedNumbers.add(normalizedNum);
-        }
-      }
-
-      // 라인 권한 번호들
-      List<MemberLinePermDto> linePermissions = linePermService.getPermissionsByMember(me.getMemberSeq());
-      List<String> lineNumbers = linePermissions.stream()
-          .map(MemberLinePermDto::getCallNum)
+          .map(this::normalizeToFourDigit)
           .filter(Objects::nonNull)
           .toList();
-      for (String lineNum : lineNumbers) {
-        String normalizedNum = normalizeToFourDigit(lineNum);
-        if (normalizedNum != null) {
-          authorizedNumbers.add(normalizedNum);
-        }
-      }
-    }
+      paged = recordSvc.searchByMixedNumbers(nums, reqPage);
 
-    paged.getContent().forEach(record -> {
-      // 전화번호를 내선번호로 변환
-      if (record.getNumber1() != null) {
-        String originalNumber1 = record.getNumber1();
-        record.setNumber1(convertToExtensionDisplay(originalNumber1));
-      }
-      if (record.getNumber2() != null) {
-        String originalNumber2 = record.getNumber2();
-        record.setNumber2(convertToExtensionDisplay(originalNumber2));
-      }
-
-      // 청취 권한 설정
-      if ("2".equals(lvl)) {
-        // 일반 사용자: 권한 확인
-        String number1 = record.getNumber1();
-        boolean canListen = (number1 != null && authorizedNumbers.contains(number1)) ||
-            "0".equals(lvl) || "1".equals(lvl); // 본사/지사관리자는 항상 가능
-
-        // 청취여부 필드 설정 (필드명은 실제 DTO에 맞게 수정 필요)
-        if (record instanceof TrecordDto) {
-          // TrecordDto에 setListenAuth() 또는 setCanListen() 같은 메서드가 있다면
-          // record.setListenAuth(canListen ? "가능" : "불가능");
-          // 또는 reflection으로 필드 설정
-          try {
-            java.lang.reflect.Field field = record.getClass().getDeclaredField("listenAuth");
-            field.setAccessible(true);
-            field.set(record, canListen ? "가능" : "불가능");
-          } catch (Exception e) {
-            System.out.println("청취권한 필드 설정 실패: " + e.getMessage());
-          }
-        }
+    } else if ("2".equals(lvl)) {
+      List<String> accessible = getAccessibleNumbers(me.getUserId());
+      if (accessible.isEmpty()) {
+        paged = Page.empty(reqPage);
       } else {
-        // 본사/지사관리자: 항상 가능
-        try {
-          java.lang.reflect.Field field = record.getClass().getDeclaredField("listenAuth");
-          field.setAccessible(true);
-          field.set(record, "가능");
-        } catch (Exception e) {
-          System.out.println("청취권한 필드 설정 실패: " + e.getMessage());
-        }
+        paged = recordSvc.searchByMyAndGrantedNumbers(
+            me.getBranchSeq(), accessible, reqPage
+        );
       }
+
+    } else {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
+    }
+
+    paged.getContent().forEach(rec -> {
+      if (rec.getNumber1()!=null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
+      if (rec.getNumber2()!=null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));
+      if (rec.getNumber1()==null || rec.getNumber1().length()!=4) {
+        String tmp = rec.getNumber1();
+        rec.setNumber1(rec.getNumber2());
+        rec.setNumber2(tmp);
+      }
+      boolean canL = "0".equals(lvl) || "1".equals(lvl)
+          || ("2".equals(lvl)&&hasPermissionForNumber(me.getUserId(),rec.getNumber1(),3));
+      try {
+        Field f = TrecordDto.class.getDeclaredField("listenAuth");
+        f.setAccessible(true);
+        f.set(rec, canL ? "가능" : "불가능");
+      } catch(Exception ignored){}
     });
-
-    // ⑤ 마스킹 처리
-    if (maskF!=null && maskF==0) {
+    if (me.getMaskFlag()!=null && me.getMaskFlag()==0)
       paged.getContent().forEach(TrecordDto::maskNumber2);
-    }
 
-    // ⑥ IN/OUT 카운트
-    long inCount, outCount;
+    long inCount  = recordSvc.countByBranchAndDirection(null,"IN");
+    long outCount = recordSvc.countByBranchAndDirection(null,"OUT");
     if ("1".equals(lvl)) {
-      inCount  = recordSvc.countByBranchAndDirection(me.getBranchSeq(), "IN");
-      outCount = recordSvc.countByBranchAndDirection(me.getBranchSeq(), "OUT");
-    }
-    else if ("2".equals(lvl) || (q!=null && q.contains(","))) {
+      inCount  = recordSvc.countByBranchAndDirection(me.getBranchSeq(),"IN");
+      outCount = recordSvc.countByBranchAndDirection(me.getBranchSeq(),"OUT");
+    } else if ("2".equals(lvl)) {
       inCount = outCount = paged.getTotalElements();
     }
-    else {
-      inCount  = recordSvc.countByBranchAndDirection(null, "IN");
-      outCount = recordSvc.countByBranchAndDirection(null, "OUT");
-    }
 
-    // ⑦ 응답 조립
     Map<String,Object> body = new LinkedHashMap<>();
-    body.put("content",          paged.getContent());
-    body.put("totalElements",    paged.getTotalElements());
-    body.put("totalPages",       paged.getTotalPages());
-    body.put("size",             paged.getSize());
-    body.put("number",           paged.getNumber());
-    body.put("numberOfElements", paged.getNumberOfElements());
-    body.put("empty",            paged.isEmpty());
-    body.put("inboundCount",     inCount);
-    body.put("outboundCount",    outCount);
-    body.put("first",            paged.isFirst());
-    body.put("last",             paged.isLast());
-    body.put("pageable",         paged.getPageable());
-    body.put("sort",             paged.getSort());
+    body.put("content",         paged.getContent());
+    body.put("totalElements",   paged.getTotalElements());
+    body.put("totalPages",      paged.getTotalPages());
+    body.put("size",            paged.getSize());
+    body.put("number",          paged.getNumber());
+    body.put("numberOfElements",paged.getNumberOfElements());
+    body.put("empty",           paged.isEmpty());
+    body.put("inboundCount",    inCount);
+    body.put("outboundCount",   outCount);
+    body.put("first",           paged.isFirst());
+    body.put("last",            paged.isLast());
+    body.put("pageable",        paged.getPageable());
+    body.put("sort",            paged.getSort());
 
     return ResponseEntity.ok(body);
   }
 
-
-  // ---------------------------------------
-  // 2) 번호 검색
-  // ---------------------------------------
-  @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
+  /**
+   * 번호로 녹취 검색
+   * 여러 번호를 쉼표로 구분하여 검색하거나 개별 번호로 검색 가능
+   */
+  @LogActivity(type="record", activity="조회", contents="번호 검색")
   @GetMapping("/search")
   public ResponseEntity<Page<TrecordDto>> searchByNumbers(
       @RequestParam(value="numbers", required=false) String numbersCsv,
@@ -386,92 +250,98 @@ public class TrecordController {
       @RequestParam(value="page", defaultValue="0") int page,
       @RequestParam(value="size", defaultValue="10") int size
   ) {
-    Info me     = requireLogin(authHeader);
-    int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    Integer maskF = me.getMaskFlag();
+    Info me = requireLogin(authHeader);
+    String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);
     Page<TrecordDto> paged;
 
-    if (numbersCsv != null) {
-      List<String> nums = Arrays.stream(numbersCsv.split(","))
-          .map(String::trim).filter(s -> !s.isEmpty())
-          .toList();
-      if (roleSeq < 2 && nums.stream().anyMatch(n -> !n.equals(me.getNumber()))) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료만 검색 가능합니다.");
-      }
-      paged = recordSvc.searchByNumbers(nums, pr);
-
-    } else {
-      if (number1 == null && number2 == null) {
-        paged = recordSvc.findAll(pr);
-      } else {
-        if (roleSeq < 2) {
-          String my = me.getNumber();
-          if ((number1 != null && !number1.equals(my)) ||
-              (number2 != null && !number2.equals(my))) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료 외에 검색할 수 없습니다.");
-          }
-        }
+    // 권한에 따른 검색 처리
+    if ("0".equals(lvl) || "1".equals(lvl)) {
+      // 관리자 또는 지점 관리자
+      if (numbersCsv != null) {
+        // 여러 번호 검색
+        List<String> nums = Arrays.stream(numbersCsv.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .toList();
+        paged = recordSvc.searchByMixedNumbers(nums, pr);
+      } else if (number1 != null || number2 != null) {
+        // 개별 번호 검색
         paged = recordSvc.searchByNumber(number1, number2, pr);
+      } else {
+        // 전체 조회
+        paged = recordSvc.findAll(pr);
       }
+    } else if ("2".equals(lvl)) {
+      // 일반 사용자: 접근 가능한 번호만
+      List<String> accessible = getAccessibleNumbers(me.getUserId());
+      if (accessible.isEmpty()) {
+        paged = Page.empty(pr);
+      } else {
+        paged = recordSvc.searchByMixedNumbers(accessible, pr);
+      }
+    } else {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 
-    // 응답시 전화번호를 내선번호로 변환
-    paged.getContent().forEach(record -> {
-      if (record.getNumber1() != null) {
-        record.setNumber1(convertToExtensionDisplay(record.getNumber1()));
-      }
-      if (record.getNumber2() != null) {
-        record.setNumber2(convertToExtensionDisplay(record.getNumber2()));
-      }
+    // 번호 형태 변환
+    paged.getContent().forEach(rec -> {
+      if (rec.getNumber1() != null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
+      if (rec.getNumber2() != null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));
     });
 
-    if (maskF != null && maskF == 0) {
+    // 마스킹 처리
+    if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
       paged.getContent().forEach(TrecordDto::maskNumber2);
     }
+
     return ResponseEntity.ok(paged);
   }
 
-  // ---------------------------------------
-  // 3) 단건 조회
-  // ---------------------------------------
-  @LogActivity(type = "record", activity = "조회", contents = "단건 조회")
+  /**
+   * ID로 녹취 단건 조회
+   * 권한 체크 후 상세 정보 반환
+   */
+  @LogActivity(type="record", activity="조회", contents="단건 조회")
   @GetMapping("/{id}")
   public ResponseEntity<TrecordDto> getById(
       @RequestHeader(value="Authorization", required=false) String authHeader,
       @PathVariable("id") Integer id
   ) {
-    Info me     = requireLogin(authHeader);
-    int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    Integer maskF = me.getMaskFlag();
+    Info me = requireLogin(authHeader);
+    String lvl = me.getUserLevel();
     TrecordDto dto = recordSvc.findById(id);
 
-    if (roleSeq < 2
-        && !me.getNumber().equals(dto.getNumber1())
-        && !me.getNumber().equals(dto.getNumber2())
-    ) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인 자료 외에 조회할 수 없습니다.");
+    // 권한 체크
+    if ("2".equals(lvl)) {
+      // 일반 사용자: 본인 또는 권한이 있는 번호인지 확인
+      boolean ok = hasPermissionForNumber(me.getUserId(), dto.getNumber1(), 2)
+          || hasPermissionForNumber(me.getUserId(), dto.getNumber2(), 2);
+      if (!ok) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "조회 권한이 없습니다.");
+      }
+    } else if (!"0".equals(lvl) && !"1".equals(lvl)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 
-    // 응답시 전화번호를 내선번호로 변환
-    if (dto.getNumber1() != null) {
-      dto.setNumber1(convertToExtensionDisplay(dto.getNumber1()));
-    }
-    if (dto.getNumber2() != null) {
-      dto.setNumber2(convertToExtensionDisplay(dto.getNumber2()));
-    }
+    // 번호 형태 변환
+    if (dto.getNumber1() != null) dto.setNumber1(convertToExtensionDisplay(dto.getNumber1()));
+    if (dto.getNumber2() != null) dto.setNumber2(convertToExtensionDisplay(dto.getNumber2()));
 
-    if (maskF != null && maskF == 0) {
+    // 마스킹 처리
+    if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
       dto.maskNumber2();
     }
+
     return ResponseEntity.ok(dto);
   }
 
-  // ---------------------------------------
-  // 4) 청취 (Partial Content)
-  // ---------------------------------------
-  @LogActivity(type = "record", activity = "청취", contents = "녹취 청취")
-  @GetMapping(value="/{id}/listen", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+  /**
+   * 녹취 파일 스트리밍 청취
+   * Range 요청을 지원하여 부분 다운로드 가능
+   */
+  @LogActivity(type="record", activity="청취", contents="녹취 청취")
+  @GetMapping(value="/{id}/listen", produces= MediaType.APPLICATION_OCTET_STREAM_VALUE)
   public ResponseEntity<ResourceRegion> streamAudio(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @RequestHeader HttpHeaders headers,
@@ -479,16 +349,28 @@ public class TrecordController {
       @PathVariable("id") Integer id
   ) throws IOException {
     Info me = requireLogin(authHeader);
-    int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
-    if (roleSeq < 3) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "청취 권한이 없습니다.");
+    String lvl = me.getUserLevel();
+    TrecordDto dto = recordSvc.findById(id);
+
+    // 청취 권한 체크 (레벨 3 이상 필요)
+    if ("2".equals(lvl)) {
+      boolean ok = hasPermissionForNumber(me.getUserId(), dto.getNumber1(), 3)
+          || hasPermissionForNumber(me.getUserId(), dto.getNumber2(), 3);
+      if (!ok) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "청취 권한이 없습니다.");
+      }
+    } else if (!"0".equals(lvl) && !"1".equals(lvl)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 
+    // 파일 리소스 조회
     Resource audio = recordSvc.getFile(id);
-    long contentLength = audio.contentLength();
+    long length = audio.contentLength();
+
+    // Range 요청 처리
     List<HttpRange> ranges = headers.getRange();
     ResourceRegion region = ranges.isEmpty()
-        ? new ResourceRegion(audio, 0, Math.min(1024 * 1024, contentLength))
+        ? new ResourceRegion(audio, 0, Math.min(1024*1024, length)) // 기본 1MB
         : ranges.get(0).toResourceRegion(audio);
 
     return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
@@ -497,10 +379,11 @@ public class TrecordController {
         .body(region);
   }
 
-  // ---------------------------------------
-  // 5) 다운로드
-  // ---------------------------------------
-  @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
+  /**
+   * 녹취 파일 다운로드
+   * 전체 파일을 첨부파일로 다운로드
+   */
+  @LogActivity(type="record", activity="다운로드", contents="녹취 다운로드")
   @GetMapping("/{id}/download")
   public ResponseEntity<Resource> downloadById(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -508,60 +391,52 @@ public class TrecordController {
       @PathVariable("id") Integer id
   ) {
     Info me = requireLogin(authHeader);
+    String lvl = me.getUserLevel();
     TrecordDto dto = recordSvc.findById(id);
-    int roleSeq = memberSvc.getRoleSeqOf(me.getMemberSeq());
 
-    boolean hasDownloadRole = roleSeq >= 4;
-    boolean isOwner        = me.getNumber().equals(dto.getNumber1()) ||
-        me.getNumber().equals(dto.getNumber2());
-    boolean isBranchAdmin  = "1".equals(me.getUserLevel()) &&
-        me.getBranchSeq() != null &&
-        me.getBranchSeq().equals(dto.getBranchSeq());
-    boolean hasGrant       = dto.getOwnerMemberSeq() != null &&
-        permService.hasLevel(me.getMemberSeq(),
-            dto.getOwnerMemberSeq(),
-            4);
-
-    if (!(hasDownloadRole || isOwner || isBranchAdmin || hasGrant)) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+    // 다운로드 권한 체크 (레벨 4 이상 필요)
+    if ("2".equals(lvl)) {
+      boolean ok = hasPermissionForNumber(me.getUserId(), dto.getNumber1(), 4)
+          || hasPermissionForNumber(me.getUserId(), dto.getNumber2(), 4);
+      if (!ok) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+      }
+    } else if (!"0".equals(lvl) && !"1".equals(lvl)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 
     Resource file = recordSvc.getFile(id);
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION,
-            "attachment; filename=\"" + file.getFilename() + "\"")
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"")
         .body(file);
   }
 
-  // ---------------------------------------
-  // 6) 특정 지점 녹취 조회
-  // ---------------------------------------
+  /**
+   * 지점별 녹취 목록 조회
+   * 지점 관리자 이상만 접근 가능
+   */
   @GetMapping("/branch/{branchSeq}")
   public ResponseEntity<Page<TrecordDto>> listByBranch(
-      @RequestHeader(value = "Authorization", required = false) String authHeader,
+      @RequestHeader(value="Authorization", required=false) String authHeader,
       @PathVariable("branchSeq") Integer branchSeq,
-      @RequestParam(name = "page", defaultValue = "0") int page,
-      @RequestParam(name = "size", defaultValue = "10") int size
+      @RequestParam(name="page", defaultValue="0") int page,
+      @RequestParam(name="size", defaultValue="10") int size
   ) {
-    Info me = getCurrentUser(extractToken(authHeader));
+    Info me = requireLogin(authHeader);
+
+    // 권한 체크: 관리자 또는 해당 지점의 관리자만
     if (!"0".equals(me.getUserLevel())
-        && !("1".equals(me.getUserLevel()) &&
-        me.getBranchSeq() != null &&
-        me.getBranchSeq().equals(branchSeq))
-    ) {
+        && !("1".equals(me.getUserLevel()) && me.getBranchSeq().equals(branchSeq))) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
     }
+
     Pageable pr = PageRequest.of(page, size);
     Page<TrecordDto> result = recordSvc.findAllByBranch(branchSeq, pr);
 
-    // 응답시 전화번호를 내선번호로 변환
-    result.getContent().forEach(record -> {
-      if (record.getNumber1() != null) {
-        record.setNumber1(convertToExtensionDisplay(record.getNumber1()));
-      }
-      if (record.getNumber2() != null) {
-        record.setNumber2(convertToExtensionDisplay(record.getNumber2()));
-      }
+    // 번호 형태 변환
+    result.getContent().forEach(rec -> {
+      if (rec.getNumber1() != null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
+      if (rec.getNumber2() != null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));
     });
 
     return ResponseEntity.ok(result);

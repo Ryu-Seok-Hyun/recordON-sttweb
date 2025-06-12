@@ -1,6 +1,7 @@
 // src/main/java/com/sttweb/sttweb/service/MemberLinePermService.java
 package com.sttweb.sttweb.service;
 
+import com.sttweb.sttweb.dto.GrantDto;
 import com.sttweb.sttweb.dto.MemberLinePermDto;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TmemberLinePermEntity;
@@ -25,6 +26,38 @@ public class MemberLinePermService {
   private final TmemberRepository        memberRepository;
   private final TrecordTelListRepository telListRepository;
   private final TmemberRoleRepository     roleRepository;
+  private final PermissionService        permissionService;
+
+
+  /**
+   * roleSeq를 permLevel로 변환하는 헬퍼 함수
+   */
+  private int roleSeqToPermLevel(int roleSeq) {
+    // 예시: 실제 프로젝트 권한 매핑에 맞게 수정!
+    // (roleSeq 2 → permLevel 2, 3→3, 4→4, 나머지 1)
+    switch (roleSeq) {
+      case 2: return 2; // 조회 권한
+      case 3: return 3; // 청취 권한
+      case 4: return 4; // 다운로드 권한
+      default: return 1; // NONE (권한 없음)
+    }
+  }
+
+  @Transactional
+  public boolean revokeLinePermission(int memberSeq, int lineId) {
+    // 1. tmember_line_perm 삭제
+    // 2. tuser_permission도 같이 삭제
+    permissionService.revokeAndSyncLinePerm(memberSeq, lineId);
+    return true;
+  }
+
+
+  public String getCallNumByLineId(Integer lineId) {
+    return telListRepository.findById(lineId)
+        .map(line -> line.getCallNum())
+        .orElse("Unknown");
+  }
+
 
   /**
    * Helper: TmemberLinePermEntity → MemberLinePermDto 로 변환
@@ -91,7 +124,8 @@ public class MemberLinePermService {
    * 3) 회원(memberSeq)에게 회선(lineId)에 대한 권한(roleSeq)을 부여
    */
   @Transactional
-  public boolean grantLinePermission(Integer memberSeq, Integer lineId, Integer roleSeq) {
+  public boolean grantLinePermission(int memberSeq, int lineId, int roleSeq) {
+    // 회선 권한 엔티티 직접 저장!
     TmemberEntity member = memberRepository.findById(memberSeq)
         .orElseThrow(() -> new IllegalArgumentException("memberSeq=" + memberSeq + " not found"));
     TrecordTelListEntity line = telListRepository.findById(lineId)
@@ -102,21 +136,28 @@ public class MemberLinePermService {
     TmemberLinePermEntity existing =
         permRepository.findByMemberMemberSeqAndLineId(memberSeq, lineId);
     if (existing != null) {
-      // 이미 매핑이 있으면 role만 업데이트
       existing.setRole(role);
       permRepository.save(existing);
-      return true;
+    } else {
+      TmemberLinePermEntity newPerm = TmemberLinePermEntity.builder()
+          .member(member)
+          .line(line)
+          .role(role)
+          .build();
+      permRepository.save(newPerm);
     }
 
-    // 매핑이 없으면 새로 INSERT
-    TmemberLinePermEntity newPerm = TmemberLinePermEntity.builder()
-        .member(member)
-        .line(line)
-        .role(role)
-        .build();
-    permRepository.save(newPerm);
+    // tuser_permission 동기화
+    permissionService.grantAndSyncLinePerm(
+        GrantDto.builder()
+            .memberSeq(memberSeq)
+            .lineId(lineId)
+            .permLevel(roleSeqToPermLevel(roleSeq))
+            .build()
+    );
     return true;
   }
+
 
   /**
    * 4) 회원이 회선에 대해 가진 권한 매핑을 삭제

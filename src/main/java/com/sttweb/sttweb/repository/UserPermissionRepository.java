@@ -1,41 +1,17 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.UserPermission;
-import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.transaction.annotation.Transactional;
-
+import java.util.List;
 import java.util.Optional;
 
 public interface UserPermissionRepository extends JpaRepository<UserPermission, Long> {
-
-  /** 중복 체크용 */
-  boolean existsByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
-
-  /** (필요시) 단건 조회용 */
-  Optional<UserPermission> findByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
-
-  /** 삭제용 */
-  @Modifying
-  @Transactional
-  void deleteByGranteeUserIdAndTargetUserId(String granteeUserId, String targetUserId);
-
-  // grant된 permLevel 이 requiredLevel 이상인 건수 조회
-  long countByGranteeUserIdAndTargetUserIdAndPermLevelGreaterThanEqual(
-      String granteeUserId,
-      String targetUserId,
-      Integer permLevel
-  );
-
-  List<UserPermission> findByGranteeUserId(String granteeUserId);
+  boolean existsByMemberSeqAndLineId(Integer memberSeq, Integer lineId);
+  void deleteByMemberSeqAndLineId(Integer memberSeq, Integer lineId);
+  List<UserPermission> findByMemberSeqAndPermLevelGreaterThanEqual(Integer memberSeq, Integer permLevel);
+  List<UserPermission> findByMemberSeq(Integer memberSeq);
+  long countByMemberSeqAndLineIdAndPermLevelGreaterThanEqual(Integer memberSeq, Integer lineId, int permLevel);
+  Optional<UserPermission> findByMemberSeqAndLineId(Integer memberSeq, Integer lineId);
 
 
-  /**
-   * granteeUserId 에 대해 permLevel 이상인 권한 레코드를 모두 조회
-   */
-  List<UserPermission> findByGranteeUserIdAndPermLevelGreaterThanEqual(
-      String granteeUserId,
-      int permLevel
-  );
 }

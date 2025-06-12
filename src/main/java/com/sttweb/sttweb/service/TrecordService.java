@@ -16,14 +16,6 @@ public interface TrecordService {
 
   /**
    * 전체 + 통합검색 + 시간범위
-   *
-   * @param number1    검색할 첫 번호 (or null)
-   * @param number2    두 번째 번호 (or null)
-   * @param direction  ALL|IN|OUT
-   * @param numberKind ALL|PHONE|EXT
-   * @param query      키워드
-   * @param start      시작 시각 (or null)
-   * @param end        종료 시각 (or null)
    */
   Page<TrecordDto> search(
       String number1,
@@ -63,14 +55,14 @@ public interface TrecordService {
   /** 다중 번호(equal) 검색 */
   Page<TrecordDto> searchByNumbers(List<String> numbers, Pageable pageable);
 
-  /** 지점별 IN/OUT 카운트 (direction="IN" 또는 "OUT", "ALL"일 땐 전체 건수 반환) */
+  /** 지점별 IN/OUT 카운트 */
   long countByBranchAndDirection(Integer branchSeq, String direction);
 
-  /** 서비스에 내선번호 기반 메서드 (레거시 - 지점 구분 없음) */
+  /** 서비스에 내선번호 기반 메서드 */
   Page<TrecordDto> searchByCallNums(List<String> callNums, Pageable pageable);
 
   // ─────────────────────────────────────────────────────────────
-  // NEW! 내선번호와 전화번호 구분 검색 메서드들
+  // 내선번호와 전화번호 구분 검색 메서드들
   // ─────────────────────────────────────────────────────────────
 
   /**
@@ -82,4 +74,45 @@ public interface TrecordService {
    * 내선번호와 전화번호를 구분해서 혼합 검색
    */
   Page<TrecordDto> searchByMixedNumbers(List<String> numbers, Pageable pageable);
+
+  // ─────────────────────────────────────────────────────────────
+  // 권한 기반 조회 메서드들 (일단 기본 구현으로)
+  // ─────────────────────────────────────────────────────────────
+
+  /**
+   * 권한 기반 녹취 조회 (일단 기본 구현)
+   */
+  Page<TrecordDto> searchWithPermission(
+      Integer memberSeq,
+      Integer permLevel,
+      String num1,
+      String num2,
+      String direction,
+      String numberKind,
+      String q,
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  );
+
+  /**
+   * 사용자별 권한 기반 녹취 조회 (일단 기본 구현)
+   */
+  Page<TrecordDto> findByMemberSeqWithPermission(
+      Integer memberSeq,
+      Integer permLevel,
+      Pageable pageable
+  );
+
+  /**
+   * Level-2 전용: 특정 지점의 내선번호+전화번호 혼합 검색
+   */
+  Page<TrecordDto> searchByMixedNumbersInBranch(
+      Integer branchSeq,
+      List<String> numbers,
+      Pageable pageable
+  );
+
+  Page<TrecordDto> searchByMyAndGrantedNumbers(Integer branchSeq, List<String> numbers, Pageable pageable);
+
 }

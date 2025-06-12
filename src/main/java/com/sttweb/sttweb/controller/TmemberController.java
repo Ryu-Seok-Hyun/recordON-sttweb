@@ -3,10 +3,12 @@ package com.sttweb.sttweb.controller;
 import com.sttweb.sttweb.dto.TmemberDto.*;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.entity.TmemberEntity;
+import com.sttweb.sttweb.dto.GrantDto;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
+import com.sttweb.sttweb.service.PermissionService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -36,22 +38,20 @@ public class TmemberController {
   private static final String PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$";
 
   private final TmemberService svc;
+  private final PermissionService permSvc; // <-- PermissionService DI 추가
   private final JwtTokenProvider jwtTokenProvider;
   private final TbranchService branchSvc;
   private final PasswordEncoder passwordEncoder;
   private final HttpServletRequest request;
 
-
   @Data
   public static class ReauthRequest {
-
     private String password;
   }
 
   @Data
   @AllArgsConstructor
   public static class ReauthResponse {
-
     private String reauthToken;
     private long expiresIn;
   }
@@ -113,13 +113,28 @@ public class TmemberController {
     String originalLevel = req.getUserLevel();
     if ("1".equals(lvl))
       req.setUserLevel("2");
-    svc.signupWithGrants(req, me.getMemberSeq(), me.getUserId());
+
+    // -- 여기서 signup만 호출 --
+    svc.signup(req, me.getMemberSeq(), me.getUserId());
+
+    // -- 신규 memberSeq 조회 --
+    Integer newMemberSeq = svc.getMemberSeqByUserId(req.getUserId());
+
+    // -- 권한 부여(grant) 별도 호출 --
+    if (req.getGrants() != null && !req.getGrants().isEmpty()) {
+      for (GrantDto g : req.getGrants()) {
+        g.setMemberSeq(newMemberSeq); // ← 신규 memberSeq로 세팅
+        permSvc.grantAndSyncLinePerm(g);
+      }
+    }
+
     if (!originalLevel.equals(req.getUserLevel())) {
       return ResponseEntity.ok("가입 완료. 지사 관리자는 일반(2)만 생성할 수 있어, 요청하신 권한(" + originalLevel +
           ") 대신 일반(2)로 처리되었습니다.");
     }
     return ResponseEntity.ok("가입 및 권한부여 완료");
   }
+
 
   /**
    * 로그인 엔드포인트 (클라이언트 IP 기준으로 지사 제한)

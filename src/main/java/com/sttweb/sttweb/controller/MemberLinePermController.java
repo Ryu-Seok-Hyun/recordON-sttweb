@@ -19,7 +19,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/perm")
@@ -27,9 +26,9 @@ import java.util.stream.Collectors;
 public class MemberLinePermController {
 
   private final MemberLinePermService service;
-  private final PermissionService      permService;
-  private final TmemberService         memberSvc;
-  private final JwtTokenProvider       jwtTokenProvider;
+  private final PermissionService permService;
+  private final TmemberService memberSvc;
+  private final JwtTokenProvider jwtTokenProvider;
 
   private String extractToken(String authHeader) {
     if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
@@ -135,25 +134,42 @@ public class MemberLinePermController {
         : ResponseEntity.badRequest().body("해당 권한 매핑이 존재하지 않습니다.");
   }
 
-  // 5) 사용자 간 녹취조회 권한 조회
+  // 5) 사용자 간 라인(회선) 권한 조회
   @GetMapping("/user/{granteeUserId}")
   public ResponseEntity<List<UserPermissionViewDto>> viewUserPermissions(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
       @PathVariable("granteeUserId") String granteeUserId
   ) {
     requireLogin(authHeader);
-    List<UserPermissionViewDto> out = permService.listGrantsFor(granteeUserId).stream()
-        .map(g -> UserPermissionViewDto.builder()
-            .userId(g.getTargetUserId())
-            .canRead(g.getPermLevel() >= 2)
-            .canListen(g.getPermLevel() >= 3)
-            .canDownload(g.getPermLevel() >= 4)
-            .build()
-        ).toList();
+    // String userId → Integer memberSeq
+    var member = memberSvc.findEntityByUserId(granteeUserId);
+    if (member == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자 정보 없음");
+    }
+    Integer memberSeq = member.getMemberSeq();
+
+    List<UserPermissionViewDto> out = permService.listGrantsFor(memberSeq).stream()
+        .map(g -> {
+          String callNum;
+          try {
+            callNum = service.getCallNumByLineId(g.getLineId());
+          } catch (Exception e) {
+            callNum = "Unknown";
+          }
+          return UserPermissionViewDto.builder()
+              .lineId(g.getLineId())
+              .callNum(callNum)
+              .canRead(g.getPermLevel() >= 2)
+              .canListen(g.getPermLevel() >= 3)
+              .canDownload(g.getPermLevel() >= 4)
+              .build();
+        })
+        .toList();
     return ResponseEntity.ok(out);
   }
 
-  // 6) 사용자 간 녹취조회 권한 부여/회수
+
+  // 6) 사용자 간 녹취조회 권한 부여
   @LogActivity(type = "perm", activity = "부여", contents = "사용자 권한 부여")
   @PostMapping("/grant-user")
   public ResponseEntity<Void> grantUserPermission(
@@ -165,10 +181,11 @@ public class MemberLinePermController {
     if (!"0".equals(lvl) && !"1".equals(lvl)) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
     }
-    permService.grant(dto);
+    permService.grantAndSyncLinePerm(dto);
     return ResponseEntity.ok().build();
   }
 
+  // 7) 사용자 간 녹취조회 권한 회수 (라인 권한 회수와 로직 동일하게)
   @LogActivity(type = "perm", activity = "회수", contents = "사용자 권한 회수")
   @DeleteMapping("/revoke-user")
   public ResponseEntity<Void> revokeUserPermission(
@@ -180,8 +197,9 @@ public class MemberLinePermController {
     if (!"0".equals(lvl) && !"1".equals(lvl)) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
     }
-    permService.revoke(dto.getGranteeUserId(), dto.getTargetUserId());
+    service.revokeLinePermission(dto.getMemberSeq(), dto.getLineId());
     return ResponseEntity.noContent().build();
   }
+
 
 }

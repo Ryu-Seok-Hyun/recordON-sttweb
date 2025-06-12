@@ -14,7 +14,8 @@ import org.springframework.data.domain.Pageable;
 public interface TmemberService {
 
     void signup(SignupRequest req, Integer regMemberSeq, String regUserId);
-    void signupWithGrants(SignupRequest req, Integer regMemberSeq, String regUserId);
+    // signupWithGrants 메서드 삭제!
+
     TmemberEntity login(LoginRequest req);
     void logout();
     Info getMyInfoByUserId(String userId);
@@ -43,23 +44,20 @@ public interface TmemberService {
 
     void changePassword(Integer memberSeq, String oldPassword, String newPassword);
 
-    //  추가: 비밀번호 초기화
+    // 추가: 비밀번호 초기화
     void resetPassword(Integer memberSeq, String rawPassword, String operatorId);
+    void resetPasswords(List<Integer> memberSeqs, String rawPassword, String operatorId);
+    void resetAllPasswords(String rawPassword, String operatorId);
 
     // 추가: branchSeq → branchName 조회
     String getBranchNameBySeq(Integer branchSeq);
 
-    void resetPasswords(List<Integer> memberSeqs, String rawPassword, String operatorId);
-
-    /** 전체 초기화 */
-    void resetAllPasswords(String rawPassword, String operatorId);
-
-    /** 추가: 지점명으로 검색 */
+    // 추가: 지점명으로 검색
     Page<Info> searchUsersByBranchName(String branchName, Pageable pageable);
 
     TmemberEntity findEntityByUserId(String userId);
 
-    /** 본사 관리자: 지점명 + 키워드 검색 */
+    // 본사 관리자: 지점명 + 키워드 검색
     Page<Info> searchUsersByBranchNameAndKeyword(String branchName, String keyword, Pageable pageable);
 
     /**
@@ -68,4 +66,7 @@ public interface TmemberService {
      * @param maskFlag 0=마스킹 활성, 1=마스킹 비활성
      */
     void updateMaskFlag(Integer memberSeq, Integer maskFlag);
+
+    public Integer getMemberSeqByUserId(String userId);
+    TmemberEntity findByMemberSeq(Integer memberSeq);
 }

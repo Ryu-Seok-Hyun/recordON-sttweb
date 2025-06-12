@@ -1,6 +1,5 @@
 package com.sttweb.sttweb.service;
 
-import com.sttweb.sttweb.dto.GrantDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.TmemberDto.LoginRequest;
 import com.sttweb.sttweb.dto.TmemberDto.SignupRequest;
@@ -10,9 +9,7 @@ import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.exception.ResourceNotFoundException;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.dto.TbranchDto;
-import com.sttweb.sttweb.service.PermissionService;
 import com.sttweb.sttweb.service.TbranchService;
-import com.sttweb.sttweb.service.TmemberService;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -23,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -39,10 +37,20 @@ public class TmemberServiceImpl implements TmemberService {
   private final HttpSession session;
   private final TbranchService branchSvc;
   private final TmemberRepository memberRepo;
+  private final TmemberRepository tmemberRepository;
 
-  private final PermissionService permissionService;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
   private static final String PASSWORD_PATTERN = "^(?=.*[a-z])(?=.*\\d)(?=.*\\W).{8,}$";
+
+
+  @Override
+  public Integer getMemberSeqByUserId(String userId) {
+    TmemberEntity entity = repo.findByUserId(userId)  // ← 여기!
+        .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다: " + userId));
+    return entity.getMemberSeq();
+  }
+
+
 
   @Override
   public boolean existsByUserId(String userId) {
@@ -118,19 +126,6 @@ public class TmemberServiceImpl implements TmemberService {
         ? req.getDepartment().trim() : null);
 
     repo.save(e);
-  }
-
-  /** 회원가입 + 권한 부여 */
-  @Override
-  @Transactional
-  public void signupWithGrants(SignupRequest req, Integer regMemberSeq, String regUserId) {
-    signup(req, regMemberSeq, regUserId);
-    if (req.getGrants() != null) {
-      for (GrantDto g : req.getGrants()) {
-        g.setGranteeUserId(req.getUserId());
-        permissionService.grant(g);
-      }
-    }
   }
 
   /** 로그인 */
@@ -434,5 +429,10 @@ public class TmemberServiceImpl implements TmemberService {
     TmemberEntity member = memberRepo.findById(memberSeq)
         .orElseThrow(() -> new IllegalArgumentException("해당 회원이 없습니다. memberSeq=" + memberSeq));
     member.setMaskFlag(maskFlag);
+  }
+
+  @Override
+  public TmemberEntity findByMemberSeq(Integer memberSeq) {
+    return tmemberRepository.findById(memberSeq).orElse(null);
   }
 }
