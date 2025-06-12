@@ -5,12 +5,14 @@ import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.entity.UserPermission;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
+import com.sttweb.sttweb.repository.TrecordTelListRepository;
 import com.sttweb.sttweb.repository.UserPermissionRepository;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordScanService;
 import com.sttweb.sttweb.service.TrecordService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceRegion;
@@ -28,7 +30,7 @@ import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-
+import com.sttweb.sttweb.entity.TrecordTelListEntity;
 /**
  * 녹취 관리 컨트롤러
  * 녹취 데이터의 조회, 검색, 청취, 다운로드 기능을 제공
@@ -43,6 +45,7 @@ public class TrecordController {
   private final TmemberService           memberSvc;
   private final JwtTokenProvider         jwtTokenProvider;
   private final UserPermissionRepository userPermRepo;
+  private final TrecordTelListRepository trecordTelListRepository;
 
   private Info requireLogin(String authHeader) {
     if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -55,31 +58,72 @@ public class TrecordController {
     return memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
   }
 
+  private Map<Integer, String> getLineIdToNumberMap() {
+    // 모든 tmember(memberSeq, number) 조회 → Map<memberSeq, 4자리번호>
+    Map<Integer, String> map = new HashMap<>();
+    for (Info m : memberSvc.getAllMembers()) {
+      if (m.getMemberSeq() != null && m.getNumber() != null) {
+        map.put(m.getMemberSeq(), normalizeToFourDigit(m.getNumber()));
+      }
+    }
+    return map;
+  }
+
   private List<String> getAccessibleNumbers(String userId) {
-    Set<String> nums = new LinkedHashSet<>();
+    Set<String> numbers = new LinkedHashSet<>();
     Info me = memberSvc.getMyInfoByUserId(userId);
 
-    // 본인 내선번호
+    // 1) 본인 내선번호
     if (me.getNumber() != null && !me.getNumber().trim().isEmpty()) {
-      String n = me.getNumber().replaceAll("[^0-9]", "");
-      if (n.length() == 4) nums.add(n);
-      else if (n.length() == 3) nums.add("0" + n);
-      else if (n.length() > 4) nums.add(n.substring(n.length() - 4));
+      String n = normalizeToFourDigit(me.getNumber());
+      if (n != null) numbers.add(n);
     }
 
-    // 권한받은 회선의 내선번호
+    // 2) 권한받은 내선 (tuser_permission.line_id → trecord_tel_list.call_num)
+    Map<Integer, String> lineIdToCallNum = trecordTelListRepository.findAll().stream()
+        .collect(Collectors.toMap(TrecordTelListEntity::getId, TrecordTelListEntity::getCallNum));
+
+    for (UserPermission perm : userPermRepo.findByMemberSeq(me.getMemberSeq())) {
+      if (perm.getPermLevel() >= 2 && perm.getLineId() != null) {
+        String ext = lineIdToCallNum.get(perm.getLineId());
+        String n = normalizeToFourDigit(ext);
+        if (n != null) numbers.add(n);
+      }
+    }
+
+    return new ArrayList<>(numbers);
+  }
+
+
+
+  private boolean hasPermissionForNumber(String userId, String number, int reqLevel) {
+    Info me = memberSvc.getMyInfoByUserId(userId);
+    List<String> target = makeExtensions(number);
+
+    // 본인 번호
+    if (me.getNumber() != null) {
+      for (String ext : makeExtensions(me.getNumber())) {
+        if (target.contains(ext)) return true;
+      }
+    }
+
+    // 권한 받은 번호들 (line_id -> tmember.number)
     if (me.getMemberSeq() != null) {
+      Map<Integer, String> memberSeqToNumber = memberSvc.getAllMembers().stream()
+          .collect(Collectors.toMap(Info::getMemberSeq, Info::getNumber, (a, b) -> a));
       for (UserPermission perm : userPermRepo.findByMemberSeq(me.getMemberSeq())) {
-        if (perm.getPermLevel() >= 2) {
-          // line_id는 tmember.number(내선번호)와 같음 (int로 저장되어 있다면 0포함 4자리 String으로 맞춰줘야 함)
-          String lineIdStr = String.format("%04d", perm.getLineId()); // 항상 4자리로
-          nums.add(lineIdStr);
+        if (perm.getPermLevel() >= reqLevel && perm.getLineId() != null) {
+          String ext = memberSeqToNumber.get(perm.getLineId());
+          for (String x : makeExtensions(ext)) {
+            if (target.contains(x)) return true;
+          }
         }
       }
     }
-    System.out.println("### getAccessibleNumbers(" + userId + ") = " + nums);
-    return new ArrayList<>(nums);
+    return false;
   }
+
+
 
 
   private List<String> makeExtensions(String num) {
@@ -114,26 +158,6 @@ public class TrecordController {
     if (t.length() > 4) return t.substring(t.length() - 4);
     if (t.length() == 3) return "0" + t;
     return t;
-  }
-
-  private boolean hasPermissionForNumber(String userId, String number, int reqLevel) {
-    Info me = memberSvc.getMyInfoByUserId(userId);
-    if (me.getNumber() != null) {
-      for (String m : makeExtensions(me.getNumber())) {
-        if (makeExtensions(number).contains(m)) return true;
-      }
-    }
-    if (me.getMemberSeq() != null) {
-      List<String> tgt = makeExtensions(number);
-      for (var perm : userPermRepo.findByMemberSeq(me.getMemberSeq())) {
-        if (perm.getPermLevel() >= reqLevel) {
-          for (String x : makeExtensions(String.valueOf(perm.getLineId()))) {
-            if (tgt.contains(x)) return true;
-          }
-        }
-      }
-    }
-    return false;
   }
 
   @LogActivity(type="record", activity="조회", contents="전체 녹취 조회")
@@ -181,10 +205,10 @@ public class TrecordController {
       if (accessible.isEmpty()) {
         paged = Page.empty(reqPage);
       } else {
-        paged = recordSvc.searchByMyAndGrantedNumbers(
-            me.getBranchSeq(), accessible, reqPage
-        );
+        // searchByMixedNumbers에서 그대로 IN 쿼리!
+        paged = recordSvc.searchByMixedNumbers(accessible, reqPage);
       }
+
 
     } else {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
