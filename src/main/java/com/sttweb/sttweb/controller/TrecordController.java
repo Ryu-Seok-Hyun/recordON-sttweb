@@ -160,13 +160,13 @@ public class TrecordController {
 
     // ★ 빈 문자열 보정
     if (!StringUtils.hasText(direction))  direction   = "ALL";
-    if (!StringUtils.hasText(numberKind)) numberKind = "ALL";
+    if (!StringUtils.hasText(numberKind))  numberKind  = "ALL";
 
+    // 수정: q **없을 때** PHONE → ALL (내선목록처럼)
+    if (StringUtils.hasText(q)) {
+           numberKind = "ALL";
+        }
 
-      // ── q 입력 있고 PHONE 이면 ALL 로 → isExt 필터 제거
-         if (StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
-            numberKind = "ALL";
-           }
 
 
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -199,13 +199,22 @@ public class TrecordController {
           .toList();
       if (nums.isEmpty()) {
         paged = Page.empty(reqPage);
-      } else {
-        paged = recordSvc.searchByMixedNumbers(
-            nums,
-            direction, numberKind, q,
-            start, end,
-            reqPage
-        );
+      } else {     // 전화번호 검색어 있을 때는 LIKE 검색으로
+        if (StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
+          paged = recordSvc.search(
+              null, null,
+              direction, numberKind, q,
+              start, end,
+              reqPage
+          );
+        } else {
+          paged = recordSvc.searchByMixedNumbers(
+              nums,
+              direction, numberKind, q,
+              start, end,
+              reqPage
+          );
+        }
       }
     }
     else if ("2".equals(lvl)) {
@@ -316,10 +325,15 @@ public class TrecordController {
 
     Page<TrecordDto> paged;
 
-    // PHONE + q 입력 시 ALL 로 바꿔서 검색 필터 해제
-        if (StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
-            numberKind = "ALL";
-          }
+    // q **없을 때** PHONE → ALL
+       if (!StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
+          numberKind = "ALL";
+         }
+
+    // q가 있으면 무조건 ALL로
+      if (StringUtils.hasText(q)) {
+          numberKind = "ALL";
+         }
 
     if ("0".equals(lvl) || "1".equals(lvl)) {
       // ADMIN/지점장: 전체 or CSV → 필터
