@@ -150,37 +150,37 @@ public class TrecordServiceImpl implements TrecordService {
         .map(this::toDto);
   }
 
-  @Override
-  @Transactional(readOnly = true)
-  public Page<TrecordDto> search(
-      String number1,
-      String number2,
-      String direction,
-      String numberKind,
-      String query,
-      LocalDateTime start,
-      LocalDateTime end,
-      Pageable pageable
-  ) {
-    Boolean inbound = null;
-    if ("IN".equalsIgnoreCase(direction))
-      inbound = true;
-    if ("OUT".equalsIgnoreCase(direction))
-      inbound = false;
-
-    Boolean isExt = null;
-    if ("EXT".equalsIgnoreCase(numberKind))
-      isExt = true;
-    if ("PHONE".equalsIgnoreCase(numberKind))
-      isExt = false;
-
-    return repo.search(
-        number1, number2,
-        inbound, isExt, query,
-        start, end,
-        pageable
-    ).map(this::toDto);
-  }
+//  @Override
+//  @Transactional(readOnly = true)
+//  public Page<TrecordDto> search(
+//      String number1,
+//      String number2,
+//      String direction,
+//      String numberKind,
+//      String query,
+//      LocalDateTime start,
+//      LocalDateTime end,
+//      Pageable pageable
+//  ) {
+//    Boolean inbound = null;
+//    if ("IN".equalsIgnoreCase(direction))
+//      inbound = true;
+//    if ("OUT".equalsIgnoreCase(direction))
+//      inbound = false;
+//
+//    Boolean isExt = null;
+//    if ("EXT".equalsIgnoreCase(numberKind))
+//      isExt = true;
+//    if ("PHONE".equalsIgnoreCase(numberKind))
+//      isExt = false;
+//
+//    return repo.search(
+//        number1, number2,
+//        inbound, isExt, query,
+//        start, end,
+//        pageable
+//    ).map(this::toDto);
+//  }
 
   @Override
   @Transactional(readOnly = true)
@@ -563,6 +563,40 @@ public class TrecordServiceImpl implements TrecordService {
         .map(this::toDto);
   }
 
+  /** 관리자/지점장용 검색 */
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> search(
+      String number1,
+      String number2,
+      String direction,
+      String numberKind,
+      String q,
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  ) {
+    Boolean inbound = null;
+    if ("IN".equalsIgnoreCase(direction))  inbound = true;
+    if ("OUT".equalsIgnoreCase(direction)) inbound = false;
+
+    Boolean isExt = null;
+    if ("EXT".equalsIgnoreCase(numberKind))   isExt = true;
+    if ("PHONE".equalsIgnoreCase(numberKind)) isExt = false;
+
+    return repo.searchByQuery(
+        number1,
+        number2,
+        inbound,
+        isExt,
+        q,
+        start,
+        end,
+        pageable
+    ).map(this::toDto);
+  }
+
+  /** 일반 사용자용 검색 */
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> searchByMixedNumbers(
@@ -574,10 +608,17 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
-    // trecordRepo 가 아니라 생성자에서 주입된 repo 를 사용
-    return repo
-        .findByMixedFilter(numbers, direction, numberKind, q, start, end, pageable)
-        .map(this::toDto);
-
+    if (numbers == null || numbers.isEmpty()) {
+      return Page.empty(pageable);
+    }
+    return repo.searchByNumsAndQuery(
+        numbers,
+        direction,
+        numberKind,
+        q,
+        start,
+        end,
+        pageable
+    ).map(this::toDto);
   }
 }

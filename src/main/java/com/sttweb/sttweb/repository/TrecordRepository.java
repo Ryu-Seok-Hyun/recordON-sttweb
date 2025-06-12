@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.repository;
 
+import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.entity.TrecordEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -230,30 +231,65 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   );
 
 
+  /**
+   * (관리자/지점장용) 번호1/2 + 방향/내선필터 + q(번호검색) + 기간
+   */
   @Query("""
-      select t from TrecordEntity t
-       where (t.number1 in :nums or t.number2 in :nums)
-         and (
-           :direction = 'ALL'
-           or (:direction = 'IN'  and t.ioDiscdVal = '수신')
-           or (:direction = 'OUT' and t.ioDiscdVal = '발신')
-         )
-         and (
-           :numberKind = 'ALL'
-           or (:numberKind = 'EXT'   and length(t.number1) <= 4)
-           or (:numberKind = 'PHONE' and length(t.number1) > 4)
-         )
-         and (:start is null or t.callStartDateTime >= :start)
-         and (:end   is null or t.callStartDateTime <= :end)
-         and (:q     is null or t.callStatus like concat('%', :q, '%'))
-    """)
-  Page<TrecordEntity> findByMixedFilter(
-      @Param("nums")       List<String>  nums,
-      @Param("direction")  String        direction,
-      @Param("numberKind") String        numberKind,
-      @Param("q")          String        q,
-      @Param("start")      LocalDateTime start,
-      @Param("end")        LocalDateTime end,
-      Pageable            pageable
+    SELECT t
+      FROM TrecordEntity t
+     WHERE (:number1 IS NULL     OR t.number1   LIKE CONCAT('%',:number1,'%'))
+       AND (:number2 IS NULL     OR t.number2   LIKE CONCAT('%',:number2,'%'))
+       AND (:inbound  IS NULL    OR 
+           (:inbound = true  AND t.ioDiscdVal = '수신') OR
+           (:inbound = false AND t.ioDiscdVal = '발신'))
+       AND (:isExt    IS NULL    OR
+           (:isExt = true  AND LENGTH(t.number1) <= 4) OR
+           (:isExt = false AND LENGTH(t.number1) > 4))
+       AND (:q        IS NULL    OR t.number1   LIKE CONCAT('%',:q,'%')
+                               OR t.number2   LIKE CONCAT('%',:q,'%'))
+       AND (:start    IS NULL    OR t.callStartDateTime >= :start)
+       AND (:end      IS NULL    OR t.callStartDateTime <= :end)
+  """)
+  Page<TrecordEntity> searchByQuery(
+      @Param("number1")  String         number1,
+      @Param("number2")  String         number2,
+      @Param("inbound")  Boolean        inbound,
+      @Param("isExt")    Boolean        isExt,
+      @Param("q")        String         q,
+      @Param("start")    LocalDateTime  start,
+      @Param("end")      LocalDateTime  end,
+      Pageable          pageable
   );
+
+  /**
+   * (일반 사용자용) 내선목록(nums) + 방향/내선필터 + q(번호검색) + 기간
+   */
+  @Query("""
+    SELECT t
+      FROM TrecordEntity t
+     WHERE (t.number1 IN :nums OR t.number2 IN :nums)
+       AND (
+         :direction = 'ALL'
+         OR (:direction = 'IN'  AND t.ioDiscdVal = '수신')
+         OR (:direction = 'OUT' AND t.ioDiscdVal = '발신')
+       )
+       AND (
+         :numberKind = 'ALL'
+         OR (:numberKind = 'EXT'   AND LENGTH(t.number1) <= 4)
+         OR (:numberKind = 'PHONE' AND LENGTH(t.number1) > 4)
+       )
+       AND (:q     IS NULL OR t.number1 LIKE CONCAT('%',:q,'%') OR t.number2 LIKE CONCAT('%',:q,'%'))
+       AND (:start IS NULL OR t.callStartDateTime >= :start)
+       AND (:end   IS NULL OR t.callStartDateTime <= :end)
+  """)
+  Page<TrecordEntity> searchByNumsAndQuery(
+      @Param("nums")        List<String>   nums,
+      @Param("direction")   String         direction,
+      @Param("numberKind")  String         numberKind,
+      @Param("q")           String         q,
+      @Param("start")       LocalDateTime  start,
+      @Param("end")         LocalDateTime  end,
+      Pageable             pageable
+  );
+
 }

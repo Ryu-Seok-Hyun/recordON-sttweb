@@ -19,6 +19,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.data.domain.*;
 import org.springframework.http.*;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -156,17 +157,26 @@ public class TrecordController {
       @RequestParam(name = "start", required = false) String startStr,
       @RequestParam(name = "end", required = false) String endStr
   ) {
+
+    // ★ 빈 문자열이 넘어올 경우에도 "ALL" 로 보정
+    if (!StringUtils.hasText(direction)) {
+      direction = "ALL";
+    }
+    if (!StringUtils.hasText(numberKind)) {
+      numberKind = "ALL";
+    }
+
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
-    LocalDateTime end = (endStr != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr, fmt) : null;
+    LocalDateTime end   = (endStr   != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr,   fmt) : null;
 
-    Info me = requireLogin(authHeader);
+    Info me   = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable reqPage = PageRequest.of(page, size);
 
     Page<TrecordDto> paged;
     if ("0".equals(lvl)) {
-      // 관리자: 모든 레코드에 필터(발/수신, 내선/전화, 기간, q) 적용
+      // 관리자: 전체 + 필터
       paged = recordSvc.search(
           null, null,
           direction, numberKind, q,
@@ -175,7 +185,7 @@ public class TrecordController {
       );
     }
     else if ("1".equals(lvl)) {
-      // 지점장: 같은 지점 내 전체 내선만 + 필터
+      // 지점장: 지점 내 전체 내선 + 필터
       List<String> nums = memberSvc
           .listUsersInBranch(me.getBranchSeq(), PageRequest.of(0, Integer.MAX_VALUE))
           .getContent().stream()
@@ -196,17 +206,23 @@ public class TrecordController {
       }
     }
     else if ("2".equals(lvl)) {
-      // 일반 사용자: 본인+권한 내선만 + 필터
-      List<String> nums = getAccessibleNumbers(me.getUserId());
-      if (nums.isEmpty()) {
-        paged = Page.empty(reqPage);
-      } else {
-        paged = recordSvc.searchByMixedNumbers(
-            nums,
-            direction, numberKind, q,
-            start, end,
-            reqPage
+      // ▶ 일반 사용자: q가 있으면 콘텐츠 검색, 없으면 내선번호 검색
+      if (q != null && !q.isBlank()) {
+        // (1) 통화내용(q) 검색
+        paged = recordSvc.search(
+            null, null, direction, numberKind, q, start, end, reqPage
         );
+      }
+      else {
+        // (2) 내선번호 검색
+        List<String> nums = getAccessibleNumbers(me.getUserId());
+        if (nums.isEmpty()) {
+          paged = Page.empty(reqPage);
+        } else {
+          paged = recordSvc.searchByMixedNumbers(
+              nums, direction, numberKind, q, start, end, reqPage
+          );
+        }
       }
     }
     else {
@@ -287,28 +303,20 @@ public class TrecordController {
       @RequestParam(value = "page", defaultValue = "0") int page,
       @RequestParam(value = "size", defaultValue = "10") int size
   ) {
-    // 문자열 → LocalDateTime 파싱
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    LocalDateTime start = (startStr != null && !startStr.isEmpty())
-        ? LocalDateTime.parse(startStr, fmt)
-        : null;
-    LocalDateTime end = (endStr != null && !endStr.isEmpty())
-        ? LocalDateTime.parse(endStr, fmt)
-        : null;
+    LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
+    LocalDateTime end   = (endStr   != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr,   fmt) : null;
 
-    Info me = requireLogin(authHeader);
+    Info me   = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);
-    Page<TrecordDto> paged;
 
-    // ADMIN(0) / 지점장(1): 전체 내선 검색 + 필터
+    Page<TrecordDto> paged;
     if ("0".equals(lvl) || "1".equals(lvl)) {
-      // ADMIN/지점장: 전체 내선(또는 numbersCsv) + 필터
+      // ADMIN/지점장: 전체 or CSV → 필터
       if (numbersCsv != null && !numbersCsv.isBlank()) {
         List<String> nums = Arrays.stream(numbersCsv.split(","))
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .toList();
+            .map(String::trim).filter(s -> !s.isEmpty()).toList();
         paged = recordSvc.searchByMixedNumbers(
             nums,
             direction, numberKind, q,
@@ -316,8 +324,7 @@ public class TrecordController {
             pr
         );
       }
-      else if ((number1 != null && !number1.isBlank())
-          || (number2 != null && !number2.isBlank())) {
+      else if ((number1 != null && !number1.isBlank()) || (number2 != null && !number2.isBlank())) {
         paged = recordSvc.search(
             number1, number2,
             direction, numberKind, q,
@@ -335,19 +342,27 @@ public class TrecordController {
       }
     }
     else if ("2".equals(lvl)) {
-      // 일반 사용자: 본인+권한 내선만 + 필터
-      List<String> nums = getAccessibleNumbers(me.getUserId());
-      if (nums.isEmpty()) {
+      List<String> accessible = getAccessibleNumbers(me.getUserId());
+      if (accessible.isEmpty()) {
         paged = Page.empty(pr);
       } else {
-        paged = recordSvc.searchByMixedNumbers(
-            nums,
-            direction, numberKind, q,
-            start, end,
-            pr
-        );
+        // 입력된 CSV → accessible 필터
+        List<String> nums = (numbersCsv != null && !numbersCsv.isBlank())
+            ? Arrays.stream(numbersCsv.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .filter(accessible::contains)
+            .toList()
+            : accessible;
+
+        if (nums.isEmpty()) {
+          paged = Page.empty(pr);
+        } else {
+          paged = recordSvc.searchByMixedNumbers(nums, pr);
+        }
       }
     }
+    // ───────────────────────────────────────────────────────────
     else {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
