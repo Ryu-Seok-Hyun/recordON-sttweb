@@ -149,33 +149,74 @@ public class TrecordController {
   @GetMapping
   public ResponseEntity<Map<String, Object>> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "page", defaultValue = "0") int page,
-      @RequestParam(name = "size", defaultValue = "10") int size,
-      @RequestParam(name = "direction", defaultValue = "ALL") String direction,
-      @RequestParam(name = "numberKind", defaultValue = "ALL") String numberKind,
-      @RequestParam(name = "q", required = false) String q,
-      @RequestParam(name = "start", required = false) String startStr,
-      @RequestParam(name = "end", required = false) String endStr
+      @RequestParam(name = "page",       defaultValue = "0")     int    page,
+      @RequestParam(name = "size",       defaultValue = "10")    int    size,
+      @RequestParam(name = "direction",  defaultValue = "ALL")   String direction,
+      @RequestParam(name = "numberKind", defaultValue = "ALL")   String numberKind,
+      @RequestParam(name = "q",          required = false)      String q,
+      @RequestParam(name = "start",      required = false)      String startStr,
+      @RequestParam(name = "end",        required = false)      String endStr
   ) {
+    // 1) 빈 문자열 보정
+    if (!StringUtils.hasText(direction))  direction  = "ALL";
+    if (!StringUtils.hasText(numberKind)) numberKind = "ALL";
 
-    // ★ 빈 문자열 보정
-    if (!StringUtils.hasText(direction))  direction   = "ALL";
-    if (!StringUtils.hasText(numberKind))  numberKind  = "ALL";
-
-    // 수정: q **없을 때** PHONE → ALL (내선목록처럼)
-    if (StringUtils.hasText(q)) {
+       // 2) PHONE 전용 모드 보정
+           //    - 검색어(q) 없으면 PHONE → ALL 모드로 바꿔서 내선 목록 조회
+               //    - 검색어(q) 있으면 PHONE 모드 그대로 유지해서 아래 LIKE 검색 분기로
+                   if (!StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
            numberKind = "ALL";
-        }
+         }
 
-
-
+    // 2) 날짜 파싱
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
-    LocalDateTime end   = (endStr   != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr,   fmt) : null;
+    LocalDateTime start = StringUtils.hasText(startStr)
+        ? LocalDateTime.parse(startStr, fmt) : null;
+    LocalDateTime end   = StringUtils.hasText(endStr)
+        ? LocalDateTime.parse(endStr,   fmt) : null;
 
-    Info me   = requireLogin(authHeader);
-    String lvl = me.getUserLevel();
+    // 3) 사용자 조회 + 페이징 준비
+    Info me       = requireLogin(authHeader);
+    String lvl    = me.getUserLevel();
     Pageable reqPage = PageRequest.of(page, size);
+
+       // 5) PHONE 모드 + q 있을 때 → 전화번호 LIKE 검색, 즉시 리턴
+           if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
+             Page<TrecordDto> phonePaged = recordSvc.search(
+                        /*number1*/ null,
+                        /*number2*/ null,
+                        /*direction*/  null,    // direction 필터 해제
+                         /*numberKind*/ null,    // numberKind 필터 해제
+                         q,
+                         start, end,
+                         reqPage
+                         );
+           // (기존과 동일한 후처리: LineId 세팅, 마스킹 등)
+               phonePaged.getContent().forEach(rec -> {
+                   if (rec.getLineId()==null && rec.getNumber1()!=null && rec.getNumber1().length()==4) {
+                       trecordTelListRepository.findByCallNum(rec.getNumber1())
+                               .ifPresent(line -> rec.setLineId(line.getId()));
+                    }
+                  if (me.getMaskFlag()!=null && me.getMaskFlag()==0) {
+                       rec.maskNumber2();
+                     }
+                 });
+           // 바디 빌드 & 리턴
+               Map<String,Object> body = new LinkedHashMap<>();
+           body.put("content",       phonePaged.getContent());
+           body.put("totalElements", phonePaged.getTotalElements());
+           body.put("totalPages",    phonePaged.getTotalPages());
+           body.put("size",          phonePaged.getSize());
+           body.put("number",        phonePaged.getNumber());
+           body.put("empty",         phonePaged.isEmpty());
+           // 필요하면 inboundCount/outboundCount 등 추가
+               return ResponseEntity.ok(body);
+         }
+
+
+
+
+
 
     Page<TrecordDto> paged;
     if ("0".equals(lvl)) {
