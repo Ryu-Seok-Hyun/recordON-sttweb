@@ -218,8 +218,8 @@ public class TrecordController {
     }
 
     paged.getContent().forEach(rec -> {
-      if (rec.getNumber1()!=null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
-      if (rec.getNumber2()!=null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));
+//      if (rec.getNumber1()!=null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
+//      if (rec.getNumber2()!=null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));
       if (rec.getNumber1()==null || rec.getNumber1().length()!=4) {
         String tmp = rec.getNumber1();
         rec.setNumber1(rec.getNumber2());
@@ -233,6 +233,7 @@ public class TrecordController {
         f.set(rec, canL ? "가능" : "불가능");
       } catch(Exception ignored){}
     });
+
     if (me.getMaskFlag()!=null && me.getMaskFlag()==0)
       paged.getContent().forEach(TrecordDto::maskNumber2);
 
