@@ -292,4 +292,14 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       Pageable             pageable
   );
 
+  /**
+   * number1 또는 number2에 해당 문자열이 포함된 녹취 검색 (전화번호 부분 검색용)
+   */
+  Page<TrecordEntity> findByNumber1ContainingOrNumber2Containing(
+      String number1,
+      String number2,
+      Pageable pageable
+  );
+
+
 }

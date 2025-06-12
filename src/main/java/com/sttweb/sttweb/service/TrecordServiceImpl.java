@@ -596,7 +596,9 @@ public class TrecordServiceImpl implements TrecordService {
     ).map(this::toDto);
   }
 
-  /** 일반 사용자용 검색 */
+  /**
+   * (일반 사용자용) 내선목록(nums) + 방향/내선필터 + q(번호검색) + 기간
+   */
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> searchByMixedNumbers(
@@ -608,17 +610,16 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
-    if (numbers == null || numbers.isEmpty()) {
-      return Page.empty(pageable);
+    // 1) “전화번호” 선택 후 q에 값이 들어왔으면, 부분 일치로 바로 검색
+    if ("PHONE".equalsIgnoreCase(numberKind) && q != null && !q.isBlank()) {
+      return repo
+          .findByNumber1ContainingOrNumber2Containing(q, q, pageable)
+          .map(this::toDto);
     }
-    return repo.searchByNumsAndQuery(
-        numbers,
-        direction,
-        numberKind,
-        q,
-        start,
-        end,
-        pageable
-    ).map(this::toDto);
+
+    // 2) 그 외(내선 필터 등)는 기존대로 권한 내선 목록 + JPQL 검색
+    return repo
+        .searchByNumsAndQuery(numbers, direction, numberKind, q, start, end, pageable)
+        .map(this::toDto);
   }
 }
