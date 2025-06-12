@@ -107,14 +107,16 @@ public class TrecordController {
       }
     }
 
-    // 권한 받은 번호들 (line_id -> tmember.number)
+    // 권한 받은 번호들 (line_id → trecord_tel_list.call_num)
     if (me.getMemberSeq() != null) {
-      Map<Integer, String> memberSeqToNumber = memberSvc.getAllMembers().stream()
-          .collect(Collectors.toMap(Info::getMemberSeq, Info::getNumber, (a, b) -> a));
+      Map<Integer, String> lineIdToCallNum = trecordTelListRepository.findAll().stream()
+          .collect(Collectors.toMap(TrecordTelListEntity::getId, TrecordTelListEntity::getCallNum));
       for (UserPermission perm : userPermRepo.findByMemberSeq(me.getMemberSeq())) {
         if (perm.getPermLevel() >= reqLevel && perm.getLineId() != null) {
-          String ext = memberSeqToNumber.get(perm.getLineId());
-          for (String x : makeExtensions(ext)) {
+          String ext = lineIdToCallNum.get(perm.getLineId());
+          if (ext == null) continue;
+          List<String> granted = makeExtensions(ext);
+          for (String x : granted) {
             if (target.contains(x)) return true;
           }
         }
@@ -122,6 +124,7 @@ public class TrecordController {
     }
     return false;
   }
+
 
 
 
