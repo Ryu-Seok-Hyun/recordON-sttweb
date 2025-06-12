@@ -69,4 +69,7 @@ public interface TmemberService {
 
     public Integer getMemberSeqByUserId(String userId);
     TmemberEntity findByMemberSeq(Integer memberSeq);
+
+    TmemberEntity findById(Integer memberSeq);
+
 }

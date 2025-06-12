@@ -2,7 +2,10 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TmemberLinePermEntity;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -17,5 +20,15 @@ public interface TmemberLinePermRepository extends JpaRepository<TmemberLinePerm
   List<TmemberLinePermEntity> findByLineId(Integer lineId);
 
   /** 회원(memberSeq) + 회선(lineId) 조합 단일 조회 */
-  TmemberLinePermEntity findByMemberMemberSeqAndLineId(Integer memberSeq, Integer lineId);
+//  TmemberLinePermEntity findByMemberMemberSeqAndLineId(Integer memberSeq, Integer lineId);
+
+  Optional<TmemberLinePermEntity> findByMemberMemberSeqAndLineId(Integer memberSeq, Integer lineId);
+
+
+  Optional<TmemberLinePermEntity> findByMember_MemberSeqAndLineId(Integer memberSeq, Integer lineId);
+
+  @Query("SELECT t.role.roleSeq FROM TmemberLinePermEntity t WHERE t.member.memberSeq = :memberSeq AND t.line.id = :lineId")
+  Integer findRoleSeqByMemberSeqAndLineId(@Param("memberSeq") Integer memberSeq, @Param("lineId") Integer lineId);
+
+
 }

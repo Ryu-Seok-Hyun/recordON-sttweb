@@ -11,6 +11,7 @@ import com.sttweb.sttweb.repository.UserPermissionRepository;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,33 +43,36 @@ public class PermissionService {
     }
     permRepo.save(up);
 
-    // 2. tmember_line_perm 동기화
-    TmemberLinePermEntity linePerm = memberLinePermRepo
-        .findByMemberMemberSeqAndLineId(req.getMemberSeq(), req.getLineId());
+    // 2. tmember_line_perm 동기화 (Optional 처리)
     Integer roleSeq = permLevelToRoleSeq(req.getPermLevel());
-    if (linePerm != null) {
-      linePerm.setRole(roleRepo.findById(roleSeq).orElseThrow());
-      memberLinePermRepo.save(linePerm);
-    } else {
-      TmemberLinePermEntity newPerm = TmemberLinePermEntity.builder()
-          .member(memberRepo.findById(req.getMemberSeq()).orElseThrow())
-          .line(lineRepo.findById(req.getLineId()).orElseThrow())
-          .role(roleRepo.findById(roleSeq).orElseThrow())
-          .build();
-      memberLinePermRepo.save(newPerm);
-    }
+    memberLinePermRepo.findByMemberMemberSeqAndLineId(req.getMemberSeq(), req.getLineId())
+        .ifPresentOrElse(
+            linePerm -> {
+              linePerm.setRole(roleRepo.findById(roleSeq).orElseThrow());
+              memberLinePermRepo.save(linePerm);
+            },
+            () -> {
+              TmemberLinePermEntity newPerm = TmemberLinePermEntity.builder()
+                  .member(memberRepo.findById(req.getMemberSeq()).orElseThrow())
+                  .line(lineRepo.findById(req.getLineId()).orElseThrow())
+                  .role(roleRepo.findById(roleSeq).orElseThrow())
+                  .build();
+              memberLinePermRepo.save(newPerm);
+            }
+        );
   }
+
 
   @Transactional
   public void revokeAndSyncLinePerm(Integer memberSeq, Integer lineId) {
     // 1. tuser_permission 삭제
     permRepo.deleteByMemberSeqAndLineId(memberSeq, lineId);
 
-    // 2. tmember_line_perm 삭제
-    TmemberLinePermEntity linePerm = memberLinePermRepo
-        .findByMemberMemberSeqAndLineId(memberSeq, lineId);
-    if (linePerm != null) memberLinePermRepo.delete(linePerm);
+    // 2. tmember_line_perm 삭제 (Optional 처리)
+    Optional<TmemberLinePermEntity> linePermOpt = memberLinePermRepo.findByMemberMemberSeqAndLineId(memberSeq, lineId);
+    linePermOpt.ifPresent(memberLinePermRepo::delete);
   }
+
 
   // 권한 레벨 → role_seq 매핑
   private Integer permLevelToRoleSeq(Integer permLevel) {

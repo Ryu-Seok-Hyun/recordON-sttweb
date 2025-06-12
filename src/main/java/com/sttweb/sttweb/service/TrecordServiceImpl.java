@@ -3,6 +3,7 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
+import com.sttweb.sttweb.repository.TmemberLinePermRepository;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import com.sttweb.sttweb.service.TmemberService;
@@ -35,15 +36,15 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TrecordServiceImpl implements TrecordService {
 
-  private static final String[] SEARCH_DRIVES   = { "C:", "D:", "E:" };
-  private static final String   REC_ON_DATA_SUB = "\\RecOnData";
+  private static final String[] SEARCH_DRIVES = {"C:", "D:", "E:"};
+  private static final String REC_ON_DATA_SUB = "\\RecOnData";
   private static final DateTimeFormatter DT_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   private final TrecordRepository repo;
   private final TmemberRepository memberRepo;
-  private final TmemberService    memberSvc;
-  private final TbranchService    branchSvc;
+  private final TmemberService memberSvc;
+  private final TbranchService branchSvc;
 
   public TrecordServiceImpl(
       TrecordRepository repo,
@@ -51,18 +52,22 @@ public class TrecordServiceImpl implements TrecordService {
       TmemberService memberSvc,
       TbranchService branchSvc
   ) {
-    this.repo       = repo;
+    this.repo = repo;
     this.memberRepo = memberRepo;
-    this.memberSvc  = memberSvc;
-    this.branchSvc  = branchSvc;
+    this.memberSvc = memberSvc;
+    this.branchSvc = branchSvc;
   }
 
   private String normalizeToFourDigit(String raw) {
-    if (raw==null) return null;
+    if (raw == null)
+      return null;
     String d = raw.replaceAll("[^0-9]", "").trim();
-    if (d.length()==4)     return d;
-    if (d.length()==3)     return "0"+d;
-    if (d.length()>4)      return d.substring(d.length()-4);
+    if (d.length() == 4)
+      return d;
+    if (d.length() == 3)
+      return "0" + d;
+    if (d.length() > 4)
+      return d.substring(d.length() - 4);
     return null;
   }
 
@@ -71,31 +76,33 @@ public class TrecordServiceImpl implements TrecordService {
     // 1) ext1/ext2 번호 기준 회원조회
     String ext1 = normalizeToFourDigit(e.getNumber1());
     String ext2 = normalizeToFourDigit(e.getNumber2());
-    if (ext1!=null && memberRepo.findByNumber(ext1).isPresent()) {
+    if (ext1 != null && memberRepo.findByNumber(ext1).isPresent()) {
       bs = memberRepo.findByNumber(ext1).get().getBranchSeq();
     }
-    if (bs==null && ext2!=null && memberRepo.findByNumber(ext2).isPresent()) {
+    if (bs == null && ext2 != null && memberRepo.findByNumber(ext2).isPresent()) {
       bs = memberRepo.findByNumber(ext2).get().getBranchSeq();
     }
     // 2) 컬럼값 우선
-    if (bs==null && e.getBranchSeq()!=null) {
+    if (bs == null && e.getBranchSeq() != null) {
       bs = e.getBranchSeq();
     }
     String branchName = null;
-    if (bs!=null) {
-      try { branchName = branchSvc.findById(bs).getCompanyName(); }
-      catch(Exception ignore){}
+    if (bs != null) {
+      try {
+        branchName = branchSvc.findById(bs).getCompanyName();
+      } catch (Exception ignore) {
+      }
     }
 
     return TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
-        .callStartDateTime(e.getCallStartDateTime()!=null
+        .callStartDateTime(e.getCallStartDateTime() != null
             ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT)
             : null)
-        .callEndDateTime(e.getCallEndDateTime()!=null
+        .callEndDateTime(e.getCallEndDateTime() != null
             ? e.getCallEndDateTime().toLocalDateTime().format(DT_FMT)
             : null)
-        .audioPlayTime(e.getAudioPlayTime()!=null
+        .audioPlayTime(e.getAudioPlayTime() != null
             ? e.getAudioPlayTime().toString()
             : null)
         .ioDiscdVal(e.getIoDiscdVal())
@@ -103,9 +110,10 @@ public class TrecordServiceImpl implements TrecordService {
         .number2(e.getNumber2())
         .audioFileDir(e.getAudioFileDir())
         .callStatus(e.getCallStatus())
-        .regDate(e.getRegDate()!=null
+        .regDate(e.getRegDate() != null
             ? e.getRegDate().toLocalDateTime().format(DT_FMT)
             : null)
+        .lineId(e.getLineId())
         .ownerMemberSeq(e.getOwnerMemberSeq())
         .branchSeq(bs)
         .branchName(branchName)
@@ -113,7 +121,7 @@ public class TrecordServiceImpl implements TrecordService {
   }
 
   @Override
-  @Transactional(readOnly=true)
+  @Transactional(readOnly = true)
   public Page<TrecordDto> findAll(Pageable pageable) {
     return repo.findAll(pageable).map(this::toDto);
   }
@@ -155,12 +163,16 @@ public class TrecordServiceImpl implements TrecordService {
       Pageable pageable
   ) {
     Boolean inbound = null;
-    if ("IN".equalsIgnoreCase(direction))  inbound = true;
-    if ("OUT".equalsIgnoreCase(direction)) inbound = false;
+    if ("IN".equalsIgnoreCase(direction))
+      inbound = true;
+    if ("OUT".equalsIgnoreCase(direction))
+      inbound = false;
 
     Boolean isExt = null;
-    if ("EXT".equalsIgnoreCase(numberKind))  isExt = true;
-    if ("PHONE".equalsIgnoreCase(numberKind)) isExt = false;
+    if ("EXT".equalsIgnoreCase(numberKind))
+      isExt = true;
+    if ("PHONE".equalsIgnoreCase(numberKind))
+      isExt = false;
 
     return repo.search(
         number1, number2,
@@ -335,10 +347,10 @@ public class TrecordServiceImpl implements TrecordService {
     if ("ALL".equalsIgnoreCase(direction)) {
       return repo.countByBranchSeq(branchSeq);
     }
-    String ioVal = switch(direction.toUpperCase()) {
-      case "IN"  -> "수신";
+    String ioVal = switch (direction.toUpperCase()) {
+      case "IN" -> "수신";
       case "OUT" -> "발신";
-      default    -> null;
+      default -> null;
     };
     if (ioVal == null) {
       throw new IllegalArgumentException("direction must be ALL, IN or OUT");
@@ -428,7 +440,8 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> searchByBranchAndExtensions(Integer branchSeq, List<String> extensions, Pageable pageable) {
+  public Page<TrecordDto> searchByBranchAndExtensions(Integer branchSeq, List<String> extensions,
+      Pageable pageable) {
     if (extensions == null || extensions.isEmpty()) {
       return Page.empty(pageable);
     }
@@ -466,7 +479,7 @@ public class TrecordServiceImpl implements TrecordService {
 
 
   @Override
-  @Transactional(readOnly=true)
+  @Transactional(readOnly = true)
   public Page<TrecordDto> searchByMixedNumbersInBranch(
       Integer branchSeq,
       List<String> numbers,
@@ -488,8 +501,6 @@ public class TrecordServiceImpl implements TrecordService {
     };
     return repo.findAll(spec, pageable).map(this::toDto);
   }
-
-
 
   // ─────────────────────────────────────────────────────────────
   // 권한 기반 조회 메서드들 (일단 기존 방식으로 구현)
@@ -513,12 +524,16 @@ public class TrecordServiceImpl implements TrecordService {
     System.out.println("⚠️ searchWithPermission 호출됨 - 기본 검색으로 우회");
 
     Boolean inbound = null;
-    if ("IN".equals(direction)) inbound = true;
-    else if ("OUT".equals(direction)) inbound = false;
+    if ("IN".equals(direction))
+      inbound = true;
+    else if ("OUT".equals(direction))
+      inbound = false;
 
     Boolean isExt = null;
-    if ("EXTENSION".equals(numberKind)) isExt = true;
-    else if ("PHONE".equals(numberKind)) isExt = false;
+    if ("EXTENSION".equals(numberKind))
+      isExt = true;
+    else if ("PHONE".equals(numberKind))
+      isExt = false;
 
     // 일단 기존 search 메서드 사용
     return repo.search(num1, num2, inbound, isExt, q, start, end, pageable)
@@ -540,11 +555,29 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> searchByMyAndGrantedNumbers(Integer branchSeq, List<String> numbers, Pageable pageable) {
-    if (numbers == null || numbers.isEmpty()) return Page.empty(pageable);
+  public Page<TrecordDto> searchByMyAndGrantedNumbers(Integer branchSeq, List<String> numbers,
+      Pageable pageable) {
+    if (numbers == null || numbers.isEmpty())
+      return Page.empty(pageable);
     return repo.findByBranchAndExtensionsOrNumberOnly(branchSeq, numbers, pageable)
         .map(this::toDto);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByMixedNumbers(
+      List<String> numbers,
+      String direction,
+      String numberKind,
+      String q,
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  ) {
+    // trecordRepo 가 아니라 생성자에서 주입된 repo 를 사용
+    return repo
+        .findByMixedFilter(numbers, direction, numberKind, q, start, end, pageable)
+        .map(this::toDto);
 
+  }
 }

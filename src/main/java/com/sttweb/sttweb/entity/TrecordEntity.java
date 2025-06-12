@@ -61,6 +61,7 @@ public class TrecordEntity {
   @Column(name = "ownerMemberSeq")
   private Integer ownerMemberSeq;
 
+  private Integer lineId;
   /**
    * 이 녹취가 발생한 지점(branchSeq)
    */

@@ -49,4 +49,6 @@ public class TmemberLinePermEntity {
   @CreationTimestamp
   @Column(name = "regtime", nullable = false, updatable = false)
   private LocalDateTime regtime;
+
+
 }

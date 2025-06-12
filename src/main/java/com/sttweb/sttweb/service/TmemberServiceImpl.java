@@ -435,4 +435,11 @@ public class TmemberServiceImpl implements TmemberService {
   public TmemberEntity findByMemberSeq(Integer memberSeq) {
     return tmemberRepository.findById(memberSeq).orElse(null);
   }
+
+  @Override
+  public TmemberEntity findById(Integer memberSeq) {
+    return tmemberRepository.findById(memberSeq).orElse(null);
+  }
+
+
 }

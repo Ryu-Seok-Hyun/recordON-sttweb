@@ -230,5 +230,30 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   );
 
 
+  @Query("""
+      select t from TrecordEntity t
+       where (t.number1 in :nums or t.number2 in :nums)
+         and (
+           :direction = 'ALL'
+           or (:direction = 'IN'  and t.ioDiscdVal = '수신')
+           or (:direction = 'OUT' and t.ioDiscdVal = '발신')
+         )
+         and (
+           :numberKind = 'ALL'
+           or (:numberKind = 'EXT'   and length(t.number1) <= 4)
+           or (:numberKind = 'PHONE' and length(t.number1) > 4)
+         )
+         and (:start is null or t.callStartDateTime >= :start)
+         and (:end   is null or t.callStartDateTime <= :end)
+         and (:q     is null or t.callStatus like concat('%', :q, '%'))
+    """)
+  Page<TrecordEntity> findByMixedFilter(
+      @Param("nums")       List<String>  nums,
+      @Param("direction")  String        direction,
+      @Param("numberKind") String        numberKind,
+      @Param("q")          String        q,
+      @Param("start")      LocalDateTime start,
+      @Param("end")        LocalDateTime end,
+      Pageable            pageable
+  );
 }
-

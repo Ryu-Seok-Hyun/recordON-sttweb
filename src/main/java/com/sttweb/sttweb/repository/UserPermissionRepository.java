@@ -12,6 +12,9 @@ public interface UserPermissionRepository extends JpaRepository<UserPermission, 
   List<UserPermission> findByMemberSeq(Integer memberSeq);
   long countByMemberSeqAndLineIdAndPermLevelGreaterThanEqual(Integer memberSeq, Integer lineId, int permLevel);
   Optional<UserPermission> findByMemberSeqAndLineId(Integer memberSeq, Integer lineId);
+  // ownerMemberSeq(녹취 소유자) 기준, 가장 높은 perm_level 조회
+  Optional<UserPermission> findTopByMemberSeqOrderByPermLevelDesc(Integer memberSeq);
+
 
 
 }

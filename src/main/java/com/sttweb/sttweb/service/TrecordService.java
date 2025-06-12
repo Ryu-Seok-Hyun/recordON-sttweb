@@ -115,4 +115,13 @@ public interface TrecordService {
 
   Page<TrecordDto> searchByMyAndGrantedNumbers(Integer branchSeq, List<String> numbers, Pageable pageable);
 
+  Page<TrecordDto> searchByMixedNumbers(
+      List<String> numbers,
+      String direction,
+      String numberKind,
+      String q,
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  );
 }

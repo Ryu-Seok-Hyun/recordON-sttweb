@@ -30,6 +30,20 @@ public class TrecordDto {
 
   private String branchName;
 
+  private Integer roleSeq;
+  private Integer lineId;
+
+  public Integer getRoleSeq() {
+    return roleSeq == null ? 0 : roleSeq;
+  }
+  public Integer getLineId() {
+    return lineId == null ? 0 : lineId;
+  }
+
+
+  public void setLineId(Integer lineId) {
+    this.lineId = lineId;
+  }
   /**
    * number2가 휴대폰 번호일 경우 중간 4자리(예: “01012345678” → “010****5678”)를
    * mask 처리하는 메서드

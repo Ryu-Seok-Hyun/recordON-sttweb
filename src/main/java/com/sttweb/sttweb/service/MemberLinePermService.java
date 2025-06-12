@@ -133,9 +133,9 @@ public class MemberLinePermService {
     TmemberRoleEntity role = roleRepository.findById(roleSeq)
         .orElseThrow(() -> new IllegalArgumentException("roleSeq=" + roleSeq + " not found"));
 
-    TmemberLinePermEntity existing =
-        permRepository.findByMemberMemberSeqAndLineId(memberSeq, lineId);
-    if (existing != null) {
+    Optional<TmemberLinePermEntity> existingOpt = permRepository.findByMemberMemberSeqAndLineId(memberSeq, lineId);
+    if (existingOpt.isPresent()) {
+      TmemberLinePermEntity existing = existingOpt.get();
       existing.setRole(role);
       permRepository.save(existing);
     } else {
@@ -164,13 +164,13 @@ public class MemberLinePermService {
    */
   @Transactional
   public boolean revokeLinePermission(Integer memberSeq, Integer lineId) {
-    TmemberLinePermEntity existing =
-        permRepository.findByMemberMemberSeqAndLineId(memberSeq, lineId);
-    if (existing == null) {
-      return false;
+    Optional<TmemberLinePermEntity> existingOpt = permRepository.findByMemberMemberSeqAndLineId(memberSeq, lineId);
+    if (existingOpt.isPresent()) {
+      permRepository.delete(existingOpt.get());
+      return true;
     }
-    permRepository.delete(existing);
-    return true;
+    return false;
+
   }
 
   /**
