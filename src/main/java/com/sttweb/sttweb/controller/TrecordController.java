@@ -313,14 +313,13 @@ public class TrecordController {
     if (me.getMaskFlag() != null && me.getMaskFlag() == 0)
       paged.getContent().forEach(TrecordDto::maskNumber2);
 
-    long inCount = recordSvc.countByBranchAndDirection(null, "IN");
-    long outCount = recordSvc.countByBranchAndDirection(null, "OUT");
-    if ("1".equals(lvl)) {
-      inCount = recordSvc.countByBranchAndDirection(me.getBranchSeq(), "IN");
-      outCount = recordSvc.countByBranchAndDirection(me.getBranchSeq(), "OUT");
-    } else if ("2".equals(lvl)) {
-      inCount = outCount = paged.getTotalElements();
-    }
+    // → 아래로 딱 변경 (모든 권한에서 동일하게 적용)
+    long inCount = paged.getContent().stream()
+        .filter(rec -> "수신".equals(rec.getIoDiscdVal()))
+        .count();
+    long outCount = paged.getContent().stream()
+        .filter(rec -> "발신".equals(rec.getIoDiscdVal()))
+        .count();
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("content", paged.getContent());

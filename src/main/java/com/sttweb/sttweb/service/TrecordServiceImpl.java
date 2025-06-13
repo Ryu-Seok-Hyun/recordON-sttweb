@@ -345,7 +345,8 @@ public class TrecordServiceImpl implements TrecordService {
   @Override
   public long countByBranchAndDirection(Integer branchSeq, String direction) {
     if ("ALL".equalsIgnoreCase(direction)) {
-      return repo.countByBranchSeq(branchSeq);
+      if (branchSeq == null) return repo.count();
+      else return repo.countByBranchSeq(branchSeq);
     }
     String ioVal = switch (direction.toUpperCase()) {
       case "IN" -> "수신";
@@ -355,6 +356,11 @@ public class TrecordServiceImpl implements TrecordService {
     if (ioVal == null) {
       throw new IllegalArgumentException("direction must be ALL, IN or OUT");
     }
+    // branchSeq가 null이면 전체 대상으로 수신/발신 카운트
+    if (branchSeq == null) {
+      return repo.countByIoDiscdVal(ioVal);
+    }
+    // 아니면 기존대로
     return repo.countByBranchSeqAndIoDiscdVal(branchSeq, ioVal);
   }
 
@@ -622,4 +628,6 @@ public class TrecordServiceImpl implements TrecordService {
         .searchByNumsAndQuery(numbers, direction, numberKind, q, start, end, pageable)
         .map(this::toDto);
   }
+
+
 }
