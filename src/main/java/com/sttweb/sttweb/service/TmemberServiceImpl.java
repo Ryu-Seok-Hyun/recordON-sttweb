@@ -80,6 +80,11 @@ public class TmemberServiceImpl implements TmemberService {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 존재하는 ID 입니다.");
     }
 
+    // 👉 [추가!] 내선번호 중복 검사
+    if (StringUtils.hasText(req.getNumber()) && repo.existsByNumber(req.getNumber())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 사용 중인 내선번호입니다: " + req.getNumber());
+    }
+
     // 3) userLevel / branchSeq 검증
     String level = req.getUserLevel();
     if ("0".equals(level)) {

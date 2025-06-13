@@ -16,6 +16,9 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
   /** 아이디(userId) 중복 체크 */
   boolean existsByUserId(String userId);
 
+  /** 내선번호 중복 체크 */
+  boolean existsByNumber(String number);
+
   /** userId 기준 단일 조회 */
   Optional<TmemberEntity> findByUserId(String userId);
 
