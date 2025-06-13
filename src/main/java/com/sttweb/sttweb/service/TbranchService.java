@@ -40,4 +40,16 @@ public interface TbranchService {
 
   // fallback 용: branchSeq → entity
   TbranchEntity findEntityBySeq(Integer branchSeq);
+
+  // TbranchService.java (interface)
+  default String getPIpByBranchSeq(Integer branchSeq) {
+    if (branchSeq == null || branchSeq == 0) return null;
+    try {
+      return findById(branchSeq).getPIp();
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+
 }

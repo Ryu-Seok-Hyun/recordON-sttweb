@@ -57,6 +57,9 @@ public class TactivitylogServiceImpl implements TactivitylogService {
     ).map(entity -> toDto(entity));
   }
 
+
+
+
   @Override
   public Page<TactivitylogDto> getLogsWithFilter(
       String userId,
@@ -70,94 +73,86 @@ public class TactivitylogServiceImpl implements TactivitylogService {
   ) {
     Specification<TactivitylogEntity> spec = Specification.where(null);
 
-    // 1) 일반 사용자는 자신의 로그만
     if (!"0".equals(userLevel)) {
       spec = spec.and(ActivityLogSpecification.hasUserId(userId));
     }
 
-    // 2) 구분(type) 필터
-    // 2) 구분(type) 필터: 한국어 레이블 → activity 컬럼(한글) 매핑
     if (type != null && !type.isBlank() && !"전체".equals(type)) {
       switch (type) {
-        case "조회":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "조회"));
-          break;
-        case "청취":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "청취"));
-          break;
-        case "다운로드":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "다운로드"));
-          break;
-        case "수정":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "수정"));
-          break;
-        case "등록":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "등록"));
-          break;
-        case "비활성화":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "비활성화"));
-          break;
-        case "활성화":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "활성화"));
-          break;
-        case "로그인":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "로그인"));
-          break;
-        case "로그아웃":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "로그아웃"));
-          break;
-        case "부여":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "부여"));
-          break;
-        case "회수":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", "회수"));
-          break;
-        default:
-          // 기타: activity 컬럼에 키워드 포함 검색
-          spec = spec.and(ActivityLogSpecification.containsField("activity", type));
+        case "조회":       spec = spec.and(ActivityLogSpecification.containsField("activity", "조회")); break;
+        case "청취":       spec = spec.and(ActivityLogSpecification.containsField("activity", "청취")); break;
+        case "다운로드":   spec = spec.and(ActivityLogSpecification.containsField("activity", "다운로드")); break;
+        case "수정":       spec = spec.and(ActivityLogSpecification.containsField("activity", "수정")); break;
+        case "등록":       spec = spec.and(ActivityLogSpecification.containsField("activity", "등록")); break;
+        case "비활성화":   spec = spec.and(ActivityLogSpecification.containsField("activity", "비활성화")); break;
+        case "활성화":     spec = spec.and(ActivityLogSpecification.containsField("activity", "활성화")); break;
+        case "로그인":     spec = spec.and(ActivityLogSpecification.containsField("activity", "로그인")); break;
+        case "로그아웃":   spec = spec.and(ActivityLogSpecification.containsField("activity", "로그아웃")); break;
+        case "부여":       spec = spec.and(ActivityLogSpecification.containsField("activity", "부여")); break;
+        case "회수":       spec = spec.and(ActivityLogSpecification.containsField("activity", "회수")); break;
+        default:           spec = spec.and(ActivityLogSpecification.containsField("activity", type));
       }
     }
 
-    // 3) 날짜범위 필터
     if (startCrtime != null && endCrtime != null) {
       spec = spec.and(ActivityLogSpecification.betweenCrtime(startCrtime, endCrtime));
     }
 
-    // 4) 검색필드 + 키워드 필터
-    if (searchField != null && !searchField.isBlank()
-        && keyword    != null && !keyword.isBlank()) {
-      String q       = keyword.trim();
-      switch (searchField) {
-        case "userId":
-          spec = spec.and(ActivityLogSpecification.containsField("userId", q));
-          break;
-        case "ip":
-          spec = spec.and(ActivityLogSpecification.ipLike(q));
-          break;
-        case "activity":
-          spec = spec.and(ActivityLogSpecification.containsField("activity", q));
-          break;
-        case "contents":
-          spec = spec.and(ActivityLogSpecification.containsField("contents", q));
-          break;
-        case "activityContent":
-          // activity OR contents
-          spec = spec.and(
-              ActivityLogSpecification.containsField("activity", q)
-                  .or(ActivityLogSpecification.containsField("contents", q))
-          );
-          break;
-        default:
-          // ALL 혹은 미지정 시 필터 없음
-          break;
+    // *** 여기만 바꿔주면 됨! ***
+    if (keyword != null && !keyword.isBlank()) {
+      String q = keyword.trim();
+      if (searchField == null || searchField.isBlank() || "전체".equals(searchField)) {
+        // 전체검색: 모든 주요 필드 OR
+        spec = spec.and(
+            ActivityLogSpecification.containsField("userId", q)
+                .or(ActivityLogSpecification.containsField("activity", q))
+                .or(ActivityLogSpecification.containsField("contents", q))
+                .or(ActivityLogSpecification.containsField("companyName", q))
+                .or(ActivityLogSpecification.containsField("pbIp", q))
+                .or(ActivityLogSpecification.containsField("pvIp", q))
+        );
+      } else {
+        switch (searchField) {
+          case "userId":
+            spec = spec.and(ActivityLogSpecification.containsField("userId", q)); break;
+          case "ip":
+            spec = spec.and(ActivityLogSpecification.ipLike(q)); break;
+          case "pbIp":
+            spec = spec.and(ActivityLogSpecification.containsField("pbIp", q)); break;
+          case "pvIp":
+            spec = spec.and(ActivityLogSpecification.containsField("pvIp", q)); break;
+          case "activity":
+            spec = spec.and(ActivityLogSpecification.containsField("activity", q)); break;
+          case "contents":
+            spec = spec.and(ActivityLogSpecification.containsField("contents", q)); break;
+          case "activityContent":
+            spec = spec.and(
+                ActivityLogSpecification.containsField("activity", q)
+                    .or(ActivityLogSpecification.containsField("contents", q))
+            ); break;
+          case "branch":
+          case "지점":
+            spec = spec.and(ActivityLogSpecification.containsField("companyName", q)); break;
+          default:
+            spec = spec.and(
+                ActivityLogSpecification.containsField("userId", q)
+                    .or(ActivityLogSpecification.containsField("activity", q))
+                    .or(ActivityLogSpecification.containsField("contents", q))
+                    .or(ActivityLogSpecification.containsField("companyName", q))
+                    .or(ActivityLogSpecification.containsField("pbIp", q))
+                    .or(ActivityLogSpecification.containsField("pvIp", q))
+            ); break;
+        }
       }
     }
 
-    return repository.findAll(spec, pageable)
-        .map(this::toDto);
+    return repository.findAll(spec, pageable).map(this::toDto);
   }
 
-  /** Entity → DTO 변환 헬퍼 */
+
+  /**
+     * Entity → DTO 변환 헬퍼
+     */
   private TactivitylogDto toDto(TactivitylogEntity entity) {
     TactivitylogDto dto = new TactivitylogDto();
     BeanUtils.copyProperties(entity, dto);
