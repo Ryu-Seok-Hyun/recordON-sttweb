@@ -301,5 +301,5 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       Pageable pageable
   );
 
-
+  Page<TrecordEntity> findByNumber2Containing(String number2, Pageable pageable);
 }

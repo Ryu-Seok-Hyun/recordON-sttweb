@@ -26,6 +26,7 @@ import java.util.List;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class TrecordServiceImpl implements TrecordService {
+
+
 
   private static final String[] SEARCH_DRIVES = {"C:", "D:", "E:"};
   private static final String REC_ON_DATA_SUB = "\\RecOnData";
@@ -582,6 +585,14 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
+    // 🔥 [1] PHONE + q 입력시 → 부분 일치(LIKE) 검색
+    if ("PHONE".equalsIgnoreCase(numberKind) && q != null && !q.isBlank()) {
+      // 번호 부분 검색(전화번호 LIKE)
+      return repo.findByNumber1ContainingOrNumber2Containing(q, q, pageable)
+          .map(this::toDto);
+    }
+
+    // 🔥 [2] 기존 통합 검색
     Boolean inbound = null;
     if ("IN".equalsIgnoreCase(direction))  inbound = true;
     if ("OUT".equalsIgnoreCase(direction)) inbound = false;
@@ -601,6 +612,7 @@ public class TrecordServiceImpl implements TrecordService {
         pageable
     ).map(this::toDto);
   }
+
 
   /**
    * (일반 사용자용) 내선목록(nums) + 방향/내선필터 + q(번호검색) + 기간
@@ -627,6 +639,16 @@ public class TrecordServiceImpl implements TrecordService {
     return repo
         .searchByNumsAndQuery(numbers, direction, numberKind, q, start, end, pageable)
         .map(this::toDto);
+  }
+
+
+  @Override
+  public Page<TrecordDto> searchByPhoneNumberOnlyLike(String phone, Pageable pageable) {
+    // TrecordRepository에 메서드가 있으면 사용, 없으면 직접 QueryDSL/JPA로 구현
+    // 예시: number2 LIKE 검색 (number2 컬럼이 TrecordEntity에 있다고 가정)
+    Page<TrecordEntity> entityPage = repo.findByNumber2Containing(phone, pageable);
+    List<TrecordDto> dtoList = entityPage.stream().map(TrecordDto::from).toList();
+    return new PageImpl<>(dtoList, pageable, entityPage.getTotalElements());
   }
 
 

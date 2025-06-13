@@ -124,4 +124,8 @@ public interface TrecordService {
       LocalDateTime end,
       Pageable pageable
   );
+
+  // Service
+
+  Page<TrecordDto> searchByPhoneNumberOnlyLike(String phone, Pageable pageable);
 }

@@ -182,18 +182,50 @@ public class TrecordController {
     String lvl = me.getUserLevel();
     Pageable reqPage = PageRequest.of(page, size);
 
-    // 5) PHONE 모드 + q 있을 때 → 전화번호 LIKE 검색, 즉시 리턴
-    if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
-      Page<TrecordDto> phonePaged = recordSvc.search(
-          /*number1*/ null,
-          /*number2*/ null,
-          /*direction*/  null,    // direction 필터 해제
-          /*numberKind*/ null,    // numberKind 필터 해제
-          q,
+// 내선 모드에서만 number1=내선번호 정확 일치만 검색
+    if ("EXT".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
+      Page<TrecordDto> extPaged = recordSvc.search(
+          q, null,         // number1에만 exact
+          direction,
+          "EXT",
+          null,            // 통화내용 검색 X
           start, end,
           reqPage
       );
-      // (기존과 동일한 후처리: LineId 세팅, 마스킹 등)
+      extPaged.getContent().forEach(rec -> {
+        if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
+          trecordTelListRepository.findByCallNum(rec.getNumber1())
+              .ifPresent(line -> rec.setLineId(line.getId()));
+        }
+        if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
+          rec.maskNumber2();
+        }
+      });
+      long inboundCount = recordSvc.search(
+          q, null, "IN", "EXT", null, start, end, PageRequest.of(0, 1)
+      ).getTotalElements();
+      long outboundCount = recordSvc.search(
+          q, null, "OUT", "EXT", null, start, end, PageRequest.of(0, 1)
+      ).getTotalElements();
+
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("content", extPaged.getContent());
+      body.put("totalElements", extPaged.getTotalElements());
+      body.put("totalPages", extPaged.getTotalPages());
+      body.put("size", extPaged.getSize());
+      body.put("number", extPaged.getNumber());
+      body.put("empty", extPaged.isEmpty());
+      body.put("inboundCount", inboundCount);
+      body.put("outboundCount", outboundCount);
+      return ResponseEntity.ok(body);
+    }
+// ----[여기까지 추가]----
+
+    // 5) PHONE 모드 + q 있을 때 → 전화번호 LIKE 검색, 즉시 리턴
+    if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
+      // ★ number2만 LIKE로 검색하는 Service 메서드 호출
+      Page<TrecordDto> phonePaged = recordSvc.searchByPhoneNumberOnlyLike(q, reqPage);
+
       phonePaged.getContent().forEach(rec -> {
         if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
           trecordTelListRepository.findByCallNum(rec.getNumber1())
@@ -204,18 +236,13 @@ public class TrecordController {
         }
       });
 
+      long inboundCount = phonePaged.stream()
+          .filter(r -> "IN".equals(r.getIoDiscdVal()))
+          .count();
+      long outboundCount = phonePaged.stream()
+          .filter(r -> "OUT".equals(r.getIoDiscdVal()))
+          .count();
 
-      // [★ 여기 추가]
-      long inboundCount = recordSvc.search(
-          null, null, "IN", null, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
-      long outboundCount = recordSvc.search(
-          null, null, "OUT", null, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
-      // -----------------
-
-
-      // 바디 빌드 & 리턴
       Map<String, Object> body = new LinkedHashMap<>();
       body.put("content", phonePaged.getContent());
       body.put("totalElements", phonePaged.getTotalElements());
@@ -225,9 +252,45 @@ public class TrecordController {
       body.put("empty", phonePaged.isEmpty());
       body.put("inboundCount", inboundCount);
       body.put("outboundCount", outboundCount);
-      // 필요하면 inboundCount/outboundCount 등 추가
       return ResponseEntity.ok(body);
     }
+
+
+//      // (기존과 동일한 후처리: LineId 세팅, 마스킹 등)
+//      phonePaged.getContent().forEach(rec -> {
+//        if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
+//          trecordTelListRepository.findByCallNum(rec.getNumber1())
+//              .ifPresent(line -> rec.setLineId(line.getId()));
+//        }
+//        if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
+//          rec.maskNumber2();
+//        }
+//      });
+
+//
+//      // [★ 여기 추가]
+//      long inboundCount = recordSvc.search(
+//          null, null, "IN", null, q, start, end, PageRequest.of(0, 1)
+//      ).getTotalElements();
+//      long outboundCount = recordSvc.search(
+//          null, null, "OUT", null, q, start, end, PageRequest.of(0, 1)
+//      ).getTotalElements();
+//      // -----------------
+//
+//
+//      // 바디 빌드 & 리턴
+//      Map<String, Object> body = new LinkedHashMap<>();
+//      body.put("content", phonePaged.getContent());
+//      body.put("totalElements", phonePaged.getTotalElements());
+//      body.put("totalPages", phonePaged.getTotalPages());
+//      body.put("size", phonePaged.getSize());
+//      body.put("number", phonePaged.getNumber());
+//      body.put("empty", phonePaged.isEmpty());
+//      body.put("inboundCount", inboundCount);
+//      body.put("outboundCount", outboundCount);
+//      // 필요하면 inboundCount/outboundCount 등 추가
+//      return ResponseEntity.ok(body);
+//    }
 
     Page<TrecordDto> paged;
     if ("0".equals(lvl)) {

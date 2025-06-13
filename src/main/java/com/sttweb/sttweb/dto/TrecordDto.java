@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.dto;
 
+import com.sttweb.sttweb.entity.TrecordEntity;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -59,4 +60,30 @@ public class TrecordDto {
       this.number2 = head + "****" + tail;
     }
   }
+  // TrecordDto.java (DTO 파일에 추가)
+  public static TrecordDto from(TrecordEntity e) {
+    if (e == null) return null;
+    return TrecordDto.builder()
+        .recordSeq(e.getRecordSeq())
+        .callStartDateTime(e.getCallStartDateTime() != null
+            ? e.getCallStartDateTime().toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            : null)
+        .callEndDateTime(e.getCallEndDateTime() != null
+            ? e.getCallEndDateTime().toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            : null)
+        .audioPlayTime(e.getAudioPlayTime() != null ? e.getAudioPlayTime().toString() : null)
+        .ioDiscdVal(e.getIoDiscdVal())
+        .number1(e.getNumber1())
+        .number2(e.getNumber2())
+        .audioFileDir(e.getAudioFileDir())
+        .callStatus(e.getCallStatus())
+        .regDate(e.getRegDate() != null
+            ? e.getRegDate().toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            : null)
+        .lineId(e.getLineId())
+        .ownerMemberSeq(e.getOwnerMemberSeq())
+        .branchSeq(e.getBranchSeq())
+        .build();
+  }
+
 }
