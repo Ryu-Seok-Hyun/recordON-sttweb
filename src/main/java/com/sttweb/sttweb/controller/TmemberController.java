@@ -362,8 +362,8 @@ public class TmemberController {
   ) {
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!"0".equals(me.getUserLevel())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
+    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel()))) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 및 지사 관리자만 접근 가능합니다.");
     }
     svc.resetPassword(memberSeq, "1234", me.getUserId());
     return ResponseEntity.ok(
@@ -382,8 +382,8 @@ public class TmemberController {
   ) {
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!"0".equals(me.getUserLevel())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
+    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel()))) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 및 지사 관리자만 접근 가능합니다.");
     }
     svc.resetPasswords(memberSeqs, "1234", me.getUserId());
     return ResponseEntity.ok("사용자 " + memberSeqs + "의 비밀번호가 모두 초기화되었습니다.");
@@ -399,8 +399,8 @@ public class TmemberController {
   ) {
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!"0".equals(me.getUserLevel())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
+    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel()))) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 및 지사 관리자만 접근 가능합니다.");
     }
     svc.resetAllPasswords("1234", me.getUserId());
     return ResponseEntity.ok("전체 사용자 비밀번호가 초기화되었습니다.");
