@@ -223,8 +223,22 @@ public class TrecordController {
 
     // 5) PHONE 모드 + q 있을 때 → 전화번호 LIKE 검색, 즉시 리턴
     if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
-      // ★ number2만 LIKE로 검색하는 Service 메서드 호출
       Page<TrecordDto> phonePaged = recordSvc.searchByPhoneNumberOnlyLike(q, reqPage);
+
+      final String filterDir = direction;
+
+        // ▶ 여기부터 추가: direction 필터(수신/발신) 적용
+            if (!"ALL".equalsIgnoreCase(filterDir)) {
+            List<TrecordDto> filtered = phonePaged.getContent().stream()
+                    .filter(rec -> {
+                    if ("IN".equalsIgnoreCase(filterDir))   return "수신".equals(rec.getIoDiscdVal());
+                    if ("OUT".equalsIgnoreCase(filterDir))  return "발신".equals(rec.getIoDiscdVal());
+                    return true;
+                  })
+                    .collect(Collectors.toList());
+            phonePaged = new PageImpl<>(filtered, reqPage, filtered.size());
+          }
+      // ◀ 여기까지 추가
 
       phonePaged.getContent().forEach(rec -> {
         if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
@@ -236,22 +250,47 @@ public class TrecordController {
         }
       });
 
-      long inboundCount = phonePaged.stream()
-          .filter(r -> "IN".equals(r.getIoDiscdVal()))
-          .count();
-      long outboundCount = phonePaged.stream()
-          .filter(r -> "OUT".equals(r.getIoDiscdVal()))
-          .count();
+      // ▶ filterDir(IN/OUT/ALL)에 따라, phonePaged 기준으로 수신/발신 건수 설정
+          long inboundCount;
+          long outboundCount;
+          if (!"ALL".equalsIgnoreCase(filterDir)) {
+              // IN 모드면 phonePaged 전체가 수신, OUT 모드면 0
+                  if ("IN".equalsIgnoreCase(filterDir)) {
+                  inboundCount  = phonePaged.getTotalElements();
+                  outboundCount = 0;
+                } else {
+                  inboundCount  = 0;
+                  outboundCount = phonePaged.getTotalElements();
+                }
+            } else {
+              // ALL 모드면 기존처럼 서비스 호출
+                  inboundCount = recordSvc.search(
+                      null, null,
+                      "IN",
+                      "ALL",
+                      q,
+                      start, end,
+                      PageRequest.of(0, 1)
+                      ).getTotalElements();
+              outboundCount = recordSvc.search(
+                      null, null,
+                      "OUT",
+                      "ALL",
+                      q,
+                      start, end,
+                      PageRequest.of(0, 1)
+                      ).getTotalElements();
+            }
 
       Map<String, Object> body = new LinkedHashMap<>();
-      body.put("content", phonePaged.getContent());
-      body.put("totalElements", phonePaged.getTotalElements());
-      body.put("totalPages", phonePaged.getTotalPages());
-      body.put("size", phonePaged.getSize());
-      body.put("number", phonePaged.getNumber());
-      body.put("empty", phonePaged.isEmpty());
-      body.put("inboundCount", inboundCount);
-      body.put("outboundCount", outboundCount);
+      body.put("content",        phonePaged.getContent());
+      body.put("totalElements",  phonePaged.getTotalElements());
+      body.put("totalPages",     phonePaged.getTotalPages());
+      body.put("size",           phonePaged.getSize());
+      body.put("number",         phonePaged.getNumber());
+      body.put("empty",          phonePaged.isEmpty());
+      body.put("inboundCount",   inboundCount);   // ← 전체 수신 건수
+      body.put("outboundCount",  outboundCount);  // ← 전체 발신 건수
       return ResponseEntity.ok(body);
     }
 
@@ -383,49 +422,72 @@ public class TrecordController {
     if (me.getMaskFlag() != null && me.getMaskFlag() == 0)
       paged.getContent().forEach(TrecordDto::maskNumber2);
 
-    long inboundCount = 0L;
-    long outboundCount = 0L;
+    // ▶ 카운트 계산 로직
+    long inboundCount;
+    long outboundCount;
 
-    if ("0".equals(lvl)) { // 관리자
-      inboundCount = recordSvc.search(
-          null, null, "IN", numberKind, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
-      outboundCount = recordSvc.search(
-          null, null, "OUT", numberKind, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
+    // direction 파라미터가 ALL 이 아닐 때
+    if (!"ALL".equalsIgnoreCase(direction)) {
+      if ("IN".equalsIgnoreCase(direction)) {
+        // 수신만 필터링: 전체 건수가 수신 건수
+        inboundCount  = paged.getTotalElements();
+        outboundCount = 0;
+      } else { // direction == OUT
+        inboundCount  = 0;
+        outboundCount = paged.getTotalElements();
+      }
+    }
+    // direction=ALL 일 때 (관리자/지점장/사용자별 원래 로직 유지)
+    else {
+      if ("0".equals(lvl)) {
+        inboundCount  = recordSvc.search(
+            null, null, "IN",  numberKind, q, start, end,
+            PageRequest.of(0, 1)
+        ).getTotalElements();
+        outboundCount = recordSvc.search(
+            null, null, "OUT", numberKind, q, start, end,
+            PageRequest.of(0, 1)
+        ).getTotalElements();
 
-    } else if ("1".equals(lvl)) { // 지점장
-      List<String> nums = memberSvc
-          .listUsersInBranch(me.getBranchSeq(), PageRequest.of(0, Integer.MAX_VALUE))
-          .getContent().stream()
-          .map(Info::getNumber)
-          .filter(Objects::nonNull)
-          .map(this::normalizeToFourDigit)
-          .filter(Objects::nonNull)
-          .toList();
+      } else if ("1".equals(lvl)) {
+        List<String> nums = memberSvc
+            .listUsersInBranch(me.getBranchSeq(), PageRequest.of(0, Integer.MAX_VALUE))
+            .getContent().stream()
+            .map(Info::getNumber)
+            .filter(Objects::nonNull)
+            .map(this::normalizeToFourDigit)
+            .filter(Objects::nonNull)
+            .toList();
 
-      inboundCount = recordSvc.searchByMixedNumbers(
-          nums, "IN", numberKind, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
+        inboundCount  = nums.isEmpty() ? 0
+            : recordSvc.searchByMixedNumbers(
+                nums, "IN", numberKind, q, start, end,
+                PageRequest.of(0, 1)
+            ).getTotalElements();
+        outboundCount = nums.isEmpty() ? 0
+            : recordSvc.searchByMixedNumbers(
+                nums, "OUT", numberKind, q, start, end,
+                PageRequest.of(0, 1)
+            ).getTotalElements();
 
-      outboundCount = recordSvc.searchByMixedNumbers(
-          nums, "OUT", numberKind, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
+      } else if ("2".equals(lvl)) {
+        List<String> nums = getAccessibleNumbers(me.getUserId());
 
-    } else if ("2".equals(lvl)) { // 일반 사용자
-      List<String> nums = getAccessibleNumbers(me.getUserId());
+        inboundCount  = nums.isEmpty() ? 0
+            : recordSvc.searchByMixedNumbers(
+                nums, "IN", numberKind, q, start, end,
+                PageRequest.of(0, 1)
+            ).getTotalElements();
+        outboundCount = nums.isEmpty() ? 0
+            : recordSvc.searchByMixedNumbers(
+                nums, "OUT", numberKind, q, start, end,
+                PageRequest.of(0, 1)
+            ).getTotalElements();
 
-      inboundCount = recordSvc.searchByMixedNumbers(
-          nums, "IN", numberKind, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
-
-      outboundCount = recordSvc.searchByMixedNumbers(
-          nums, "OUT", numberKind, q, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
-
-    } else {
-      inboundCount = 0L;
-      outboundCount = 0L;
+      } else {
+        inboundCount  = 0;
+        outboundCount = 0;
+      }
     }
 
 // ---[★여기까지 추가!]--------------------------------------------
