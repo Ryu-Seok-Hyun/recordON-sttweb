@@ -1,16 +1,17 @@
 package com.sttweb.sttweb.jwt;
 
+import com.sttweb.sttweb.dto.TmemberDto.Info;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
-import java.security.Key;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.util.Base64;
+import java.security.Key;
 import java.util.Date;
-import com.sttweb.sttweb.dto.TmemberDto.Info;
+import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -22,46 +23,50 @@ public class JwtTokenProvider {
   private String secret;
 
   @Value("${jwt.expiration.time}")
-  private long validityInMs;             // 일반 JWT 유효시간 (ms)
+  private long validityInMs;                       // 일반 JWT 유효시간 (ms)
 
   private static final long REAUTH_EXPIRE_MS = 30 * 60 * 1000L; // 재인증: 30분
 
-
+  /*────────────────────────── INIT ──────────────────────────*/
   @PostConstruct
   protected void init() {
-    // base64 디코딩된 시크릿 키로 HMAC-SHA256 키 생성
     byte[] keyBytes = io.jsonwebtoken.io.Decoders.BASE64.decode(secret);
-    this.secretKey    = Keys.hmacShaKeyFor(keyBytes);
+    this.secretKey  = Keys.hmacShaKeyFor(keyBytes);
   }
 
+  /*────────────────── 1) 일반 토큰 생성 ───────────────────*/
   /**
-   * 사용자 Info 객체에 있는 모든 필드를 claim 으로 넣고 토큰을 생성합니다.
+   * 사용자 Info 객체의 모든 주요 필드를 claim 으로 넣고 토큰을 생성합니다.
    */
-  // Info 객체 타입으로 선언
   public String createTokenFromInfo(Info info) {
     Claims claims = Jwts.claims().setSubject(info.getUserId());
-    // 모든 필드 claims 에 담기
-    claims.put("memberSeq",   info.getMemberSeq());
-    claims.put("branchSeq",   info.getBranchSeq());
-    claims.put("branchName",  info.getBranchName());
-    claims.put("employeeId",  info.getEmployeeId());
-    claims.put("userLevel",   info.getUserLevel());
-    claims.put("number",      info.getNumber());
-    claims.put("position",     info.getPosition());
-    claims.put("maskFlag", info.getMaskFlag());
+
+    // 기본 정보
+    claims.put("memberSeq",  info.getMemberSeq());
+    claims.put("branchSeq",  info.getBranchSeq());
+    claims.put("branchName", info.getBranchName());
+    claims.put("userLevel",  info.getUserLevel());        // ★ HQ 여부 판단용
+    claims.put("number",     info.getNumber());
+    claims.put("hqYn",       info.getHqYn());
+
+    // 그 외 필요한 추가 필드
+    claims.put("position",   info.getPosition());
+    claims.put("maskFlag",   info.getMaskFlag());
     claims.put("rank",       info.getRank());
     claims.put("department", info.getDepartment());
-    claims.put("discd",       info.getDiscd());
-    claims.put("crtime",      info.getCrtime());
-    claims.put("udtime",      info.getUdtime());
-    claims.put("reguserId",   info.getReguserId());
-    claims.put("role_seq",    info.getRoleSeq());
-    claims.put("mustChangePassword", info.getMustChangePassword());
-    claims.put("currentBranchSeq",  info.getCurrentBranchSeq());
-    claims.put("currentBranchName", info.getCurrentBranchName());
-    claims.put("hqYn", info.getHqYn());
+    claims.put("discd",      info.getDiscd());
+    claims.put("crtime",     info.getCrtime());
+    claims.put("udtime",     info.getUdtime());
+    claims.put("reguserId",  info.getReguserId());
+    claims.put("role_seq",   info.getRoleSeq());
 
+    // 현재 지사 전환(멀티지사 로그인) 시 사용
+    claims.put("allowedBranchSeq",
+        Optional.ofNullable(info.getCurrentBranchSeq())
+            .orElse(info.getBranchSeq()));
 
+    /* 필요하다면 roles(권한 문자열 리스트)도 같이 넣어두세요.
+       ex) claims.put("roles", info.getRoles()); */
 
     Date now    = new Date();
     Date expiry = new Date(now.getTime() + validityInMs);
@@ -74,12 +79,7 @@ public class JwtTokenProvider {
         .compact();
   }
 
-
-
-  /**
-   * 2) 재인증용 토큰: Payload에는 최소한의 subject(userId) 와
-   *    reauth=true flag 만 담고, 만료시간 = now + REAUTH_EXPIRE_MS (30분)
-   */
+  /*────────────────── 2) 재인증(reauth) 토큰 ───────────────────*/
   public String createReAuthToken(String userId) {
     Date now    = new Date();
     Date expiry = new Date(now.getTime() + REAUTH_EXPIRE_MS);
@@ -93,6 +93,7 @@ public class JwtTokenProvider {
         .compact();
   }
 
+  /*────────────────── 3) 토큰 검증 메서드 ───────────────────*/
   /** 일반 토큰 유효성 검사 */
   public boolean validateToken(String token) {
     try {
@@ -124,32 +125,33 @@ public class JwtTokenProvider {
     }
   }
 
-  /** 토큰에서 userId(subject) 추출 */
+  /*────────────────── 4) 개별 Claim 추출 ───────────────────*/
+  /** subject(userId) */
   public String getUserId(String token) {
-    return Jwts.parserBuilder()
-        .setSigningKey(secretKey)
-        .build()
-        .parseClaimsJws(token)
-        .getBody()
-        .getSubject();
+    return getClaims(token).getSubject();
   }
 
-  /** (선택) 기존 roles, branchSeq 같은 개별 claim 접근 메서드도 유지 가능합니다 */
-  public String getRoles(String token) {
-    return Jwts.parserBuilder()
-        .setSigningKey(secretKey)
-        .build()
-        .parseClaimsJws(token)
-        .getBody()
-        .get("roles", String.class);
-  }
-
+  /** branchSeq */
   public Integer getBranchSeq(String token) {
+    return getClaims(token).get("branchSeq", Integer.class);
+  }
+
+  /** ★ userLevel (HQ 여부 판단에 사용) */
+  public String getUserLevel(String token) {             // ★ 추가
+    return getClaims(token).get("userLevel", String.class);
+  }
+
+  /** (선택) roles 배열 */
+  public List<String> getRoles(String token) {
+    return getClaims(token).get("roles", List.class);
+  }
+
+  /*────────────────── 5) 내부 헬퍼 ───────────────────*/
+  private Claims getClaims(String token) {
     return Jwts.parserBuilder()
         .setSigningKey(secretKey)
         .build()
         .parseClaimsJws(token)
-        .getBody()
-        .get("branchSeq", Integer.class);
+        .getBody();
   }
 }
