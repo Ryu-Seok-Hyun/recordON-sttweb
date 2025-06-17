@@ -4,8 +4,8 @@ import com.sttweb.sttweb.dto.TactivitylogDto;
 import com.sttweb.sttweb.entity.TactivitylogEntity;
 import com.sttweb.sttweb.exception.ResourceNotFoundException;
 import com.sttweb.sttweb.repository.TactivitylogRepository;
-import com.sttweb.sttweb.service.TactivitylogService;
 import com.sttweb.sttweb.specification.ActivityLogSpecification;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.*;
@@ -14,148 +14,113 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class TactivitylogServiceImpl implements TactivitylogService {
 
   private final TactivitylogRepository repository;
 
+  /* ---------- CREATE ---------- */
   @Override
   public TactivitylogDto createLog(TactivitylogDto dto) {
-    TactivitylogEntity entity = new TactivitylogEntity();
-    BeanUtils.copyProperties(dto, entity);
-    TactivitylogEntity saved = repository.save(entity);
-    TactivitylogDto result = new TactivitylogDto();
-    BeanUtils.copyProperties(saved, result);
-    return result;
+    TactivitylogEntity ent = new TactivitylogEntity();
+    BeanUtils.copyProperties(dto, ent);
+    BeanUtils.copyProperties(repository.save(ent), dto);
+    return dto;
   }
 
+  /* ---------- READ (단건) ---------- */
   @Override
-  public TactivitylogDto getLog(Integer activitySeq) {
-    TactivitylogEntity entity = repository.findById(activitySeq)
-        .orElseThrow(() -> new ResourceNotFoundException("ActivityLog not found: " + activitySeq));
-    return toDto(entity);
+  public TactivitylogDto getLog(Integer seq) {
+    TactivitylogEntity ent = repository.findById(seq)
+        .orElseThrow(() -> new ResourceNotFoundException("ActivityLog not found: " + seq));
+    return toDto(ent);
   }
 
+  /* ---------- DELETE ---------- */
   @Override
-  public void deleteLog(Integer activitySeq) {
-    if (!repository.existsById(activitySeq)) {
-      throw new ResourceNotFoundException("ActivityLog not found: " + activitySeq);
-    }
-    repository.deleteById(activitySeq);
+  public void deleteLog(Integer seq) {
+    if (!repository.existsById(seq))
+      throw new ResourceNotFoundException("ActivityLog not found: " + seq);
+    repository.deleteById(seq);
   }
 
-  @Override
-  public Page<TactivitylogDto> getLogs(Pageable pageable) {
-    return repository.findAll(pageable)
-        .map(entity -> toDto(entity));
+  /* ---------- READ (전체) ---------- */
+  @Override public Page<TactivitylogDto> getLogs(Pageable p){
+    return repository.findAll(p).map(this::toDto);
+  }
+  @Override public Page<TactivitylogDto> getLogsByUserId(String uid, Pageable p){
+    return repository.findAll(ActivityLogSpecification.hasUserId(uid), p)
+        .map(this::toDto);
   }
 
-  @Override
-  public Page<TactivitylogDto> getLogsByUserId(String userId, Pageable pageable) {
-    return repository.findAll(
-        ActivityLogSpecification.hasUserId(userId),
-        pageable
-    ).map(entity -> toDto(entity));
-  }
-
-
-
-
+  /* ---------- READ (권한·필터 통합) ---------- */
   @Override
   public Page<TactivitylogDto> getLogsWithFilter(
-      String userId,
-      String userLevel,
-      String startCrtime,
-      String endCrtime,
-      String type,
-      String searchField,
-      String keyword,
+      String  userId,
+      String  userLevel,
+      Integer branchSeq,
+      String  startCr,
+      String  endCr,
+      String  type,
+      String  field,
+      String  keyword,
       Pageable pageable
-  ) {
+  ){
     Specification<TactivitylogEntity> spec = Specification.where(null);
 
-    if (!"0".equals(userLevel)) {
+    /* 1) 권한 영역 */
+    if ("1".equals(userLevel))
+      spec = spec.and(ActivityLogSpecification.eqBranch(branchSeq));
+    else if (!"0".equals(userLevel))
       spec = spec.and(ActivityLogSpecification.hasUserId(userId));
-    }
 
-    if (type != null && !type.isBlank() && !"전체".equals(type)) {
-      switch (type) {
-        case "조회":       spec = spec.and(ActivityLogSpecification.containsField("activity", "조회")); break;
-        case "청취":       spec = spec.and(ActivityLogSpecification.containsField("activity", "청취")); break;
-        case "다운로드":   spec = spec.and(ActivityLogSpecification.containsField("activity", "다운로드")); break;
-        case "수정":       spec = spec.and(ActivityLogSpecification.containsField("activity", "수정")); break;
-        case "등록":       spec = spec.and(ActivityLogSpecification.containsField("activity", "등록")); break;
-        case "비활성화":   spec = spec.and(ActivityLogSpecification.containsField("activity", "비활성화")); break;
-        case "활성화":     spec = spec.and(ActivityLogSpecification.containsField("activity", "활성화")); break;
-        case "로그인":     spec = spec.and(ActivityLogSpecification.containsField("activity", "로그인")); break;
-        case "로그아웃":   spec = spec.and(ActivityLogSpecification.containsField("activity", "로그아웃")); break;
-        case "부여":       spec = spec.and(ActivityLogSpecification.containsField("activity", "부여")); break;
-        case "회수":       spec = spec.and(ActivityLogSpecification.containsField("activity", "회수")); break;
-        default:           spec = spec.and(ActivityLogSpecification.containsField("activity", type));
-      }
-    }
+    /* 2) 기간 */
+    if (startCr!=null && endCr!=null)
+      spec = spec.and(ActivityLogSpecification.betweenCrtime(startCr,endCr));
 
-    if (startCrtime != null && endCrtime != null) {
-      spec = spec.and(ActivityLogSpecification.betweenCrtime(startCrtime, endCrtime));
-    }
+    /* 3) 활동 타입 */
+    if (type!=null && !type.isBlank() && !"전체".equals(type))
+      spec = spec.and(ActivityLogSpecification.containsField("activity",type));
 
-    // *** 여기만 바꿔주면 됨! ***
-    if (keyword != null && !keyword.isBlank()) {
+    /* 4) 키워드 검색 */
+    if (keyword!=null && !keyword.isBlank()){
       String q = keyword.trim();
-      if (searchField == null || searchField.isBlank() || "전체".equals(searchField)) {
-        // 전체검색: 모든 주요 필드 OR
+      if (field==null || field.isBlank() || "전체".equals(field)){
         spec = spec.and(
-            ActivityLogSpecification.containsField("userId", q)
-                .or(ActivityLogSpecification.containsField("activity", q))
-                .or(ActivityLogSpecification.containsField("contents", q))
-                .or(ActivityLogSpecification.containsField("companyName", q))
-                .or(ActivityLogSpecification.containsField("pbIp", q))
-                .or(ActivityLogSpecification.containsField("pvIp", q))
+            ActivityLogSpecification.containsField("userId",q)
+                .or(ActivityLogSpecification.containsField("activity",q))
+                .or(ActivityLogSpecification.containsField("contents",q))
+                .or(ActivityLogSpecification.containsField("companyName",q))
+                .or(ActivityLogSpecification.containsField("pbIp",q))
+                .or(ActivityLogSpecification.containsField("pvIp",q))
         );
-      } else {
-        switch (searchField) {
-          case "userId":
-            spec = spec.and(ActivityLogSpecification.containsField("userId", q)); break;
-          case "ip":
-            spec = spec.and(ActivityLogSpecification.ipLike(q)); break;
-          case "pbIp":
-            spec = spec.and(ActivityLogSpecification.containsField("pbIp", q)); break;
-          case "pvIp":
-            spec = spec.and(ActivityLogSpecification.containsField("pvIp", q)); break;
-          case "activity":
-            spec = spec.and(ActivityLogSpecification.containsField("activity", q)); break;
-          case "contents":
-            spec = spec.and(ActivityLogSpecification.containsField("contents", q)); break;
-          case "activityContent":
-            spec = spec.and(
-                ActivityLogSpecification.containsField("activity", q)
-                    .or(ActivityLogSpecification.containsField("contents", q))
-            ); break;
-          case "branch":
-          case "지점":
-            spec = spec.and(ActivityLogSpecification.containsField("companyName", q)); break;
-          default:
-            spec = spec.and(
-                ActivityLogSpecification.containsField("userId", q)
-                    .or(ActivityLogSpecification.containsField("activity", q))
-                    .or(ActivityLogSpecification.containsField("contents", q))
-                    .or(ActivityLogSpecification.containsField("companyName", q))
-                    .or(ActivityLogSpecification.containsField("pbIp", q))
-                    .or(ActivityLogSpecification.containsField("pvIp", q))
-            ); break;
-        }
+      }else switch(field){
+        case "userId"   -> spec = spec.and(ActivityLogSpecification.containsField("userId",q));
+        case "ip"       -> spec = spec.and(ActivityLogSpecification.ipLike(q));
+        case "pbIp"     -> spec = spec.and(ActivityLogSpecification.containsField("pbIp",q));
+        case "pvIp"     -> spec = spec.and(ActivityLogSpecification.containsField("pvIp",q));
+        case "activity" -> spec = spec.and(ActivityLogSpecification.containsField("activity",q));
+        case "contents" -> spec = spec.and(ActivityLogSpecification.containsField("contents",q));
+        case "branch","지점" ->
+            spec = spec.and(ActivityLogSpecification.containsField("companyName",q));
+        default -> spec = spec.and(
+            ActivityLogSpecification.containsField("userId",q)
+                .or(ActivityLogSpecification.containsField("activity",q))
+                .or(ActivityLogSpecification.containsField("contents",q))
+                .or(ActivityLogSpecification.containsField("companyName",q))
+                .or(ActivityLogSpecification.containsField("pbIp",q))
+                .or(ActivityLogSpecification.containsField("pvIp",q))
+        );
       }
     }
 
-    return repository.findAll(spec, pageable).map(this::toDto);
+    return repository.findAll(spec,pageable).map(this::toDto);
   }
 
-
-  /**
-     * Entity → DTO 변환 헬퍼
-     */
-  private TactivitylogDto toDto(TactivitylogEntity entity) {
-    TactivitylogDto dto = new TactivitylogDto();
-    BeanUtils.copyProperties(entity, dto);
-    return dto;
+  /* ---------- Entity→DTO ---------- */
+  private TactivitylogDto toDto(TactivitylogEntity e){
+    TactivitylogDto d = new TactivitylogDto();
+    BeanUtils.copyProperties(e,d);
+    return d;
   }
 }

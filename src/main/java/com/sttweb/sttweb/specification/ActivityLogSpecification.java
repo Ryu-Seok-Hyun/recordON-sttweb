@@ -2,39 +2,45 @@ package com.sttweb.sttweb.specification;
 
 import com.sttweb.sttweb.entity.TactivitylogEntity;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.util.StringUtils;
+import jakarta.persistence.criteria.Predicate;
 
-public class ActivityLogSpecification {
+public final class ActivityLogSpecification {
 
-  /** 사용자 아이디 필터 */
-  public static Specification<TactivitylogEntity> hasUserId(String userId) {
-    return (root, query, cb) ->
-        cb.equal(root.get("userId"), userId);
+  private ActivityLogSpecification(){}
+
+  /* LIKE %value% (대소문자 무시) */
+  public static Specification<TactivitylogEntity> containsField(String field, String value){
+    return (root,q,cb) ->
+        StringUtils.hasText(value)
+            ? cb.like(cb.lower(root.get(field)), "%"+value.toLowerCase()+"%")
+            : null;
   }
 
-  /** type 필터 */
-  public static Specification<TactivitylogEntity> hasType(String type) {
-    return (root, query, cb) ->
-        cb.equal(root.get("type"), type);
+  /* userId 일치 */
+  public static Specification<TactivitylogEntity> hasUserId(String uid){
+    return (root,q,cb) ->
+        StringUtils.hasText(uid) ? cb.equal(root.get("userId"),uid) : null;
   }
 
-  /** crtime 문자열 범위 필터 */
-  public static Specification<TactivitylogEntity> betweenCrtime(String start, String end) {
-    return (root, query, cb) ->
-        cb.between(root.get("crtime"), start, end);
+  /* branchSeq 일치 */
+  public static Specification<TactivitylogEntity> eqBranch(Integer seq){
+    return (root,q,cb) -> seq==null? null : cb.equal(root.get("branchSeq"),seq);
   }
 
-  /** 단일 필드에 LIKE 검색 */
-  public static Specification<TactivitylogEntity> containsField(String field, String keyword) {
-    return (root, query, cb) ->
-        cb.like(root.get(field), "%" + keyword + "%");
+  /* 문자열 crtime BETWEEN (yyyy-MM-dd HH:mm:ss) */
+  public static Specification<TactivitylogEntity> betweenCrtime(String s,String e){
+    return (root,q,cb) ->
+        (s!=null && e!=null) ? cb.between(root.get("crtime"),s,e) : null;
   }
 
-  /** 공인(pbIp) 또는 사설(pvIp) IP 중 하나라도 LIKE 검색 */
-  public static Specification<TactivitylogEntity> ipLike(String keyword) {
-    return (root, query, cb) ->
-        cb.or(
-            cb.like(root.get("pbIp"), "%" + keyword + "%"),
-            cb.like(root.get("pvIp"), "%" + keyword + "%")
-        );
+  /* pbIp 또는 pvIp LIKE */
+  public static Specification<TactivitylogEntity> ipLike(String ip){
+    return (root,q,cb)->{
+      if(!StringUtils.hasText(ip)) return null;
+      Predicate pb = cb.like(root.get("pbIp"), "%"+ip+"%");
+      Predicate pv = cb.like(root.get("pvIp"), "%"+ip+"%");
+      return cb.or(pb,pv);
+    };
   }
 }

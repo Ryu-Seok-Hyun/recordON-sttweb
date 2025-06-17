@@ -4,6 +4,7 @@ import com.sttweb.sttweb.dto.TactivitylogDto;
 import com.sttweb.sttweb.exception.ForbiddenException;
 import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TactivitylogService;
+import com.sttweb.sttweb.service.TmemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.http.*;
@@ -15,93 +16,93 @@ import org.springframework.web.bind.annotation.*;
 public class ActivityLogController {
 
   private final TactivitylogService logService;
-  private final JwtTokenProvider    jwtTokenProvider;
+  private final TmemberService     memberService;
+  private final JwtTokenProvider   jwt;
 
-  /* ───────────────────────── private helpers ───────────────────────── */
-
-  /** “Bearer …” 접두어 제거 후 순수 JWT 만 반환 (없으면 null) */
-  private String extractToken(String authHeader) {
-    if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-      return null;
-    }
-    return authHeader.substring(7).trim();
+  private String extractToken(String header){
+    return (header!=null && header.startsWith("Bearer "))
+        ? header.substring(7).trim() : null;
   }
 
-  /* ──────────────────────────── endpoints ──────────────────────────── */
-
-  /** 페이징 + 필터 조회 */
+  /* ─────────── 목록 조회 ─────────── */
   @GetMapping
-  public ResponseEntity<Page<TactivitylogDto>> listLogs(
-      @RequestParam(defaultValue = "0")  int    page,
-      @RequestParam(defaultValue = "10") int    size,
-      @RequestParam(required = false)    String startCrtime,
-      @RequestParam(required = false)    String endCrtime,
-      @RequestParam(required = false)    String type,
-      @RequestParam(required = false)    String searchField,
-      @RequestParam(required = false)    String keyword,
-      @RequestHeader(value = "Authorization", required = false) String authHeader
-  ) {
-    /* 1) 토큰 검증 */
+  public ResponseEntity<Page<TactivitylogDto>> list(
+      @RequestParam(defaultValue = "0")  int page,
+      @RequestParam(defaultValue = "10") int size,
+      @RequestParam(required=false) String startCrtime,
+      @RequestParam(required=false) String endCrtime,
+      @RequestParam(required=false) String type,
+      @RequestParam(required=false) String searchField,
+      @RequestParam(required=false) String keyword,
+      @RequestHeader(value="Authorization", required=false) String authHeader
+  ){
     String token = extractToken(authHeader);
-    if (token == null || !jwtTokenProvider.validateToken(token)) {
+    if(token==null || !jwt.validateToken(token))
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+
+    String userId    = jwt.getUserId(token);
+    String userLevel = jwt.getUserLevel(token);
+
+    /* 지점관리자면 자기 branchSeq 추출 */
+    Integer branchSeq = null;
+    if("1".equals(userLevel)){
+      branchSeq = memberService.getMyInfoByUserId(userId).getBranchSeq();
     }
 
-    /* 2) 사용자 정보 */
-    String  userId    = jwtTokenProvider.getUserId(token);
-    String  userLevel = jwtTokenProvider.getUserLevel(token);   // ← 수정
+    Pageable pageable = PageRequest.of(page,size,Sort.by("crtime").descending());
 
-    /* 3) 페이징 */
-    Pageable pageable = PageRequest.of(page, size, Sort.by("crtime").descending());
-
-    /* 4) 서비스 호출 */
-    Page<TactivitylogDto> result = logService.getLogsWithFilter(
-        userId, userLevel,
-        startCrtime, endCrtime,
-        type,
-        searchField, keyword,
-        pageable
-    );
+    Page<TactivitylogDto> result =
+        logService.getLogsWithFilter(
+            userId, userLevel, branchSeq,
+            startCrtime, endCrtime,
+            type, searchField, keyword,
+            pageable
+        );
     return ResponseEntity.ok(result);
   }
 
-  /** 단건 조회 */
+  /* ─────────── 단건 조회 ─────────── */
   @GetMapping("/{id}")
-  public ResponseEntity<TactivitylogDto> getLog(
+  public ResponseEntity<TactivitylogDto> get(
       @PathVariable Integer id,
-      @RequestHeader(value = "Authorization", required = false) String authHeader
-  ) {
+      @RequestHeader(value="Authorization",required=false) String authHeader
+  ){
     String token = extractToken(authHeader);
-    if (token == null || !jwtTokenProvider.validateToken(token)) {
+    if(token==null || !jwt.validateToken(token))
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-    }
-    String userId    = jwtTokenProvider.getUserId(token);
-    String userLevel = jwtTokenProvider.getUserLevel(token);    // ← 수정
+
+    String userId    = jwt.getUserId(token);
+    String userLevel = jwt.getUserLevel(token);
 
     TactivitylogDto dto = logService.getLog(id);
-    if (!"0".equals(userLevel) && !userId.equals(dto.getUserId())) {
-      throw new ForbiddenException("관리자 권한이 필요합니다.");
+
+    // HQ OK / 지점장은 지점 확인 / 일반은 본인만
+    if("0".equals(userLevel)){
+      return ResponseEntity.ok(dto);
     }
-    return ResponseEntity.ok(dto);
+    if("1".equals(userLevel)){
+      Integer myBranch = memberService.getMyInfoByUserId(userId).getBranchSeq();
+      if(myBranch!=null && myBranch.equals(dto.getBranchSeq()))
+        return ResponseEntity.ok(dto);
+    }
+    if("2".equals(userLevel) && userId.equals(dto.getUserId()))
+      return ResponseEntity.ok(dto);
+
+    throw new ForbiddenException("조회 권한이 없습니다.");
   }
 
-  /** 삭제 */
+  /* ─────────── 삭제 ─────────── (HQ 전용) */
   @DeleteMapping("/{id}")
-  public ResponseEntity<Void> deleteLog(
+  public ResponseEntity<Void> delete(
       @PathVariable Integer id,
-      @RequestHeader(value = "Authorization", required = false) String authHeader
-  ) {
+      @RequestHeader(value="Authorization",required=false) String authHeader
+  ){
     String token = extractToken(authHeader);
-    if (token == null || !jwtTokenProvider.validateToken(token)) {
+    if(token==null || !jwt.validateToken(token))
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-    }
-    String userId    = jwtTokenProvider.getUserId(token);
-    String userLevel = jwtTokenProvider.getUserLevel(token);    // ← 수정
 
-    TactivitylogDto dto = logService.getLog(id);
-    if (!"0".equals(userLevel) && !userId.equals(dto.getUserId())) {
-      throw new ForbiddenException("관리자 권한이 필요합니다.");
-    }
+    if(!"0".equals(jwt.getUserLevel(token)))
+      throw new ForbiddenException("본사 관리자만 삭제 가능합니다.");
 
     logService.deleteLog(id);
     return ResponseEntity.noContent().build();
