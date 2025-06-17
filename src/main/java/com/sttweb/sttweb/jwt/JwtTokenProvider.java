@@ -48,7 +48,8 @@ public class JwtTokenProvider {
     claims.put("userLevel",  info.getUserLevel());        // ★ HQ 여부 판단용
     claims.put("number",     info.getNumber());
     claims.put("hqYn",       info.getHqYn());
-
+    claims.put("currentBranchSeq",  info.getCurrentBranchSeq());
+    claims.put("currentBranchName", info.getCurrentBranchName());
     // 그 외 필요한 추가 필드
     claims.put("position",   info.getPosition());
     claims.put("maskFlag",   info.getMaskFlag());
@@ -144,6 +145,13 @@ public class JwtTokenProvider {
   /** (선택) roles 배열 */
   public List<String> getRoles(String token) {
     return getClaims(token).get("roles", List.class);
+  }
+
+  public Integer getCurrentBranchSeq(String token){
+    return getClaims(token).get("currentBranchSeq", Integer.class);
+  }
+  public String getCurrentBranchName(String token){
+    return getClaims(token).get("currentBranchName", String.class);
   }
 
   /*────────────────── 5) 내부 헬퍼 ───────────────────*/

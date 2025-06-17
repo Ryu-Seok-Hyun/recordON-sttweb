@@ -6,6 +6,8 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -21,4 +23,15 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
   Optional<TbranchEntity> findTopByHqYn(String hqYn);
 
   boolean existsBypIp(String pIp);
+
+  // TbranchRepository.java
+  @Query("""
+       SELECT b FROM TbranchEntity b
+       WHERE (b.pIp  = :ip AND CAST(b.pPort  AS string) = :port)
+          OR (b.pbIp = :ip AND CAST(b.pbPort AS string) = :port)
+       """)
+  Optional<TbranchEntity> findByIpAndPort(@Param("ip") String ip,
+      @Param("port") String port);
+
+
 }

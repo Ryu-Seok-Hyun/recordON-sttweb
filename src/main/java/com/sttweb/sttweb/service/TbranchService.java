@@ -53,6 +53,6 @@ public interface TbranchService {
       return null;
     }
   }
-
+  Optional<TbranchEntity> findByIpAndPort(String ip, String port);
 
 }

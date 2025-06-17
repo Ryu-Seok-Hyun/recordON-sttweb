@@ -45,7 +45,9 @@ public class TbranchServiceImpl implements TbranchService {
         .build();
   }
 
-  /** 페이징 처리된 전체 조회 */
+  /**
+   * 페이징 처리된 전체 조회
+   */
   @Override
   @Transactional(readOnly = true)
   public Page<TbranchDto> findAll(Pageable pageable) {
@@ -53,7 +55,9 @@ public class TbranchServiceImpl implements TbranchService {
         .map(this::toDto);
   }
 
-  /** 회사명으로 검색 */
+  /**
+   * 회사명으로 검색
+   */
   @Override
   @Transactional(readOnly = true)
   public Page<TbranchDto> search(String keyword, Pageable pageable) {
@@ -61,21 +65,27 @@ public class TbranchServiceImpl implements TbranchService {
         .map(this::toDto);
   }
 
-  /** 내부망 IP(p_ip) 로 엔티티 조회 */
+  /**
+   * 내부망 IP(p_ip) 로 엔티티 조회
+   */
   @Override
   @Transactional(readOnly = true)
   public Optional<TbranchEntity> findBypIp(String pIp) {
     return repo.findBypIp(pIp);
   }
 
-  /** public IP(pb_ip) 로 엔티티 조회 */
+  /**
+   * public IP(pb_ip) 로 엔티티 조회
+   */
   @Override
   @Transactional(readOnly = true)
   public Optional<TbranchEntity> findByPbIp(String pbIp) {
     return repo.findByPbIp(pbIp);
   }
 
-  /** public IP 로 DTO 반환 */
+  /**
+   * public IP 로 DTO 반환
+   */
   @Override
   @Transactional(readOnly = true)
   public TbranchDto findByPublicIp(String ip) {
@@ -84,7 +94,9 @@ public class TbranchServiceImpl implements TbranchService {
     return toDto(e);
   }
 
-  /** branchSeq 로 단건 조회 */
+  /**
+   * branchSeq 로 단건 조회
+   */
   @Override
   @Transactional(readOnly = true)
   public TbranchDto findById(Integer branchSeq) {
@@ -93,7 +105,9 @@ public class TbranchServiceImpl implements TbranchService {
     return toDto(e);
   }
 
-  /** 신규 지점 생성 */
+  /**
+   * 신규 지점 생성
+   */
   @Override
   @Transactional
   public TbranchDto createBranch(TbranchDto dto) {
@@ -116,13 +130,17 @@ public class TbranchServiceImpl implements TbranchService {
     return toDto(repo.save(e));
   }
 
-  /** hqYn = "0"인 본사 지점을 하나 가져온다. */
+  /**
+   * hqYn = "0"인 본사 지점을 하나 가져온다.
+   */
   @Override
   public Optional<TbranchEntity> findHqBranch() {
     return repo.findTopByHqYn("0");
   }
 
-  /** 지점 정보 업데이트 */
+  /**
+   * 지점 정보 업데이트
+   */
   @Override
   @Transactional
   public TbranchDto update(Integer branchSeq, TbranchDto dto) {
@@ -140,7 +158,9 @@ public class TbranchServiceImpl implements TbranchService {
     return toDto(repo.save(e));
   }
 
-  /** 활성/비활성 변경 */
+  /**
+   * 활성/비활성 변경
+   */
   @Override
   @Transactional
   public void changeStatus(Integer branchSeq, boolean active) {
@@ -150,7 +170,9 @@ public class TbranchServiceImpl implements TbranchService {
     repo.save(e);
   }
 
-  /** branchSeq → entity 조회 */
+  /**
+   * branchSeq → entity 조회
+   */
   @Override
   public TbranchEntity findEntityBySeq(Integer branchSeq) {
     return repo.findById(branchSeq)
@@ -163,5 +185,8 @@ public class TbranchServiceImpl implements TbranchService {
     return repo.findAll();
   }
 
-
+  @Override
+  public Optional<TbranchEntity> findByIpAndPort(String ip, String port) {
+    return repo.findByIpAndPort(ip, port);
+  }
 }

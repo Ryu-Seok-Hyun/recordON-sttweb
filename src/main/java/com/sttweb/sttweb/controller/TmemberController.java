@@ -180,11 +180,17 @@ public class TmemberController {
 
     System.out.printf("[DEBUG][LOGIN] 서버IP=%s, 서버Port=%s%n", serverIp, serverPortStr);
 
-    Optional<TbranchEntity> srvBr = branchSvc.findBypIp(serverIp)
-        .filter(b -> serverPortStr.equals(b.getPPort()))
-        .or(() -> branchSvc.findByPbIp(serverIp)
-            .filter(b -> serverPortStr.equals(b.getPbPort()))
-        );
+    Optional<TbranchEntity> srvBr =
+        branchSvc.findByIpAndPort(serverIp, serverPortStr);
+
+    System.out.printf("[DBG] user.branchSeq=%s, home=%s%n",
+        user.getBranchSeq(),
+        (home == null ? "null" : home.getCompanyName()));
+
+    System.out.printf("[DBG] srvBr=%s%n",
+        srvBr.map(b -> b.getBranchSeq() + "/" + b.getCompanyName())
+            .orElse("empty"));
+
 
     if (!isHqUser) {
       // 지사 계정인데, 접속 서버가 없거나 내 지사와 다르면 차단

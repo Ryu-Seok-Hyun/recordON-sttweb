@@ -31,6 +31,8 @@ public class TmemberDto {
     private String  reguserId;
     private Integer maskFlag;
 
+
+
     /** 직책(포지션) */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String position;
