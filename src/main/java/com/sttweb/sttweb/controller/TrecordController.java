@@ -645,7 +645,12 @@ public class TrecordController {
   }
 
   // 파일 스트리밍 청취(Range 지원)
-  @LogActivity(type = "record", activity = "청취", contents = "녹취 청취")
+  @LogActivity(
+      type     = "record",
+      activity = "청취",
+      contents = "녹취Seq=#{#id}, offset=#{#return.body.position}, length=#{#return.body.count}"
+  )
+
   @GetMapping(value = "/{id}/listen", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
   public ResponseEntity<ResourceRegion> streamAudio(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -681,7 +686,12 @@ public class TrecordController {
   }
 
   // 녹취 파일 다운로드
-  @LogActivity(type = "record", activity = "다운로드", contents = "녹취 다운로드")
+  @LogActivity(
+      type     = "record",
+      activity = "다운로드",
+      contents = "녹취Seq=#{#id}, file=#{#return.body.filename}"
+  )
+
   @GetMapping("/{id}/download")
   public ResponseEntity<Resource> downloadById(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,

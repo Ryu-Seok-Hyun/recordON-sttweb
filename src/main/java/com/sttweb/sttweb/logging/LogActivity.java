@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/logging/LogActivity.java
 package com.sttweb.sttweb.logging;
 
 import java.lang.annotation.*;
@@ -7,8 +6,8 @@ import java.lang.annotation.*;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface LogActivity {
-  String type();       // 대분류
-  String activity();   // 활동명
-  String contents() default "";  // 상세내용
-  String dir() default "";       // 파일/경로
+  String type();       // 대분류 (record, branch, member 등)
+  String activity();   // 활동명 (조회, 청취, 다운로드 등)
+  String contents() default "";  // 상세내용 (SpEL 가능)
+  String dir() default "";       // 경로/파일 정보
 }
