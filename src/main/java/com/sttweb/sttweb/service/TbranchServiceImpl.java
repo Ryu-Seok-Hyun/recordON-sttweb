@@ -3,6 +3,7 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.repository.TbranchRepository;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -155,4 +156,12 @@ public class TbranchServiceImpl implements TbranchService {
     return repo.findById(branchSeq)
         .orElseThrow(() -> new IllegalArgumentException("지점 정보를 찾을 수 없습니다: " + branchSeq));
   }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<TbranchEntity> findAllEntities() {
+    return repo.findAll();
+  }
+
+
 }

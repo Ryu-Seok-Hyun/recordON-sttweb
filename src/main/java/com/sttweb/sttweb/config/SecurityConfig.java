@@ -1,4 +1,3 @@
-// src/main/java/com/sttweb/sttweb/config/SecurityConfig.java
 package com.sttweb.sttweb.config;
 
 import com.sttweb.sttweb.filter.BranchGuardFilter;
@@ -30,19 +29,17 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-  private final JwtTokenProvider            jwtTokenProvider;
+  private final JwtTokenProvider jwtTokenProvider;
   private final JwtAuthenticationEntryPoint jwtEntryPoint;
-  private final CustomAccessDeniedHandler   accessDeniedHandler;
-  private final TbranchService              branchSvc;
+  private final CustomAccessDeniedHandler accessDeniedHandler;
+  private final TbranchService branchSvc;
   private final TmemberService memberSvc;
-
 
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    // 로그인 전 IP/지사 검증 필터
-    LoginAccessFilter loginFilter = new LoginAccessFilter(); // ← 파라미터 없이!
+    // 반드시 두 서비스 전달!
+    LoginAccessFilter loginFilter = new LoginAccessFilter(branchSvc, memberSvc);
 
-    // JWT 인증 필터
     JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtTokenProvider, jwtEntryPoint);
     BranchGuardFilter branchFilter = new BranchGuardFilter(jwtTokenProvider, branchSvc);
 
@@ -68,8 +65,11 @@ public class SecurityConfig {
             .authenticationEntryPoint(jwtEntryPoint)
             .accessDeniedHandler(accessDeniedHandler)
         )
+        // 로그인 전 필터(아무 body 작업 X)
         .addFilterBefore(loginFilter, UsernamePasswordAuthenticationFilter.class)
+        // JWT 인증
         .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+        // JWT 통과 후 지사 일치 검사
         .addFilterAfter(branchFilter, JwtAuthenticationFilter.class)
         .logout(ld -> ld
             .logoutUrl("/api/members/logout")
@@ -78,9 +78,6 @@ public class SecurityConfig {
 
     return http.build();
   }
-
-
-
 
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {

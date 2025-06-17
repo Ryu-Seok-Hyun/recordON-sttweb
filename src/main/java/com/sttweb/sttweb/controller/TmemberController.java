@@ -145,8 +145,8 @@ public class TmemberController {
   }
 
   // ================================================================
-  // ★ 로그인 로직 전체 (생략 없이)
-  // ================================================================
+// ★ 로그인 로직 전체 (오류 수정)
+// ================================================================
   @LogActivity(type = "member", activity = "로그인")
   @PostMapping("/login")
   public ResponseEntity<LoginResponse> login(
@@ -168,16 +168,23 @@ public class TmemberController {
     TbranchEntity home = branchSvc.findEntityBySeq(user.getBranchSeq());
     boolean isHqUser = home != null && "0".equals(home.getHqYn());
 
-    String hostH    = request.getHeader("Host");
-    String serverIp = (hostH != null && hostH.contains(":"))
-        ? hostH.split(":")[0]
-        : request.getLocalAddr();
-    int serverPort  = request.getServerPort();
+    // 서버 IP/Port 결정 (detectBranchIpFromLocalNics() + fallback)
+    String nicIp = detectBranchIpFromLocalNics();
+    final String serverIp = (nicIp != null)
+        ? nicIp
+        : Optional.ofNullable(request.getHeader("Host"))
+            .filter(h -> h.contains(":"))
+            .map(h -> h.split(":")[0])
+            .orElse(request.getLocalAddr());
+    final String serverPortStr = String.valueOf(request.getServerPort());
+
+    System.out.printf("[DEBUG][LOGIN] 서버IP=%s, 서버Port=%s%n", serverIp, serverPortStr);
 
     Optional<TbranchEntity> srvBr = branchSvc.findBypIp(serverIp)
-        .filter(b -> b.getPPort().equals(serverPort))
+        .filter(b -> serverPortStr.equals(b.getPPort()))
         .or(() -> branchSvc.findByPbIp(serverIp)
-            .filter(b -> b.getPbPort().equals(serverPort)));
+            .filter(b -> serverPortStr.equals(b.getPbPort()))
+        );
 
     if (!isHqUser) {
       // 지사 계정인데, 접속 서버가 없거나 내 지사와 다르면 차단
@@ -214,7 +221,7 @@ public class TmemberController {
 
     String redirectHost = srvBr.isPresent() ? serverIp : "127.0.0.1";
     String redirectPort = srvBr.isPresent()
-        ? String.valueOf(serverPort)
+        ? serverPortStr
         : "8080";
     String redirectUrl = "http://" + redirectHost + ":" + redirectPort + "?token=" + token;
 
@@ -230,6 +237,7 @@ public class TmemberController {
     );
     return ResponseEntity.ok(loginRes);
   }
+
 
 
   // -----------------------------------------------------------------

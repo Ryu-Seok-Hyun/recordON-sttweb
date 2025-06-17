@@ -2,11 +2,14 @@ package com.sttweb.sttweb.service;
 
 import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.entity.TbranchEntity;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.util.Optional;
 
 public interface TbranchService {
+
+  List<TbranchEntity> findAllEntities();
 
   // 페이징 전체 조회
   Page<TbranchDto> findAll(Pageable pageable);
