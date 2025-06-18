@@ -26,6 +26,7 @@ public class TbranchServiceImpl implements TbranchService {
         .companyId(e.getCompanyId())
         .companyName(e.getCompanyName())
         .phone(e.getPhone())
+        .mailAddress(e.getMailAddress())
         .ipType(e.getIpType())
         .pIp(e.getPIp())
         .pPort(e.getPPort())
@@ -120,6 +121,7 @@ public class TbranchServiceImpl implements TbranchService {
     e.setCompanyId(dto.getCompanyId());
     e.setPhone(dto.getPhone());
     e.setCompanyName(dto.getCompanyName());
+    e.setMailAddress(dto.getMailAddress());
     e.setIpType(dto.getIpType());
     e.setPIp(dto.getPIp());
     e.setPPort(dto.getPPort());
@@ -149,6 +151,7 @@ public class TbranchServiceImpl implements TbranchService {
     e.setCompanyId(dto.getCompanyId());
     e.setPhone(dto.getPhone());
     e.setCompanyName(dto.getCompanyName());
+    e.setMailAddress(dto.getMailAddress());
     e.setIpType(dto.getIpType());
     e.setPIp(dto.getPIp());
     e.setPPort(dto.getPPort());

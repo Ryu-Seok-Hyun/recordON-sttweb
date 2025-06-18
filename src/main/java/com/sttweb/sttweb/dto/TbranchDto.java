@@ -28,6 +28,7 @@ public class TbranchDto {
   @JsonProperty("pPort")
   private String pPort;//P포트
 
+  private String mailAddress; // 메일 주소
   private String pbIp; // IP 주소
   private String pbPort; // PB 포트
   private String hqYn; // 본사 여부
@@ -58,6 +59,7 @@ public class TbranchDto {
         .companyId(e.getCompanyId())
         .phone(e.getPhone())
         .companyName(e.getCompanyName())
+        .mailAddress(e.getMailAddress())
         .ipType(e.getIpType())
         .pbIp(e.getPbIp())
         .pbPort(e.getPbPort())

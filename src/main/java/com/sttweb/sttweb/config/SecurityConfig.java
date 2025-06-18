@@ -82,13 +82,22 @@ public class SecurityConfig {
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration cfg = new CorsConfiguration();
+    // 모든 오리진, 모든 메서드, 모든 요청 헤더 허용
     cfg.setAllowedOriginPatterns(Arrays.asList("*"));
     cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","DELETE","OPTIONS"));
     cfg.setAllowedHeaders(Arrays.asList("*"));
     cfg.setAllowCredentials(true);
-    cfg.setExposedHeaders(Arrays.asList("Authorization"));
+
+    // 여기서 스트리밍에 필요한 헤더들을 추가로 노출!
+    cfg.setExposedHeaders(Arrays.asList(
+        "Authorization",      // 기존
+        "Accept-Ranges",      // 스트리밍 가능 바이트 범위
+        "Content-Range",      // 실제 응답 바이트 범위
+        "Content-Length"      // (선택) 전체 크기 확인용
+    ));
 
     UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+    // 전 경로에 CORS 적용
     src.registerCorsConfiguration("/**", cfg);
     return src;
   }

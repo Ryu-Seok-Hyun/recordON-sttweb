@@ -33,6 +33,9 @@ public class TbranchEntity {
   @Column(name = "companyname", length = 30)
   private String companyName;
 
+  @Column(name = "mail_address", length = 30)
+  private String mailAddress;
+
   @Column(name = "ip_type")
   private Integer ipType;
 
