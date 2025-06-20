@@ -53,6 +53,16 @@ public interface TbranchService {
       return null;
     }
   }
-  Optional<TbranchEntity> findByIpAndPort(String ip, String port);
+  List<TbranchEntity> findByIpAndPort(String ip, String port);
 
+  /** 지사·본사에 설정된 모든 이메일 반환 */
+  List<String> findAllEmails();
+
+  /**  DB에 저장된 주/백업 IP:Port 리스트 반환 */
+  List<TBranchEndpoint> findAllEndpoints();
+
+  /**  특정 IP:Port 엔티티 찾아 상태 갱신 */
+  void updateHealthStatus(String ip, int port, boolean isUp);
+
+  List<TbranchEntity> findAllBranches();
 }

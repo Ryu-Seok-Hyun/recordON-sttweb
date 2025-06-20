@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Objects;
 
 @Service
-@EnableScheduling
 @RequiredArgsConstructor
 public class BranchHealthCheckService {
 

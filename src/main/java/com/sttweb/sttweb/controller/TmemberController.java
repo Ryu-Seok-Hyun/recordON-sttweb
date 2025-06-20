@@ -168,7 +168,7 @@ public class TmemberController {
     TbranchEntity home = branchSvc.findEntityBySeq(user.getBranchSeq());
     boolean isHqUser = home != null && "0".equals(home.getHqYn());
 
-    // 서버 IP/Port 결정 (detectBranchIpFromLocalNics() + fallback)
+    // 서버 IP/Port 결정
     String nicIp = detectBranchIpFromLocalNics();
     final String serverIp = (nicIp != null)
         ? nicIp
@@ -178,23 +178,19 @@ public class TmemberController {
             .orElse(request.getLocalAddr());
     final String serverPortStr = String.valueOf(request.getServerPort());
 
-    System.out.printf("[DEBUG][LOGIN] 서버IP=%s, 서버Port=%s%n", serverIp, serverPortStr);
-
-    Optional<TbranchEntity> srvBr =
-        branchSvc.findByIpAndPort(serverIp, serverPortStr);
+    // 지사 서버 조회
+    List<TbranchEntity> srvBranches = branchSvc.findByIpAndPort(serverIp, serverPortStr);
+    TbranchEntity srvBr = srvBranches.isEmpty() ? null : srvBranches.get(0);
 
     System.out.printf("[DBG] user.branchSeq=%s, home=%s%n",
         user.getBranchSeq(),
         (home == null ? "null" : home.getCompanyName()));
-
     System.out.printf("[DBG] srvBr=%s%n",
-        srvBr.map(b -> b.getBranchSeq() + "/" + b.getCompanyName())
-            .orElse("empty"));
-
+        (srvBr == null ? "empty" : srvBr.getBranchSeq() + "/" + srvBr.getCompanyName()));
 
     if (!isHqUser) {
       // 지사 계정인데, 접속 서버가 없거나 내 지사와 다르면 차단
-      if (srvBr.isEmpty() || !srvBr.get().getBranchSeq().equals(home.getBranchSeq())) {
+      if (srvBr == null || !srvBr.getBranchSeq().equals(home.getBranchSeq())) {
         throw new ResponseStatusException(
             HttpStatus.FORBIDDEN,
             "해당 지사 서버에서는 본사 또는 해당 지사 사용자만 로그인할 수 있습니다."
@@ -202,14 +198,14 @@ public class TmemberController {
       }
     }
 
-    // 3) JWT 생성 이하 로직 (기존 그대로)
+    // 3) JWT 생성 이하 로직
     Info info = Info.fromEntity(user);
     if (home != null) info.setBranchName(home.getCompanyName());
 
     // “현재 접속 지사” 세팅
-    if (srvBr.isPresent()) {
-      info.setCurrentBranchSeq(srvBr.get().getBranchSeq());
-      info.setCurrentBranchName(srvBr.get().getCompanyName());
+    if (srvBr != null) {
+      info.setCurrentBranchSeq(srvBr.getBranchSeq());
+      info.setCurrentBranchName(srvBr.getCompanyName());
     } else {
       info.setCurrentBranchSeq(info.getBranchSeq());
       info.setCurrentBranchName(info.getBranchName());
@@ -218,17 +214,15 @@ public class TmemberController {
     boolean isTempPassword = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTempPassword);
 
-    boolean finalHqYn = isHqUser && srvBr.isEmpty();
+    boolean finalHqYn = isHqUser && srvBr == null;
     info.setHqYn(finalHqYn);
 
     String token = jwtTokenProvider.createTokenFromInfo(info);
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    String redirectHost = srvBr.isPresent() ? serverIp : "127.0.0.1";
-    String redirectPort = srvBr.isPresent()
-        ? serverPortStr
-        : "8080";
+    String redirectHost = srvBr != null ? serverIp : "127.0.0.1";
+    String redirectPort = srvBr != null ? serverPortStr : "8080";
     String redirectUrl = "http://" + redirectHost + ":" + redirectPort + "?token=" + token;
 
     LoginResponse loginRes = new LoginResponse(

@@ -2,6 +2,7 @@ package com.sttweb.sttweb.repository;
 
 
 import com.sttweb.sttweb.entity.TbranchEntity;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,12 +27,13 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
 
   // TbranchRepository.java
   @Query("""
-       SELECT b FROM TbranchEntity b
-       WHERE (b.pIp  = :ip AND CAST(b.pPort  AS string) = :port)
-          OR (b.pbIp = :ip AND CAST(b.pbPort AS string) = :port)
-       """)
-  Optional<TbranchEntity> findByIpAndPort(@Param("ip") String ip,
-      @Param("port") String port);
-
+     SELECT b FROM TbranchEntity b
+     WHERE (b.pIp  = :ip AND CAST(b.pPort  AS string) = :port)
+        OR (b.pbIp = :ip AND CAST(b.pbPort AS string) = :port)
+     """)
+  List<TbranchEntity> findByIpAndPort(
+      @Param("ip") String ip,
+      @Param("port") String port
+  );
 
 }

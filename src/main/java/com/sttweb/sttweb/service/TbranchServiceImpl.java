@@ -4,6 +4,8 @@ import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.repository.TbranchRepository;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +23,8 @@ public class TbranchServiceImpl implements TbranchService {
 
   private final TbranchRepository repo;
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private final TbranchRepository branchRepository;
+  private final TbranchRepository repository;
 
   private TbranchDto toDto(TbranchEntity e) {
     return TbranchDto.builder()
@@ -189,7 +195,87 @@ public class TbranchServiceImpl implements TbranchService {
   }
 
   @Override
-  public Optional<TbranchEntity> findByIpAndPort(String ip, String port) {
+  @Transactional(readOnly = true)
+  public List<TbranchEntity> findByIpAndPort(String ip, String port) {  // [변경] 반환타입 List
     return repo.findByIpAndPort(ip, port);
   }
+
+  /**
+   * [추가] 지사·본사에 설정된 모든 이메일 반환
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public List<String> findAllEmails() {
+    return repo.findAll().stream()
+        .map(TbranchEntity::getMailAddress)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * [추가] DB에 저장된 주/백업 IP:Port 리스트 반환
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public List<TBranchEndpoint> findAllEndpoints() {
+    return repo.findAll().stream()
+        .flatMap(b -> {
+          List<TBranchEndpoint> eps = new ArrayList<>();
+          // 주 IP
+          if (b.getPIp() != null && b.getPPort() != null) {
+            try {
+              int pPort = Integer.parseInt(b.getPPort());
+              String svc  = (pPort == 39080) ? "XAMPP(Apache)" :
+                  (pPort == 9200 ) ? "OpenSearch"      :
+                      "Unknown";
+              eps.add(new TBranchEndpoint(
+                  b.getCompanyName(), b.getPIp(), pPort, svc
+              ));
+            } catch (NumberFormatException ignored) {}
+          }
+          // 백업 IP (필요 없으면 이 블록을 제거하세요)
+          if (b.getPbIp() != null && b.getPbPort() != null) {
+            try {
+              int pbPort = Integer.parseInt(b.getPbPort());
+              String svc  = (pbPort == 39080) ? "XAMPP(Apache) (백업)" :
+                  (pbPort == 9200 ) ? "OpenSearch (백업)"      :
+                      "Unknown (백업)";
+              eps.add(new TBranchEndpoint(
+                  b.getCompanyName(), b.getPbIp(), pbPort, svc
+              ));
+            } catch (NumberFormatException ignored) {}
+          }
+          return eps.stream();
+        })
+        .collect(Collectors.toList());
+  }
+
+
+  /**
+   * 상태 체크 후 DB 갱신
+   */
+  @Override
+  @Transactional
+  public void updateHealthStatus(String ip, int port, boolean isUp) {
+    String portStr = String.valueOf(port);
+    List<TbranchEntity> branches = repo.findByIpAndPort(ip, portStr);  // [변경] Optional → List
+
+    for (TbranchEntity b : branches) {
+      boolean prevAlive = Boolean.TRUE.equals(b.getIsAlive());
+      b.setIsAlive(isUp);
+      b.setLastHealthCheck(LocalDateTime.now());
+      if (!isUp && prevAlive) {
+        b.setLastDowntime(LocalDateTime.now());
+      }
+      repo.save(b);
+    }
+  }
+
+  @Override
+  public List<TbranchEntity> findAllBranches() {
+    // **static** 이 아니라, 인스턴스(repository)에서 findAll() 호출!
+    return repository.findAll();
+  }
 }
+
+
