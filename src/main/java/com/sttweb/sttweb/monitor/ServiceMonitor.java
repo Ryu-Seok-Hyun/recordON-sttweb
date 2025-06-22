@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -41,22 +42,18 @@ public class ServiceMonitor {
   // 하루 한도 초과 시 false로 내려가고, 자정에 다시 true로 복구됩니다.
   private volatile boolean emailEnabled = true;
 
+  // --- [수정] Endpoint를 표현하기 위한 내부 레코드(Record) 정의 ---
+  private record Endpoint(String ip, int port, Service service) {}
+
   @PostConstruct
   public void initializeStatusCache() {
     log.info("▶ 서비스 상태 캐시 초기화 (실제 상태 기반)");
-    branchService.findAllBranches().forEach(branch -> {
-      String ip = branch.getPIp();
-      if (ip == null || ip.isBlank()) return;
-
-      for (Service svc : Service.values()) {
-        String key = buildKey(ip, svc.port);
-        boolean upNow = isReachable(ip, svc.port);
-        serviceStatusCache.put(key, upNow);
-        log.debug("  - {} 초기상태: {}", key, upNow ? "UP" : "DOWN");
-        // (원한다면) DB에도 동기화
-        branchService.updateHealthStatus(ip, svc.port, upNow);
-      }
-    });
+    for (Endpoint endpoint : getUniqueEndpoints()) {
+      boolean upNow = isReachable(endpoint.ip, endpoint.port);
+      serviceStatusCache.put(buildKey(endpoint.ip, endpoint.port), upNow);
+      log.debug("  - {} ({}) 초기상태: {}", buildKey(endpoint.ip, endpoint.port), endpoint.service.label, upNow ? "UP" : "DOWN");
+      branchService.updateHealthStatus(endpoint.ip, endpoint.port, upNow);
+    }
     log.info("▶ 서비스 상태 캐시 초기화 완료");
   }
 
@@ -69,28 +66,90 @@ public class ServiceMonitor {
       return;
     }
 
+    // --- [수정] 지점(Branch) 대신 고유 엔드포인트(Endpoint)를 기준으로 순회 ---
+    for (Endpoint endpoint : getUniqueEndpoints()) {
+      String key = buildKey(endpoint.ip, endpoint.port);
+      boolean upNow = isReachable(endpoint.ip, endpoint.port);
+      boolean upBefore = serviceStatusCache.getOrDefault(key, upNow);
+
+      if (upNow != upBefore) {
+        // 1) 캐시·DB 업데이트
+        serviceStatusCache.put(key, upNow);
+        branchService.updateHealthStatus(endpoint.ip, endpoint.port, upNow);
+
+        // --- [수정] 단일 메일이 아닌, 통합 메일 전송 로직 호출 ---
+        sendConsolidatedMail(endpoint, upNow);
+
+        log.info("[{}] {}:{} 상태변경 {}→{}",
+            endpoint.service.label, endpoint.ip, endpoint.port,
+            upBefore ? "UP" : "DOWN",
+            upNow ? "UP" : "DOWN");
+      }
+    }
+  }
+
+  /**
+   * [신규] 모든 지점 정보를 바탕으로 고유한 모니터링 대상(IP:Port) 목록을 생성합니다.
+   */
+  private Set<Endpoint> getUniqueEndpoints() {
+    Set<Endpoint> endpoints = new HashSet<>();
     for (TbranchEntity branch : branchService.findAllBranches()) {
       String ip = branch.getPIp();
-      if (ip == null || ip.isBlank()) continue;
-
-      for (Service svc : Service.values()) {
-        String key      = buildKey(ip, svc.port);
-        boolean upNow   = isReachable(ip, svc.port);
-        boolean upBefore= serviceStatusCache.getOrDefault(key, upNow);
-
-        if (upNow != upBefore) {
-          // 1) 캐시·DB 업데이트
-          serviceStatusCache.put(key, upNow);
-          branchService.updateHealthStatus(ip, svc.port, upNow);
-
-          // 2) 개별 알림 메일 전송
-          sendSingleMail(branch.getCompanyName(), ip, svc, upNow);
-
-          log.info("[{}] {}:{} 상태변경 {}→{}",
-              svc.label, ip, svc.port,
-              upBefore ? "UP" : "DOWN",
-              upNow     ? "UP" : "DOWN");
+      if (ip != null && !ip.isBlank()) {
+        for (Service svc : Service.values()) {
+          endpoints.add(new Endpoint(ip, svc.port, svc));
         }
+      }
+    }
+    return endpoints;
+  }
+
+  /**
+   * [수정] 단일 이벤트에 대해 영향을 받는 모든 지점을 묶어 한 통의 메일만 발송합니다.
+   */
+  private void sendConsolidatedMail(Endpoint endpoint, boolean recovered) {
+    String time = LocalDateTime.now().format(TS_FMT);
+    String status = recovered ? "복구되었습니다." : "중지되었습니다.";
+    String subject = String.format("[서비스 알림] %s %s", endpoint.service.label, recovered ? "복구" : "장애");
+
+    // 해당 IP와 Port를 사용하는 모든 지점의 이름을 찾습니다.
+    List<TbranchEntity> affectedBranches = branchService.findByIpAndPort(endpoint.ip, String.valueOf(endpoint.port));
+    String affectedBranchNames = affectedBranches.stream()
+        .map(TbranchEntity::getCompanyName)
+        .collect(Collectors.joining(", "));
+
+    if (affectedBranchNames.isEmpty()) {
+      affectedBranchNames = "(알 수 없는 지점)";
+    }
+
+    String body = String.format(
+        "서비스: %s%n" +
+            "서버: %s:%d%n" +
+            "상태: %s%n" +
+            "발생시각: %s%n\n" +
+            "영향받는 지점: %s",
+        endpoint.service.label, endpoint.ip, endpoint.port,
+        status,
+        time,
+        affectedBranchNames
+    );
+
+    SimpleMailMessage msg = new SimpleMailMessage();
+    msg.setTo(adminEmails.toArray(new String[0]));
+    msg.setSubject(subject);
+    msg.setText(body);
+
+    try {
+      mailSender.send(msg);
+      log.info("▶ 통합 메일 발송 [{}]: {} -> {}",
+          recovered ? "RECOVER" : "DOWN", endpoint.ip + ":" + endpoint.port, affectedBranchNames);
+    } catch (MailException ex) {
+      if (ex.getCause() instanceof SMTPSendFailedException
+          && ex.getMessage().contains("550-5.4.5 Daily user sending limit exceeded")) {
+        emailEnabled = false;
+        log.error("‼ Gmail 일일 한도 초과, 이후 메일 발송 중단");
+      } else {
+        log.error("메일 전송 실패: {}", ex.getMessage(), ex);
       }
     }
   }
@@ -102,38 +161,6 @@ public class ServiceMonitor {
   public void resetEmailFlag() {
     emailEnabled = true;
     log.info("▶ 이메일 발송 플래그 자정에 초기화");
-  }
-
-  private void sendSingleMail(String branchName, String host, Service svc, boolean recovered) {
-    String time    = LocalDateTime.now().format(TS_FMT);
-    String status  = recovered ? "복구되었습니다." : "중지되었습니다.";
-    String subject = String.format("[서비스 알림] %s %s", svc.label, recovered ? "복구" : "장애");
-    String body    = String.format(
-        "지점명: %s%nIP: %s:%d%n%n%s %s%n발생시각: %s",
-        branchName, host, svc.port,
-        svc.label, status,
-        time
-    );
-
-    SimpleMailMessage msg = new SimpleMailMessage();
-    msg.setTo(adminEmails.toArray(new String[0]));  // 한 번만 호출
-    msg.setSubject(subject);
-    msg.setText(body);
-
-    try {
-      mailSender.send(msg);
-      log.info("▶ 개별 메일 발송 [{}]: {} - {}",
-          recovered ? "RECOVER" : "DOWN", branchName, svc.label);
-    } catch (MailException ex) {
-      // Gmail 한도 초과 감지
-      if (ex.getCause() instanceof SMTPSendFailedException
-          && ex.getMessage().contains("550-5.4.5 Daily user sending limit exceeded")) {
-        emailEnabled = false;
-        log.error("‼ Gmail 일일 한도 초과, 이후 메일 발송 중단");
-      } else {
-        log.error("메일 전송 실패: {}", ex.getMessage(), ex);
-      }
-    }
   }
 
   private boolean isReachable(String host, int port) {
@@ -150,12 +177,16 @@ public class ServiceMonitor {
   }
 
   private enum Service {
-    APACHE     (39080, "XAMPP(Apache)"),
-    TOMCAT     (39090, "Tomcat"),
-    OPENSEARCH (9200,  "OpenSearch");
+    APACHE(39080, "XAMPP(Apache)"),
+    TOMCAT(39090, "Tomcat"),
+    OPENSEARCH(9200, "OpenSearch");
 
-    final int    port;
+    final int port;
     final String label;
-    Service(int port, String label) { this.port = port; this.label = label; }
+
+    Service(int port, String label) {
+      this.port = port;
+      this.label = label;
+    }
   }
 }
