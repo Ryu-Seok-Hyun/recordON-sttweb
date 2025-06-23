@@ -176,7 +176,7 @@ public class TrecordController {
         ? LocalDateTime.parse(startStr, fmt) : null;
     LocalDateTime end = StringUtils.hasText(endStr)
         ? LocalDateTime.parse(endStr, fmt) : null;
-
+    recordSvc.scanRecOnData();
     // 3) 사용자 조회 + 페이징 준비
     Info me = requireLogin(authHeader);
     String lvl = me.getUserLevel();
@@ -529,7 +529,7 @@ public class TrecordController {
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
     LocalDateTime end   = (endStr   != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr,   fmt) : null;
-
+    recordSvc.scanRecOnData();
     Info me   = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);

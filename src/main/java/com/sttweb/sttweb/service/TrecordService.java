@@ -128,4 +128,8 @@ public interface TrecordService {
   // Service
 
   Page<TrecordDto> searchByPhoneNumberOnlyLike(String phone, Pageable pageable);
+
+  void scanRecOnData();
+
+
 }

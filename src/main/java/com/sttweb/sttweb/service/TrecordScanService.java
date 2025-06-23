@@ -8,6 +8,8 @@ import com.sttweb.sttweb.entity.TrecordEntity;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Stream;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TrecordScanService {
@@ -315,4 +318,34 @@ public class TrecordScanService {
       }
     }
   }
+
+  /**
+   * TrecordServiceImpl에서 호출할 스캔 진입점
+   */
+  @Transactional
+  public void scanRecOnData() {
+    try {
+      int count = scanAndSaveNewRecords();
+      // 원하면 로그로 삽입된 건수 확인
+      System.out.println("scanRecOnData: inserted " + count + " new records");
+    } catch (IOException e) {
+      throw new RuntimeException("RecOnData 스캔 중 오류", e);
+    }
+  }
+
+
+  /**
+   * 매일 새벽 3시에 자동으로 RecOnData 스캔
+   */
+  @Scheduled(cron = "0 0 3 * * *")
+  @Transactional
+  public void scheduledScan() {
+    try {
+      int cnt = scanAndSaveNewRecords();
+      log.info("자동 녹취 스캔 완료, 신규 등록: {}건", cnt);
+    } catch (IOException e) {
+      log.error("자동 녹취 스캔 실패", e);
+    }
+  }
 }
+

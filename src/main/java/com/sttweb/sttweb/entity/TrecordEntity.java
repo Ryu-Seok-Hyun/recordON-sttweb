@@ -39,10 +39,10 @@ public class TrecordEntity {
   @Column(name = "IO_discd_val", length = 2)
   private String ioDiscdVal;
 
-  @Column(name = "number1", length = 4)
+  @Column(name = "number1", length = 50)
   private String number1;
 
-  @Column(name = "number2", length = 15)
+  @Column(name = "number2", length = 50)
   private String number2;
 
   @Column(name = "audioFileDir", length = 70)

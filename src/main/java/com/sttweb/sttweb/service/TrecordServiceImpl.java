@@ -13,6 +13,8 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.criteria.Root;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,17 +50,20 @@ public class TrecordServiceImpl implements TrecordService {
   private final TmemberRepository memberRepo;
   private final TmemberService memberSvc;
   private final TbranchService branchSvc;
+  private final TrecordScanService scanSvc;
 
   public TrecordServiceImpl(
       TrecordRepository repo,
       TmemberRepository memberRepo,
       TmemberService memberSvc,
-      TbranchService branchSvc
+      TbranchService branchSvc,
+      TrecordScanService scanSvc
   ) {
     this.repo = repo;
     this.memberRepo = memberRepo;
     this.memberSvc = memberSvc;
     this.branchSvc = branchSvc;
+    this.scanSvc  = scanSvc;
   }
 
   private String normalizeToFourDigit(String raw) {
@@ -123,11 +128,31 @@ public class TrecordServiceImpl implements TrecordService {
         .build();
   }
 
+//  @Override
+//  @Transactional(readOnly = true)
+//  public Page<TrecordDto> findAll(Pageable pageable) {
+//    return repo.findAll(pageable).map(this::toDto);
+//  }
+
+  @Override
+  @Transactional
+  public void scanRecOnData() {
+    try {
+      scanSvc.scanAndSaveNewRecords();
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> findAll(Pageable pageable) {
+    // findAll() 호출 전에도 스캔
+    scanRecOnData();
     return repo.findAll(pageable).map(this::toDto);
   }
+
+
 
   @Override
   @Transactional(readOnly = true)
@@ -585,6 +610,7 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
+    scanSvc.scanRecOnData();
     // 🔥 [1] PHONE + q 입력시 → 부분 일치(LIKE) 검색
     if ("PHONE".equalsIgnoreCase(numberKind) && q != null && !q.isBlank()) {
       // 번호 부분 검색(전화번호 LIKE)
