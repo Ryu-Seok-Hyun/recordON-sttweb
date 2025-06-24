@@ -46,6 +46,14 @@ public class LoginAccessFilter extends OncePerRequestFilter {
     return ips;
   }
 
+//  @Override
+//  protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+//    // POST /api/members/login 이외의 요청은 이 필터를 통과시킴
+//    return !(
+//        HttpMethod.POST.matches(request.getMethod())
+//            && "/api/members/login".equals(request.getServletPath())
+//    );
+//  }
 
   @Override
   protected void doFilterInternal(

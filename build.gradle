@@ -73,8 +73,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-aop'
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
-	implementation 'com.github.ulisesbocchio:jasypt-spring-boot-starter:3.0.4'
-	implementation group: 'org.jasypt', name: 'jasypt', version: '1.9.2'
+	implementation 'com.github.ulisesbocchio:jasypt-spring-boot-starter:3.0.5'
+	implementation 'org.jasypt:jasypt:1.9.3'
 
 	implementation 'jakarta.annotation:jakarta.annotation-api'
 
