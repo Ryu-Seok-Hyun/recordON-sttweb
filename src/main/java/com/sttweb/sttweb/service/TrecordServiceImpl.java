@@ -3,11 +3,19 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
+import com.sttweb.sttweb.entity.TrecordTelListEntity;
 import com.sttweb.sttweb.repository.TmemberLinePermRepository;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
+import com.sttweb.sttweb.repository.TrecordTelListRepository;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TbranchService;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Stream;
+import org.springframework.cache.annotation.Cacheable;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
@@ -25,6 +33,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
@@ -40,7 +50,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class TrecordServiceImpl implements TrecordService {
 
 
-
   private static final String[] SEARCH_DRIVES = {"C:", "D:", "E:"};
   private static final String REC_ON_DATA_SUB = "\\RecOnData";
   private static final DateTimeFormatter DT_FMT =
@@ -51,20 +60,84 @@ public class TrecordServiceImpl implements TrecordService {
   private final TmemberService memberSvc;
   private final TbranchService branchSvc;
   private final TrecordScanService scanSvc;
+  private final TrecordTelListRepository telRepo;
 
   public TrecordServiceImpl(
       TrecordRepository repo,
       TmemberRepository memberRepo,
       TmemberService memberSvc,
       TbranchService branchSvc,
-      TrecordScanService scanSvc
+      TrecordScanService scanSvc,
+      TrecordTelListRepository telRepo
   ) {
-    this.repo = repo;
+    this.repo       = repo;
     this.memberRepo = memberRepo;
-    this.memberSvc = memberSvc;
-    this.branchSvc = branchSvc;
-    this.scanSvc  = scanSvc;
+    this.memberSvc  = memberSvc;
+    this.branchSvc  = branchSvc;
+    this.scanSvc    = scanSvc;
+    this.telRepo    = telRepo;
   }
+
+  /** N+1 방지용 일괄 조회 Map */
+  private Map<String, TmemberEntity> numberToMemberMap(List<TrecordEntity> entities) {
+    Set<String> allNumbers = entities.stream()
+        .flatMap(e -> Stream.of(e.getNumber1(), e.getNumber2()))
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    if (allNumbers.isEmpty()) return Collections.emptyMap();
+    List<TmemberEntity> members = memberRepo.findByNumberIn(allNumbers);
+    return members.stream().collect(Collectors.toMap(TmemberEntity::getNumber, m -> m));
+  }
+
+  private Map<Integer, String> branchSeqToNameMap(List<TrecordEntity> entities) {
+    Set<Integer> bSeqs = entities.stream()
+        .map(TrecordEntity::getBranchSeq)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    if (bSeqs.isEmpty()) return Collections.emptyMap();
+    Map<Integer, String> result = new HashMap<>();
+    for (Integer seq : bSeqs) {
+      try { result.put(seq, branchSvc.findById(seq).getCompanyName()); } catch (Exception ignore) {}
+    }
+    return result;
+  }
+
+  /** DTO 변환 - 일괄 캐싱 Map 기반 */
+  private TrecordDto toDto(TrecordEntity e, Map<String, TmemberEntity> numberMap, Map<Integer, String> branchNameMap) {
+    Integer bs = null;
+    String ext1 = normalizeToFourDigit(e.getNumber1());
+    String ext2 = normalizeToFourDigit(e.getNumber2());
+    if (ext1 != null && numberMap.containsKey(ext1)) {
+      bs = numberMap.get(ext1).getBranchSeq();
+    }
+    if (bs == null && ext2 != null && numberMap.containsKey(ext2)) {
+      bs = numberMap.get(ext2).getBranchSeq();
+    }
+    if (bs == null && e.getBranchSeq() != null) bs = e.getBranchSeq();
+
+    String branchName = bs != null ? branchNameMap.get(bs) : null;
+
+    return TrecordDto.builder()
+        .recordSeq(e.getRecordSeq())
+        .callStartDateTime(e.getCallStartDateTime() != null
+            ? e.getCallStartDateTime().toLocalDateTime().format(DT_FMT) : null)
+        .callEndDateTime(e.getCallEndDateTime() != null
+            ? e.getCallEndDateTime().toLocalDateTime().format(DT_FMT) : null)
+        .audioPlayTime(e.getAudioPlayTime() != null ? e.getAudioPlayTime().toString() : null)
+        .ioDiscdVal(e.getIoDiscdVal())
+        .number1(e.getNumber1())
+        .number2(e.getNumber2())
+        .audioFileDir(e.getAudioFileDir())
+        .callStatus(e.getCallStatus())
+        .regDate(e.getRegDate() != null ? e.getRegDate().toLocalDateTime().format(DT_FMT) : null)
+        .lineId(e.getLineId())
+        .ownerMemberSeq(e.getOwnerMemberSeq())
+        .branchSeq(bs)
+        .branchName(branchName)
+        .build();
+  }
+
+
 
   private String normalizeToFourDigit(String raw) {
     if (raw == null)
@@ -147,28 +220,35 @@ public class TrecordServiceImpl implements TrecordService {
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> findAll(Pageable pageable) {
-    // findAll() 호출 전에도 스캔
-    scanRecOnData();
-    return repo.findAll(pageable).map(this::toDto);
+    Page<TrecordEntity> page = repo.findAll(pageable);
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap = branchSeqToNameMap(page.getContent());
+    List<TrecordDto> dtoList = page.getContent().stream()
+        .map(e -> toDto(e, numberMap, branchNameMap))
+        .toList();
+    return new PageImpl<>(dtoList, pageable, page.getTotalElements());
   }
-
 
 
   @Override
   @Transactional(readOnly = true)
-  public Page<TrecordDto> searchByNumber(
-      String number1, String number2, Pageable pageable
-  ) {
+  public Page<TrecordDto> searchByNumber(String number1, String number2, Pageable pageable) {
+    Page<TrecordEntity> page;
     if (number1 != null && number2 != null) {
-      return repo.findByNumber1OrNumber2(number1, number2, pageable)
-          .map(this::toDto);
+      page = repo.findByNumber1OrNumber2(number1, number2, pageable);
     } else if (number1 != null) {
-      return repo.findByNumber1(number1, pageable).map(this::toDto);
+      page = repo.findByNumber1(number1, pageable);
     } else if (number2 != null) {
-      return repo.findByNumber2(number2, pageable).map(this::toDto);
+      page = repo.findByNumber2(number2, pageable);
     } else {
-      return findAll(pageable);
+      page = repo.findAll(pageable);
     }
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap = branchSeqToNameMap(page.getContent());
+    List<TrecordDto> dtoList = page.getContent().stream()
+        .map(e -> toDto(e, numberMap, branchNameMap))
+        .toList();
+    return new PageImpl<>(dtoList, pageable, page.getTotalElements());
   }
 
   @Override
@@ -261,15 +341,25 @@ public class TrecordServiceImpl implements TrecordService {
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> findAllByBranch(Integer branchSeq, Pageable pageable) {
-    return repo.findAllByBranchSeq(branchSeq, pageable)
-        .map(this::toDto);
+    Page<TrecordEntity> page = repo.findAllByBranchSeq(branchSeq, pageable);
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap = branchSeqToNameMap(page.getContent());
+    List<TrecordDto> dtoList = page.getContent().stream()
+        .map(e -> toDto(e, numberMap, branchNameMap))
+        .toList();
+    return new PageImpl<>(dtoList, pageable, page.getTotalElements());
   }
 
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> searchByNumbers(List<String> numbers, Pageable pageable) {
-    return repo.findByNumber1InOrNumber2In(numbers, numbers, pageable)
-        .map(this::toDto);
+    Page<TrecordEntity> page = repo.findByNumber1InOrNumber2In(numbers, numbers, pageable);
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap = branchSeqToNameMap(page.getContent());
+    List<TrecordDto> dtoList = page.getContent().stream()
+        .map(e -> toDto(e, numberMap, branchNameMap))
+        .toList();
+    return new PageImpl<>(dtoList, pageable, page.getTotalElements());
   }
 
   @Override
@@ -373,8 +463,10 @@ public class TrecordServiceImpl implements TrecordService {
   @Override
   public long countByBranchAndDirection(Integer branchSeq, String direction) {
     if ("ALL".equalsIgnoreCase(direction)) {
-      if (branchSeq == null) return repo.count();
-      else return repo.countByBranchSeq(branchSeq);
+      if (branchSeq == null)
+        return repo.count();
+      else
+        return repo.countByBranchSeq(branchSeq);
     }
     String ioVal = switch (direction.toUpperCase()) {
       case "IN" -> "수신";
@@ -597,7 +689,9 @@ public class TrecordServiceImpl implements TrecordService {
         .map(this::toDto);
   }
 
-  /** 관리자/지점장용 검색 */
+  /**
+   * 관리자/지점장용 검색
+   */
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> search(
@@ -610,7 +704,7 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
-    scanSvc.scanRecOnData();
+//    scanSvc.scanRecOnData();
     // 🔥 [1] PHONE + q 입력시 → 부분 일치(LIKE) 검색
     if ("PHONE".equalsIgnoreCase(numberKind) && q != null && !q.isBlank()) {
       // 번호 부분 검색(전화번호 LIKE)
@@ -620,12 +714,16 @@ public class TrecordServiceImpl implements TrecordService {
 
     // 🔥 [2] 기존 통합 검색
     Boolean inbound = null;
-    if ("IN".equalsIgnoreCase(direction))  inbound = true;
-    if ("OUT".equalsIgnoreCase(direction)) inbound = false;
+    if ("IN".equalsIgnoreCase(direction))
+      inbound = true;
+    if ("OUT".equalsIgnoreCase(direction))
+      inbound = false;
 
     Boolean isExt = null;
-    if ("EXT".equalsIgnoreCase(numberKind))   isExt = true;
-    if ("PHONE".equalsIgnoreCase(numberKind)) isExt = false;
+    if ("EXT".equalsIgnoreCase(numberKind))
+      isExt = true;
+    if ("PHONE".equalsIgnoreCase(numberKind))
+      isExt = false;
 
     return repo.searchByQuery(
         number1,
@@ -678,4 +776,24 @@ public class TrecordServiceImpl implements TrecordService {
   }
 
 
+  /**
+   * 내선 목록을 캐시에 저장
+   */
+  @Cacheable(cacheNames = "telList")
+  public Map<Integer, String> loadLineIdToCallNum() {
+    return telRepo.findAll().stream()
+        .collect(Collectors.toMap(
+            TrecordTelListEntity::getId,
+            TrecordTelListEntity::getCallNum
+        ));
+  }
+
+  public Map<String, Long> getInboundOutboundCount(LocalDateTime start, LocalDateTime end) {
+    return repo.countByDirectionGrouped(start, end).stream()
+        .collect(Collectors.toMap(
+            row -> (String) row[0],
+            row -> (Long) row[1]
+        ));
+
+  }
 }

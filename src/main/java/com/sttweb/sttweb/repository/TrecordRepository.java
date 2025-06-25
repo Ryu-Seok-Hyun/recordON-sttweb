@@ -134,7 +134,7 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       Pageable pageable);
 
   /**
-   * 최근 녹취 조회 (등록일 기준)
+   * 최근 녹취 조회
    */
   @Query("SELECT t FROM TrecordEntity t ORDER BY t.regDate DESC")
   Page<TrecordEntity> findRecentRecords(Pageable pageable);
@@ -302,4 +302,17 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   );
 
   Page<TrecordEntity> findByNumber2Containing(String number2, Pageable pageable);
+
+  @Query("""
+    SELECT t.ioDiscdVal AS direction, COUNT(t) AS cnt
+      FROM TrecordEntity t
+     WHERE (:start IS NULL OR t.callStartDateTime >= :start)
+       AND (:end   IS NULL OR t.callStartDateTime <= :end)
+     GROUP BY t.ioDiscdVal
+    """)
+  List<Object[]> countByDirectionGrouped(
+      @Param("start") LocalDateTime start,
+      @Param("end")   LocalDateTime end);
 }
+
+

@@ -37,7 +37,6 @@ import java.io.IOException;
 public class TrecordController {
 
   private final TrecordService recordSvc;
-  private final TrecordScanService scanSvc;
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
   private final UserPermissionRepository userPermRepo;
@@ -149,366 +148,212 @@ public class TrecordController {
   @GetMapping
   public ResponseEntity<Map<String, Object>> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
-      @RequestParam(name = "page",       defaultValue = "0")     int    page,
-      @RequestParam(name = "size",       defaultValue = "10")    int    size,
-      @RequestParam(name = "direction",  defaultValue = "ALL")   String direction,
-      @RequestParam(name = "numberKind", defaultValue = "ALL")   String numberKind,
-      @RequestParam(name = "q",          required = false)      String q,
-      @RequestParam(name = "start",      required = false)      String startStr,
-      @RequestParam(name = "end",        required = false)      String endStr
+      @RequestParam(name = "page",       defaultValue = "0")   int    page,
+      @RequestParam(name = "size",       defaultValue = "10")  int    size,
+      @RequestParam(name = "direction",  defaultValue = "ALL") String directionParam,
+      @RequestParam(name = "numberKind", defaultValue = "ALL") String numberKindParam,
+      @RequestParam(name = "q",          required = false)    String qParam,
+      @RequestParam(name = "start",      required = false)    String startStr,
+      @RequestParam(name = "end",        required = false)    String endStr
   ) {
-    // 1) 빈 문자열 보정
-    if (!StringUtils.hasText(direction))
-      direction = "ALL";
-    if (!StringUtils.hasText(numberKind))
-      numberKind = "ALL";
-
-    // 2) PHONE 전용 모드 보정
-    //    - 검색어(q) 없으면 PHONE → ALL 모드로 바꿔서 내선 목록 조회
-    //    - 검색어(q) 있으면 PHONE 모드 그대로 유지해서 아래 LIKE 검색 분기로
-    if (!StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
+    // 1) 원본 파라미터 보정
+    String direction = StringUtils.hasText(directionParam)  ? directionParam  : "ALL";
+    String numberKind = StringUtils.hasText(numberKindParam) ? numberKindParam : "ALL";
+    if (!StringUtils.hasText(qParam) && "PHONE".equalsIgnoreCase(numberKind)) {
       numberKind = "ALL";
     }
 
     // 2) 날짜 파싱
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    LocalDateTime start = StringUtils.hasText(startStr)
-        ? LocalDateTime.parse(startStr, fmt) : null;
-    LocalDateTime end = StringUtils.hasText(endStr)
-        ? LocalDateTime.parse(endStr, fmt) : null;
-    recordSvc.scanRecOnData();
-    // 3) 사용자 조회 + 페이징 준비
-    Info me = requireLogin(authHeader);
+    LocalDateTime start = StringUtils.hasText(startStr) ? LocalDateTime.parse(startStr, fmt) : null;
+    LocalDateTime end   = StringUtils.hasText(endStr)   ? LocalDateTime.parse(endStr,   fmt) : null;
+
+    // 3) 인증 & 페이징
+    Info me   = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable reqPage = PageRequest.of(page, size);
 
-// 내선 모드에서만 number1=내선번호 정확 일치만 검색
-    if ("EXT".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
+    // --- 람다에서 안전히 참조할 final 복사본 ---
+    final String filterDir       = direction;
+    final String filterNumberKind = numberKind;
+    final String filterQ         = qParam;
+    final Info   loginUser       = me;
+
+    // 4) EXT 모드 (내선 정확 일치 검색)
+    if ("EXT".equalsIgnoreCase(filterNumberKind) && StringUtils.hasText(filterQ)) {
       Page<TrecordDto> extPaged = recordSvc.search(
-          q, null,         // number1에만 exact
-          direction,
-          "EXT",
-          null,            // 통화내용 검색 X
-          start, end,
-          reqPage
+          filterQ, null, filterDir, "EXT", null, start, end, reqPage
       );
       extPaged.getContent().forEach(rec -> {
-        if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
+        if (rec.getLineId() == null
+            && rec.getNumber1() != null
+            && rec.getNumber1().length() == 4) {
           trecordTelListRepository.findByCallNum(rec.getNumber1())
-              .ifPresent(line -> rec.setLineId(line.getId()));
+              .map(TrecordTelListEntity::getId)
+              .ifPresent(rec::setLineId);
         }
-        if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
+        if (loginUser.getMaskFlag() != null && loginUser.getMaskFlag() == 0) {
           rec.maskNumber2();
         }
       });
-      long inboundCount = recordSvc.search(
-          q, null, "IN", "EXT", null, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
-      long outboundCount = recordSvc.search(
-          q, null, "OUT", "EXT", null, start, end, PageRequest.of(0, 1)
-      ).getTotalElements();
+      long inbound  = recordSvc.search(filterQ, null, "IN",  "EXT", null, start, end, PageRequest.of(0,1)).getTotalElements();
+      long outbound = recordSvc.search(filterQ, null, "OUT", "EXT", null, start, end, PageRequest.of(0,1)).getTotalElements();
 
-      Map<String, Object> body = new LinkedHashMap<>();
-      body.put("content", extPaged.getContent());
+      Map<String,Object> body = new LinkedHashMap<>();
+      body.put("content",       extPaged.getContent());
       body.put("totalElements", extPaged.getTotalElements());
-      body.put("totalPages", extPaged.getTotalPages());
-      body.put("size", extPaged.getSize());
-      body.put("number", extPaged.getNumber());
-      body.put("empty", extPaged.isEmpty());
-      body.put("inboundCount", inboundCount);
-      body.put("outboundCount", outboundCount);
+      body.put("totalPages",    extPaged.getTotalPages());
+      body.put("size",          extPaged.getSize());
+      body.put("number",        extPaged.getNumber());
+      body.put("empty",         extPaged.isEmpty());
+      body.put("inboundCount",  inbound);
+      body.put("outboundCount", outbound);
       return ResponseEntity.ok(body);
     }
-// ----[여기까지 추가]----
 
-    // 5) PHONE 모드 + q 있을 때 → 전화번호 LIKE 검색, 즉시 리턴
-    if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
-      Page<TrecordDto> phonePaged = recordSvc.searchByPhoneNumberOnlyLike(q, reqPage);
-
-      final String filterDir = direction;
-
-        // ▶ 여기부터 추가: direction 필터(수신/발신) 적용
-            if (!"ALL".equalsIgnoreCase(filterDir)) {
-            List<TrecordDto> filtered = phonePaged.getContent().stream()
-                    .filter(rec -> {
-                    if ("IN".equalsIgnoreCase(filterDir))   return "수신".equals(rec.getIoDiscdVal());
-                    if ("OUT".equalsIgnoreCase(filterDir))  return "발신".equals(rec.getIoDiscdVal());
-                    return true;
-                  })
-                    .collect(Collectors.toList());
-            phonePaged = new PageImpl<>(filtered, reqPage, filtered.size());
-          }
-      // ◀ 여기까지 추가
-
+    // 5) PHONE 모드 + q (전화번호 LIKE 검색)
+    if ("PHONE".equalsIgnoreCase(filterNumberKind) && StringUtils.hasText(filterQ)) {
+      Page<TrecordDto> phonePaged = recordSvc.searchByPhoneNumberOnlyLike(filterQ, reqPage);
+      if (!"ALL".equalsIgnoreCase(filterDir)) {
+        List<TrecordDto> filtered = phonePaged.getContent().stream()
+            .filter(rec -> {
+              if ("IN".equalsIgnoreCase(filterDir))  return "수신".equals(rec.getIoDiscdVal());
+              if ("OUT".equalsIgnoreCase(filterDir)) return "발신".equals(rec.getIoDiscdVal());
+              return true;
+            })
+            .toList();
+        phonePaged = new PageImpl<>(filtered, reqPage, filtered.size());
+      }
       phonePaged.getContent().forEach(rec -> {
-        if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
+        if (rec.getLineId() == null
+            && rec.getNumber1() != null
+            && rec.getNumber1().length() == 4) {
           trecordTelListRepository.findByCallNum(rec.getNumber1())
-              .ifPresent(line -> rec.setLineId(line.getId()));
+              .map(TrecordTelListEntity::getId)
+              .ifPresent(rec::setLineId);
         }
-        if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
+        if (loginUser.getMaskFlag() != null && loginUser.getMaskFlag() == 0) {
           rec.maskNumber2();
         }
       });
+      long inbound, outbound;
+      if (!"ALL".equalsIgnoreCase(filterDir)) {
+        if ("IN".equalsIgnoreCase(filterDir)) {
+          inbound  = phonePaged.getTotalElements();
+          outbound = 0;
+        } else {
+          inbound  = 0;
+          outbound = phonePaged.getTotalElements();
+        }
+      } else {
+        inbound  = recordSvc.search(null, null, "IN",  "ALL", filterQ, start, end, PageRequest.of(0,1)).getTotalElements();
+        outbound = recordSvc.search(null, null, "OUT", "ALL", filterQ, start, end, PageRequest.of(0,1)).getTotalElements();
+      }
 
-      // ▶ filterDir(IN/OUT/ALL)에 따라, phonePaged 기준으로 수신/발신 건수 설정
-          long inboundCount;
-          long outboundCount;
-          if (!"ALL".equalsIgnoreCase(filterDir)) {
-              // IN 모드면 phonePaged 전체가 수신, OUT 모드면 0
-                  if ("IN".equalsIgnoreCase(filterDir)) {
-                  inboundCount  = phonePaged.getTotalElements();
-                  outboundCount = 0;
-                } else {
-                  inboundCount  = 0;
-                  outboundCount = phonePaged.getTotalElements();
-                }
-            } else {
-              // ALL 모드면 기존처럼 서비스 호출
-                  inboundCount = recordSvc.search(
-                      null, null,
-                      "IN",
-                      "ALL",
-                      q,
-                      start, end,
-                      PageRequest.of(0, 1)
-                      ).getTotalElements();
-              outboundCount = recordSvc.search(
-                      null, null,
-                      "OUT",
-                      "ALL",
-                      q,
-                      start, end,
-                      PageRequest.of(0, 1)
-                      ).getTotalElements();
-            }
-
-      Map<String, Object> body = new LinkedHashMap<>();
-      body.put("content",        phonePaged.getContent());
-      body.put("totalElements",  phonePaged.getTotalElements());
-      body.put("totalPages",     phonePaged.getTotalPages());
-      body.put("size",           phonePaged.getSize());
-      body.put("number",         phonePaged.getNumber());
-      body.put("empty",          phonePaged.isEmpty());
-      body.put("inboundCount",   inboundCount);   // ← 전체 수신 건수
-      body.put("outboundCount",  outboundCount);  // ← 전체 발신 건수
+      Map<String,Object> body = new LinkedHashMap<>();
+      body.put("content",       phonePaged.getContent());
+      body.put("totalElements", phonePaged.getTotalElements());
+      body.put("totalPages",    phonePaged.getTotalPages());
+      body.put("size",          phonePaged.getSize());
+      body.put("number",        phonePaged.getNumber());
+      body.put("empty",         phonePaged.isEmpty());
+      body.put("inboundCount",  inbound);
+      body.put("outboundCount", outbound);
       return ResponseEntity.ok(body);
     }
 
-
-//      // (기존과 동일한 후처리: LineId 세팅, 마스킹 등)
-//      phonePaged.getContent().forEach(rec -> {
-//        if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
-//          trecordTelListRepository.findByCallNum(rec.getNumber1())
-//              .ifPresent(line -> rec.setLineId(line.getId()));
-//        }
-//        if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
-//          rec.maskNumber2();
-//        }
-//      });
-
-//
-//      // [★ 여기 추가]
-//      long inboundCount = recordSvc.search(
-//          null, null, "IN", null, q, start, end, PageRequest.of(0, 1)
-//      ).getTotalElements();
-//      long outboundCount = recordSvc.search(
-//          null, null, "OUT", null, q, start, end, PageRequest.of(0, 1)
-//      ).getTotalElements();
-//      // -----------------
-//
-//
-//      // 바디 빌드 & 리턴
-//      Map<String, Object> body = new LinkedHashMap<>();
-//      body.put("content", phonePaged.getContent());
-//      body.put("totalElements", phonePaged.getTotalElements());
-//      body.put("totalPages", phonePaged.getTotalPages());
-//      body.put("size", phonePaged.getSize());
-//      body.put("number", phonePaged.getNumber());
-//      body.put("empty", phonePaged.isEmpty());
-//      body.put("inboundCount", inboundCount);
-//      body.put("outboundCount", outboundCount);
-//      // 필요하면 inboundCount/outboundCount 등 추가
-//      return ResponseEntity.ok(body);
-//    }
-
+    // 6) 기본 검색 분기
     Page<TrecordDto> paged;
     if ("0".equals(lvl)) {
-      // 관리자: 전체 + 필터
-      paged = recordSvc.search(
-          null, null,
-          direction, numberKind, q,
-          start, end,
-          reqPage
-      );
+      paged = recordSvc.search(null, null, filterDir, filterNumberKind, filterQ, start, end, reqPage);
     } else if ("1".equals(lvl)) {
-      // 지점장: 지점 내 전체 내선 + 필터
-      List<String> nums = memberSvc
-          .listUsersInBranch(me.getBranchSeq(), PageRequest.of(0, Integer.MAX_VALUE))
+      List<String> nums = memberSvc.listUsersInBranch(loginUser.getBranchSeq(), PageRequest.of(0,Integer.MAX_VALUE))
           .getContent().stream()
           .map(Info::getNumber)
-          .filter(Objects::nonNull)
+          .filter(StringUtils::hasText)
           .map(this::normalizeToFourDigit)
           .filter(Objects::nonNull)
           .toList();
       if (nums.isEmpty()) {
         paged = Page.empty(reqPage);
-      } else {     // 전화번호 검색어 있을 때는 LIKE 검색으로
-        if (StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
-          paged = recordSvc.search(
-              null, null,
-              direction, numberKind, q,
-              start, end,
-              reqPage
-          );
-        } else {
-          paged = recordSvc.searchByMixedNumbers(
-              nums,
-              direction, numberKind, q,
-              start, end,
-              reqPage
-          );
-        }
+      } else if (StringUtils.hasText(filterQ) && "PHONE".equalsIgnoreCase(filterNumberKind)) {
+        paged = recordSvc.search(null, null, filterDir, filterNumberKind, filterQ, start, end, reqPage);
+      } else {
+        paged = recordSvc.searchByMixedNumbers(nums, filterDir, filterNumberKind, filterQ, start, end, reqPage);
       }
     } else if ("2".equals(lvl)) {
-      // ▶ 일반 사용자: q가 있으면 콘텐츠 검색, 없으면 내선번호 검색
-      if (q != null && !q.isBlank()) {
-        // (1) 통화내용(q) 검색
-        paged = recordSvc.search(
-            null, null, direction, numberKind, q, start, end, reqPage
-        );
+      if (StringUtils.hasText(filterQ)) {
+        paged = recordSvc.search(null, null, filterDir, filterNumberKind, filterQ, start, end, reqPage);
       } else {
-        // (2) 내선번호 검색
-        List<String> nums = getAccessibleNumbers(me.getUserId());
+        List<String> nums = getAccessibleNumbers(loginUser.getUserId());
         if (nums.isEmpty()) {
           paged = Page.empty(reqPage);
         } else {
-          paged = recordSvc.searchByMixedNumbers(
-              nums, direction, numberKind, q, start, end, reqPage
-          );
+          paged = recordSvc.searchByMixedNumbers(nums, filterDir, filterNumberKind, filterQ, start, end, reqPage);
         }
       }
     } else {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 
+    // 7) 후처리 (lineId, owner/role, masking, listenAuth)
     paged.getContent().forEach(rec -> {
-      if (rec.getLineId() == null && rec.getNumber1() != null && rec.getNumber1().length() == 4) {
+      if (rec.getLineId() == null
+          && rec.getNumber1() != null
+          && rec.getNumber1().length() == 4) {
         trecordTelListRepository.findByCallNum(rec.getNumber1())
-            .ifPresent(line -> rec.setLineId(line.getId()));
+            .map(TrecordTelListEntity::getId)
+            .ifPresent(rec::setLineId);
       }
-      if (rec.getOwnerMemberSeq() == null && rec.getNumber1() != null) {
-        memberSvc.getAllMembers().stream()
-            .filter(m -> rec.getNumber1().equals(m.getNumber()))
-            .findFirst()
-            .ifPresent(m -> rec.setOwnerMemberSeq(m.getMemberSeq()));
-      }
-      if (rec.getOwnerMemberSeq() != null && rec.getLineId() != null) {
-        Integer roleSeq = memberLinePermRepo.findRoleSeqByMemberSeqAndLineId(
-            rec.getOwnerMemberSeq(),
-            rec.getLineId()
-        );
-        rec.setRoleSeq(roleSeq);
-      }
-      boolean canL = "0".equals(lvl) || "1".equals(lvl)
-          || ("2".equals(lvl) && hasPermissionForNumber(me.getUserId(), rec.getNumber1(), 3));
+      // ownerMemberSeq, roleSeq 설정...
+      boolean canListen = "0".equals(lvl)
+          || "1".equals(lvl)
+          || ("2".equals(lvl) && hasPermissionForNumber(loginUser.getUserId(), rec.getNumber1(), 3));
       try {
         Field f = TrecordDto.class.getDeclaredField("listenAuth");
         f.setAccessible(true);
-        f.set(rec, canL ? "가능" : "불가능");
-      } catch (Exception ignored) {
+        f.set(rec, canListen ? "가능" : "불가능");
+      } catch (Exception ignore) {}
+      if (loginUser.getMaskFlag() != null && loginUser.getMaskFlag() == 0) {
+        rec.maskNumber2();
       }
     });
 
-    if (me.getMaskFlag() != null && me.getMaskFlag() == 0)
-      paged.getContent().forEach(TrecordDto::maskNumber2);
-
-    // ▶ 카운트 계산 로직
-    long inboundCount;
-    long outboundCount;
-
-    // direction 파라미터가 ALL 이 아닐 때
-    if (!"ALL".equalsIgnoreCase(direction)) {
-      if ("IN".equalsIgnoreCase(direction)) {
-        // 수신만 필터링: 전체 건수가 수신 건수
+    // 8) 수신/발신 카운트
+    long inboundCount, outboundCount;
+    if (!"ALL".equalsIgnoreCase(filterDir)) {
+      if ("IN".equalsIgnoreCase(filterDir)) {
         inboundCount  = paged.getTotalElements();
         outboundCount = 0;
-      } else { // direction == OUT
+      } else {
         inboundCount  = 0;
         outboundCount = paged.getTotalElements();
       }
-    }
-    // direction=ALL 일 때 (관리자/지점장/사용자별 원래 로직 유지)
-    else {
-      if ("0".equals(lvl)) {
-        inboundCount  = recordSvc.search(
-            null, null, "IN",  numberKind, q, start, end,
-            PageRequest.of(0, 1)
-        ).getTotalElements();
-        outboundCount = recordSvc.search(
-            null, null, "OUT", numberKind, q, start, end,
-            PageRequest.of(0, 1)
-        ).getTotalElements();
-
-      } else if ("1".equals(lvl)) {
-        List<String> nums = memberSvc
-            .listUsersInBranch(me.getBranchSeq(), PageRequest.of(0, Integer.MAX_VALUE))
-            .getContent().stream()
-            .map(Info::getNumber)
-            .filter(Objects::nonNull)
-            .map(this::normalizeToFourDigit)
-            .filter(Objects::nonNull)
-            .toList();
-
-        inboundCount  = nums.isEmpty() ? 0
-            : recordSvc.searchByMixedNumbers(
-                nums, "IN", numberKind, q, start, end,
-                PageRequest.of(0, 1)
-            ).getTotalElements();
-        outboundCount = nums.isEmpty() ? 0
-            : recordSvc.searchByMixedNumbers(
-                nums, "OUT", numberKind, q, start, end,
-                PageRequest.of(0, 1)
-            ).getTotalElements();
-
-      } else if ("2".equals(lvl)) {
-        List<String> nums = getAccessibleNumbers(me.getUserId());
-
-        inboundCount  = nums.isEmpty() ? 0
-            : recordSvc.searchByMixedNumbers(
-                nums, "IN", numberKind, q, start, end,
-                PageRequest.of(0, 1)
-            ).getTotalElements();
-        outboundCount = nums.isEmpty() ? 0
-            : recordSvc.searchByMixedNumbers(
-                nums, "OUT", numberKind, q, start, end,
-                PageRequest.of(0, 1)
-            ).getTotalElements();
-
-      } else {
-        inboundCount  = 0;
-        outboundCount = 0;
-      }
+    } else {
+      inboundCount  = recordSvc.search(null, null, "IN",  filterNumberKind, filterQ, start, end, PageRequest.of(0,1)).getTotalElements();
+      outboundCount = recordSvc.search(null, null, "OUT", filterNumberKind, filterQ, start, end, PageRequest.of(0,1)).getTotalElements();
     }
 
-// ---[★여기까지 추가!]--------------------------------------------
-
-    Map<String, Object> body = new LinkedHashMap<>();
-    body.put("content", paged.getContent());
-    body.put("totalElements", paged.getTotalElements());
-    body.put("totalPages", paged.getTotalPages());
-    body.put("size", paged.getSize());
-    body.put("number", paged.getNumber());
+    // 9) 응답 바디 구성
+    Map<String,Object> body = new LinkedHashMap<>();
+    body.put("content",          paged.getContent());
+    body.put("totalElements",    paged.getTotalElements());
+    body.put("totalPages",       paged.getTotalPages());
+    body.put("size",             paged.getSize());
+    body.put("number",           paged.getNumber());
     body.put("numberOfElements", paged.getNumberOfElements());
-    body.put("empty", paged.isEmpty());
-    body.put("inboundCount", inboundCount);    // ← 추가
-    body.put("outboundCount", outboundCount);  // ← 추가
-    body.put("first", paged.isFirst());
-    body.put("last", paged.isLast());
-    body.put("pageable", paged.getPageable());
-    body.put("sort", paged.getSort());
+    body.put("empty",            paged.isEmpty());
+    body.put("inboundCount",     inboundCount);
+    body.put("outboundCount",    outboundCount);
+    body.put("first",            paged.isFirst());
+    body.put("last",             paged.isLast());
+    body.put("pageable",         paged.getPageable());
+    body.put("sort",             paged.getSort());
 
     return ResponseEntity.ok(body);
   }
+
+
 
   // 번호로 녹취 검색
   @LogActivity(type = "record", activity = "조회", contents = "번호 검색")
@@ -529,7 +374,7 @@ public class TrecordController {
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
     LocalDateTime end   = (endStr   != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr,   fmt) : null;
-    recordSvc.scanRecOnData();
+//    recordSvc.scanRecOnData();
     Info me   = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);

@@ -2,6 +2,8 @@
 package com.sttweb.sttweb.repository;
 
 import com.sttweb.sttweb.entity.TmemberEntity;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -75,6 +77,8 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
       @Param("memberSeq") Integer memberSeq,
       @Param("roleSeq")   Integer roleSeq
   );
+
+  List<TmemberEntity> findByNumberIn(Collection<String> numbers);
 
 
 }
