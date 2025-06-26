@@ -794,6 +794,27 @@ public class TrecordServiceImpl implements TrecordService {
             row -> (String) row[0],
             row -> (Long) row[1]
         ));
-
   }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByAudioFileNames(List<String> fileNames, Pageable pageable) {
+    if (fileNames == null || fileNames.isEmpty()) {
+      return Page.empty(pageable);
+    }
+
+    // Specification 으로 audioFileDir LIKE '%파일명' 을 OR 조건으로 묶어서 검색
+    Specification<TrecordEntity> spec = (root, query, cb) -> {
+      List<Predicate> predicates = new ArrayList<>();
+      for (String fname : fileNames) {
+        String pattern = "%" + fname.trim();
+        predicates.add(cb.like(root.get("audioFileDir"), pattern));
+      }
+      return cb.or(predicates.toArray(new Predicate[0]));
+    };
+
+    return repo.findAll(spec, pageable)
+        .map(this::toDto);
+  }
+
 }

@@ -313,6 +313,8 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   List<Object[]> countByDirectionGrouped(
       @Param("start") LocalDateTime start,
       @Param("end")   LocalDateTime end);
+
+
 }
 
 

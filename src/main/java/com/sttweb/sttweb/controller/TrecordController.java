@@ -364,9 +364,10 @@ public class TrecordController {
       @RequestParam(value = "number2",    required = false) String number2,
       @RequestParam(name = "direction",   defaultValue = "ALL") String direction,
       @RequestParam(name = "numberKind",  defaultValue = "ALL") String numberKind,
-      @RequestParam(name = "q",           required = false)      String q,
-      @RequestParam(name = "start",       required = false)      String startStr,
-      @RequestParam(name = "end",         required = false)      String endStr,
+      @RequestParam(value = "audioFiles", required = false) String audioFilesCsv,
+      @RequestParam(name = "q",           required = false) String q,
+      @RequestParam(name = "start",       required = false) String startStr,
+      @RequestParam(name = "end",         required = false) String endStr,
       @RequestHeader(value = "Authorization", required = false) String authHeader,
       @RequestParam(value = "page", defaultValue = "0") int page,
       @RequestParam(value = "size", defaultValue = "10") int size
@@ -374,58 +375,59 @@ public class TrecordController {
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = (startStr != null && !startStr.isEmpty()) ? LocalDateTime.parse(startStr, fmt) : null;
     LocalDateTime end   = (endStr   != null && !endStr.isEmpty()) ? LocalDateTime.parse(endStr,   fmt) : null;
-//    recordSvc.scanRecOnData();
-    Info me   = requireLogin(authHeader);
+
+    Info me = requireLogin(authHeader);
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);
-
     Page<TrecordDto> paged;
 
-    // q **없을 때** PHONE → ALL
-       if (!StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
-          numberKind = "ALL";
-         }
+    // ✅ audioFilesCsv 우선 처리
+    if (audioFilesCsv != null && !audioFilesCsv.isBlank()) {
+      List<String> audioFileDirs = Arrays.stream(audioFilesCsv.split(","))
+          .map(String::trim)
+          .filter(s -> !s.isEmpty())
+          .toList();
 
-    // q가 있으면 무조건 ALL로
-      if (StringUtils.hasText(q)) {
-          numberKind = "ALL";
-         }
+      paged = recordSvc.searchByAudioFileNames(audioFileDirs, pr);
 
+      // 후처리
+      paged.getContent().forEach(rec -> {
+        if (rec.getNumber1() != null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
+        if (rec.getNumber2() != null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));
+      });
+      if (me.getMaskFlag() != null && me.getMaskFlag() == 0) {
+        paged.getContent().forEach(TrecordDto::maskNumber2);
+      }
+
+      return ResponseEntity.ok(paged);
+    }
+
+    // ✅ numberKind 보정
+    if (!StringUtils.hasText(q) && "PHONE".equalsIgnoreCase(numberKind)) {
+      numberKind = "ALL";
+    }
+    if (StringUtils.hasText(q)) {
+      numberKind = "ALL";
+    }
+
+    // ✅ 권한별 검색
     if ("0".equals(lvl) || "1".equals(lvl)) {
-      // ADMIN/지점장: 전체 or CSV → 필터
       if (numbersCsv != null && !numbersCsv.isBlank()) {
         List<String> nums = Arrays.stream(numbersCsv.split(","))
             .map(String::trim).filter(s -> !s.isEmpty()).toList();
-        paged = recordSvc.searchByMixedNumbers(
-            nums,
-            direction, numberKind, q,
-            start, end,
-            pr
-        );
-      }
-      else if ((number1 != null && !number1.isBlank()) || (number2 != null && !number2.isBlank())) {
-        paged = recordSvc.search(
-            number1, number2,
-            direction, numberKind, q,
-            start, end,
-            pr
-        );
-      }
-      else {
-        paged = recordSvc.search(
-            null, null,
-            direction, numberKind, q,
-            start, end,
-            pr
-        );
+        paged = recordSvc.searchByMixedNumbers(nums, direction, numberKind, q, start, end, pr);
+      } else if ((number1 != null && !number1.isBlank()) || (number2 != null && !number2.isBlank())) {
+        paged = recordSvc.search(number1, number2, direction, numberKind, q, start, end, pr);
+      } else {
+        paged = recordSvc.search(null, null, direction, numberKind, q, start, end, pr);
       }
     }
+
     else if ("2".equals(lvl)) {
       List<String> accessible = getAccessibleNumbers(me.getUserId());
       if (accessible.isEmpty()) {
         paged = Page.empty(pr);
       } else {
-        // 입력된 CSV → accessible 필터
         List<String> nums = (numbersCsv != null && !numbersCsv.isBlank())
             ? Arrays.stream(numbersCsv.split(","))
             .map(String::trim)
@@ -434,19 +436,15 @@ public class TrecordController {
             .toList()
             : accessible;
 
-        if (nums.isEmpty()) {
-          paged = Page.empty(pr);
-        } else {
-          paged = recordSvc.searchByMixedNumbers(nums, pr);
-        }
+        paged = nums.isEmpty() ? Page.empty(pr) : recordSvc.searchByMixedNumbers(nums, pr);
       }
     }
-    // ───────────────────────────────────────────────────────────
+
     else {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 
-    // 후처리 (번호 포맷, 권한, 마스킹 등)
+    // ✅ 후처리
     paged.getContent().forEach(rec -> {
       if (rec.getNumber1() != null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
       if (rec.getNumber2() != null) rec.setNumber2(convertToExtensionDisplay(rec.getNumber2()));

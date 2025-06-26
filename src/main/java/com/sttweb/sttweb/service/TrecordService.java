@@ -131,4 +131,6 @@ public interface TrecordService {
 
   void scanRecOnData();
 
+  Page<TrecordDto> searchByAudioFileNames(List<String> fileNames, Pageable pageable);
+
 }
