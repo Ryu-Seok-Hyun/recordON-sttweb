@@ -267,7 +267,9 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   @Query("""
     SELECT t
       FROM TrecordEntity t
-     WHERE (t.number1 IN :nums OR t.number2 IN :nums)
+     WHERE
+       t.number1 IN :nums
+       AND (:q IS NULL OR t.number1 LIKE CONCAT('%',:q,'%') OR t.number2 LIKE CONCAT('%',:q,'%'))
        AND (
          :direction = 'ALL'
          OR (:direction = 'IN'  AND t.ioDiscdVal = '수신')
@@ -278,10 +280,10 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
          OR (:numberKind = 'EXT'   AND LENGTH(t.number1) <= 4)
          OR (:numberKind = 'PHONE' AND LENGTH(t.number1) > 4)
        )
-       AND (:q     IS NULL OR t.number1 LIKE CONCAT('%',:q,'%') OR t.number2 LIKE CONCAT('%',:q,'%'))
        AND (:start IS NULL OR t.callStartDateTime >= :start)
        AND (:end   IS NULL OR t.callStartDateTime <= :end)
   """)
+
   Page<TrecordEntity> searchByNumsAndQuery(
       @Param("nums")        List<String>   nums,
       @Param("direction")   String         direction,
@@ -291,6 +293,7 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       @Param("end")         LocalDateTime  end,
       Pageable             pageable
   );
+
 
   /**
    * number1 또는 number2에 해당 문자열이 포함된 녹취 검색 (전화번호 부분 검색용)

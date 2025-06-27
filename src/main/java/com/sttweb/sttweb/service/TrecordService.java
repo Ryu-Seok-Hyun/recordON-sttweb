@@ -3,6 +3,7 @@ package com.sttweb.sttweb.service;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import java.util.List;
+import java.util.Map;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -132,5 +133,8 @@ public interface TrecordService {
   void scanRecOnData();
 
   Page<TrecordDto> searchByAudioFileNames(List<String> fileNames, Pageable pageable);
+  Map<String, Long> getInboundOutboundCount(LocalDateTime start, LocalDateTime end);
+
+  Page<TrecordDto> searchByPhoneEnding(String phoneEnding, Pageable pageable);
 
 }

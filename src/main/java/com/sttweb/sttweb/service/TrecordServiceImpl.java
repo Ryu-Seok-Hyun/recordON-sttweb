@@ -10,6 +10,8 @@ import com.sttweb.sttweb.repository.TrecordRepository;
 import com.sttweb.sttweb.repository.TrecordTelListRepository;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TbranchService;
+import org.springframework.beans.factory.annotation.Value;
+import java.io.File;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Objects;
@@ -44,6 +46,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -201,12 +204,6 @@ public class TrecordServiceImpl implements TrecordService {
         .build();
   }
 
-//  @Override
-//  @Transactional(readOnly = true)
-//  public Page<TrecordDto> findAll(Pageable pageable) {
-//    return repo.findAll(pageable).map(this::toDto);
-//  }
-
   @Override
   @Transactional
   public void scanRecOnData() {
@@ -258,38 +255,6 @@ public class TrecordServiceImpl implements TrecordService {
         .map(this::toDto);
   }
 
-//  @Override
-//  @Transactional(readOnly = true)
-//  public Page<TrecordDto> search(
-//      String number1,
-//      String number2,
-//      String direction,
-//      String numberKind,
-//      String query,
-//      LocalDateTime start,
-//      LocalDateTime end,
-//      Pageable pageable
-//  ) {
-//    Boolean inbound = null;
-//    if ("IN".equalsIgnoreCase(direction))
-//      inbound = true;
-//    if ("OUT".equalsIgnoreCase(direction))
-//      inbound = false;
-//
-//    Boolean isExt = null;
-//    if ("EXT".equalsIgnoreCase(numberKind))
-//      isExt = true;
-//    if ("PHONE".equalsIgnoreCase(numberKind))
-//      isExt = false;
-//
-//    return repo.search(
-//        number1, number2,
-//        inbound, isExt, query,
-//        start, end,
-//        pageable
-//    ).map(this::toDto);
-//  }
-
   @Override
   @Transactional(readOnly = true)
   public Page<TrecordDto> advancedSearch(
@@ -313,11 +278,16 @@ public class TrecordServiceImpl implements TrecordService {
       spec = spec.and((root, query, cb) ->
           cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4));
     } else if ("PHONE".equalsIgnoreCase(numberKind)) {
-      spec = spec.and((root, query, cb) ->
-          cb.greaterThan(cb.length(root.get("number1")), 4));
+      // 전화번호 검색 시 q가 있다면 끝자리 일치로 검색
+      if (StringUtils.hasText(q)) {
+        spec = spec.and((root, cq, cb) -> cb.like(root.get("number2"), "%" + q));
+      } else {
+        spec = spec.and((root, query, cb) ->
+            cb.greaterThan(cb.length(root.get("number1")), 4));
+      }
     }
 
-    if (q != null && !q.isBlank()) {
+    if (q != null && !q.isBlank() && !"PHONE".equalsIgnoreCase(numberKind)) {
       String pattern = "%" + q + "%";
       spec = spec.and((root, query, cb) ->
           cb.like(root.get("callStatus"), pattern));
@@ -704,12 +674,10 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
-//    scanSvc.scanRecOnData();
-    // 🔥 [1] PHONE + q 입력시 → 부분 일치(LIKE) 검색
-    if ("PHONE".equalsIgnoreCase(numberKind) && q != null && !q.isBlank()) {
-      // 번호 부분 검색(전화번호 LIKE)
-      return repo.findByNumber1ContainingOrNumber2Containing(q, q, pageable)
-          .map(this::toDto);
+    // 🔥 [수정] "전화번호" 검색 시 "끝자리 일치" 로직으로 변경
+    if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
+      Specification<TrecordEntity> spec = (root, query, cb) -> cb.like(root.get("number2"), "%" + q);
+      return repo.findAll(spec, pageable).map(this::toDto);
     }
 
     // 🔥 [2] 기존 통합 검색
@@ -752,11 +720,23 @@ public class TrecordServiceImpl implements TrecordService {
       LocalDateTime end,
       Pageable pageable
   ) {
-    // 1) “전화번호” 선택 후 q에 값이 들어왔으면, 부분 일치로 바로 검색
-    if ("PHONE".equalsIgnoreCase(numberKind) && q != null && !q.isBlank()) {
-      return repo
-          .findByNumber1ContainingOrNumber2Containing(q, q, pageable)
-          .map(this::toDto);
+    // 🔥 [수정] "전화번호" 검색 시 "끝자리 일치" 로직으로 변경
+    if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
+      Specification<TrecordEntity> spec = (root, query, cb) -> {
+        // 기본적으로 전화번호 끝자리 일치
+        Predicate phoneLike = cb.like(root.get("number2"), "%" + q);
+
+        // 사용자의 권한이 있는 번호(numbers) 목록과도 일치해야 함
+        List<Predicate> numberOrs = new ArrayList<>();
+        for (String num : numbers) {
+          numberOrs.add(cb.equal(root.get("number1"), num));
+          numberOrs.add(cb.equal(root.get("number2"), num));
+        }
+        Predicate hasPermission = cb.or(numberOrs.toArray(new Predicate[0]));
+
+        return cb.and(phoneLike, hasPermission);
+      };
+      return repo.findAll(spec, pageable).map(this::toDto);
     }
 
     // 2) 그 외(내선 필터 등)는 기존대로 권한 내선 목록 + JPQL 검색
@@ -768,11 +748,9 @@ public class TrecordServiceImpl implements TrecordService {
 
   @Override
   public Page<TrecordDto> searchByPhoneNumberOnlyLike(String phone, Pageable pageable) {
-    // TrecordRepository에 메서드가 있으면 사용, 없으면 직접 QueryDSL/JPA로 구현
-    // 예시: number2 LIKE 검색 (number2 컬럼이 TrecordEntity에 있다고 가정)
-    Page<TrecordEntity> entityPage = repo.findByNumber2Containing(phone, pageable);
-    List<TrecordDto> dtoList = entityPage.stream().map(TrecordDto::from).toList();
-    return new PageImpl<>(dtoList, pageable, entityPage.getTotalElements());
+    // number1 또는 number2 에 phone 문자열이 포함된 녹취 모두 검색
+    return repo.findByNumber1ContainingOrNumber2Containing(phone, phone, pageable)
+        .map(this::toDto);
   }
 
 
@@ -803,12 +781,11 @@ public class TrecordServiceImpl implements TrecordService {
       return Page.empty(pageable);
     }
 
-    // Specification 으로 audioFileDir LIKE '%파일명' 을 OR 조건으로 묶어서 검색
     Specification<TrecordEntity> spec = (root, query, cb) -> {
       List<Predicate> predicates = new ArrayList<>();
       for (String fname : fileNames) {
-        String pattern = "%" + fname.trim();
-        predicates.add(cb.like(root.get("audioFileDir"), pattern));
+        String base = fname.trim().replaceAll("\\.wav$", "");  // .wav 제거
+        predicates.add(cb.like(root.get("audioFileDir"), "%" + base + "%"));
       }
       return cb.or(predicates.toArray(new Predicate[0]));
     };
@@ -817,4 +794,16 @@ public class TrecordServiceImpl implements TrecordService {
         .map(this::toDto);
   }
 
+
+  /**
+   * 전화번호(number2) 끝자리 일치 검색
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByPhoneEnding(String phoneEnding, Pageable pageable) {
+    Specification<TrecordEntity> spec = (root, query, cb) ->
+        cb.like(root.get("number2"), "%" + phoneEnding);
+    return repo.findAll(spec, pageable)
+        .map(this::toDto);
+  }
 }
