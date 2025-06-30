@@ -19,11 +19,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.Arrays;
 
 @Configuration
 @RequiredArgsConstructor
@@ -37,19 +32,19 @@ public class SecurityConfig {
 
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    // 반드시 두 서비스 전달!
-    LoginAccessFilter loginFilter = new LoginAccessFilter(branchSvc, memberSvc);
-
-    JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtTokenProvider, jwtEntryPoint);
-    BranchGuardFilter branchFilter = new BranchGuardFilter(jwtTokenProvider, branchSvc);
+    // 로그인 전·후 필터
+    var loginFilter  = new LoginAccessFilter(branchSvc, memberSvc);
+    var jwtFilter    = new JwtAuthenticationFilter(jwtTokenProvider, jwtEntryPoint);
+    var branchFilter = new BranchGuardFilter(jwtTokenProvider, branchSvc);
 
     http
         .csrf(AbstractHttpConfigurer::disable)
-        .cors(cors -> cors
-            .configurationSource(corsConfigurationSource())
-        )
-        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        // WebMvcConfigurer 에 정의한 CORS 설정 적용
+        .cors(Customizer.withDefaults())
+        .sessionManagement(sm ->
+            sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
+            // 프리플라이트(OPTIONS) 허용
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             .requestMatchers(
                 "/api/members/signup",
@@ -67,40 +62,15 @@ public class SecurityConfig {
             .authenticationEntryPoint(jwtEntryPoint)
             .accessDeniedHandler(accessDeniedHandler)
         )
-        // 로그인 전 필터(아무 body 작업 X)
-        .addFilterBefore(loginFilter, UsernamePasswordAuthenticationFilter.class)
-        // JWT 인증
-        .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-        // JWT 통과 후 지사 일치 검사
-        .addFilterAfter(branchFilter, JwtAuthenticationFilter.class)
+        .addFilterBefore(loginFilter,  UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(jwtFilter,    UsernamePasswordAuthenticationFilter.class)
+        .addFilterAfter(branchFilter,   JwtAuthenticationFilter.class)
         .logout(ld -> ld
             .logoutUrl("/api/members/logout")
-            .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
+            .logoutSuccessHandler(
+                (req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
         );
 
     return http.build();
-  }
-
-  @Bean
-  public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration cfg = new CorsConfiguration();
-    // 모든 오리진, 모든 메서드, 모든 요청 헤더 허용
-    cfg.setAllowedOriginPatterns(Arrays.asList("*"));
-    cfg.setAllowedMethods(Arrays.asList("GET","POST","PUT","DELETE","OPTIONS"));
-    cfg.setAllowedHeaders(Arrays.asList("*"));
-    cfg.setAllowCredentials(true);
-
-    // 여기서 스트리밍에 필요한 헤더들을 추가로 노출!
-    cfg.setExposedHeaders(Arrays.asList(
-        "Authorization",      // 기존
-        "Accept-Ranges",      // 스트리밍 가능 바이트 범위
-        "Content-Range",      // 실제 응답 바이트 범위
-        "Content-Length"      // (선택) 전체 크기 확인용
-    ));
-
-    UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
-    // 전 경로에 CORS 적용
-    src.registerCorsConfiguration("/**", cfg);
-    return src;
   }
 }

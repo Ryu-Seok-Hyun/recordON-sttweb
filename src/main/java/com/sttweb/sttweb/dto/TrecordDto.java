@@ -34,6 +34,13 @@ public class TrecordDto {
   private Integer roleSeq;
   private Integer lineId;
 
+  // ─────────── 여기에 두 필드를 추가 ───────────
+  /** HQ 서버를 통해 접근할 수 있는 스트리밍 URL */
+  private String listenUrl;
+  /** HQ 서버를 통해 접근할 수 있는 다운로드 URL */
+  private String downloadUrl;
+  // ──────────────────────────────────────────
+
   public Integer getRoleSeq() {
     return roleSeq == null ? 0 : roleSeq;
   }
@@ -41,14 +48,10 @@ public class TrecordDto {
     return lineId == null ? 0 : lineId;
   }
 
-
   public void setLineId(Integer lineId) {
     this.lineId = lineId;
   }
-  /**
-   * number2가 휴대폰 번호일 경우 중간 4자리(예: “01012345678” → “010****5678”)를
-   * mask 처리하는 메서드
-   */
+
   public void maskNumber2() {
     if (this.number2 == null) {
       return;
@@ -60,16 +63,18 @@ public class TrecordDto {
       this.number2 = head + "****" + tail;
     }
   }
-  // TrecordDto.java (DTO 파일에 추가)
+
   public static TrecordDto from(TrecordEntity e) {
     if (e == null) return null;
     return TrecordDto.builder()
         .recordSeq(e.getRecordSeq())
         .callStartDateTime(e.getCallStartDateTime() != null
-            ? e.getCallStartDateTime().toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            ? e.getCallStartDateTime().toLocalDateTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
             : null)
         .callEndDateTime(e.getCallEndDateTime() != null
-            ? e.getCallEndDateTime().toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            ? e.getCallEndDateTime().toLocalDateTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
             : null)
         .audioPlayTime(e.getAudioPlayTime() != null ? e.getAudioPlayTime().toString() : null)
         .ioDiscdVal(e.getIoDiscdVal())
@@ -78,12 +83,12 @@ public class TrecordDto {
         .audioFileDir(e.getAudioFileDir())
         .callStatus(e.getCallStatus())
         .regDate(e.getRegDate() != null
-            ? e.getRegDate().toLocalDateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            ? e.getRegDate().toLocalDateTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
             : null)
         .lineId(e.getLineId())
         .ownerMemberSeq(e.getOwnerMemberSeq())
         .branchSeq(e.getBranchSeq())
         .build();
   }
-
 }

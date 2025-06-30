@@ -1,42 +1,22 @@
-package com.sttweb.sttweb.service;
+package com.sttweb.sttweb.service.impl;
 
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
 import com.sttweb.sttweb.entity.TrecordTelListEntity;
-import com.sttweb.sttweb.repository.TmemberLinePermRepository;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import com.sttweb.sttweb.repository.TrecordTelListRepository;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TbranchService;
-import org.springframework.beans.factory.annotation.Value;
-import java.io.File;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Stream;
-import org.springframework.cache.annotation.Cacheable;
-import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Predicate;
+import com.sttweb.sttweb.service.TrecordScanService;
+import com.sttweb.sttweb.service.TrecordService;
+
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.persistence.criteria.Root;
-import java.io.IOException;
+import jakarta.persistence.criteria.Predicate;
 import java.io.UncheckedIOException;
-import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.sql.Time;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
@@ -48,6 +28,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 
 @Service
 public class TrecordServiceImpl implements TrecordService {
@@ -480,20 +473,23 @@ public class TrecordServiceImpl implements TrecordService {
     }
   }
 
+  /**
+   * 녹취 파일을 로컬 파일 시스템에서 읽어 Resource 로 반환합니다.
+   * (HQ 분기는 Controller 레이어에서 처리하므로 여기서는 로컬 전용)
+   */
   @Override
   @Transactional(readOnly = true)
   public Resource getFile(Integer recordSeq) {
     TrecordEntity e = repo.findById(recordSeq)
-        .orElseThrow(() -> new ResponseStatusException(
-            HttpStatus.NOT_FOUND,
-            "녹취를 찾을 수 없습니다: " + recordSeq
-        ));
+        .orElseThrow(() -> new EntityNotFoundException("녹취를 찾을 수 없습니다: " + recordSeq));
 
+    // 파일 경로 정리
     String raw = e.getAudioFileDir().replace("\\", "/");
     if (raw.startsWith("../")) {
       raw = raw.substring(3);
     }
 
+    // RecOnData 루트 폴더 검색
     Path recOnRoot = findRecOnDataRoot();
     if (recOnRoot == null) {
       throw new ResponseStatusException(
@@ -519,6 +515,7 @@ public class TrecordServiceImpl implements TrecordService {
       );
     }
   }
+
 
   private Path findRecOnDataRoot() {
     for (String drv : SEARCH_DRIVES) {

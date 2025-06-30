@@ -7,56 +7,61 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.*;
+import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import java.io.IOException;
 
 @RequiredArgsConstructor
 public class BranchGuardFilter extends OncePerRequestFilter {
 
   private final JwtTokenProvider jwt;
-  private final TbranchService   branchSvc;
+  private final TbranchService branchSvc;
 
   @Override
   protected void doFilterInternal(HttpServletRequest req,
       HttpServletResponse res,
       FilterChain chain)
       throws ServletException, IOException {
-
     String auth = req.getHeader(HttpHeaders.AUTHORIZATION);
     if (auth != null && auth.startsWith("Bearer ")) {
       String token = auth.substring(7);
-
       if (jwt.validateToken(token)) {
         Integer userBranchSeq = jwt.getBranchSeq(token);
 
-        /* HQ 여부 = 해당 branch.hqYn == 0 */
+        // branch.hqYn == "0" 이면 HQ
         boolean isHq = Optional.ofNullable(userBranchSeq)
             .map(branchSvc::findEntityBySeq)
             .filter(Objects::nonNull)
-            .map(b -> "0".equals(b.getHqYn()))   // ← 문자열 비교로 수정
+            .map(b -> "0".equals(b.getHqYn()))
             .orElse(false);
 
-        if (!isHq) {
-          /* 서버 IP·포트 → 지사 매핑 */
-          String host = Optional.ofNullable(req.getHeader("Host")).orElse("");
-          String serverIp   = host.contains(":") ? host.split(":")[0] : req.getLocalAddr();
-          int    serverPort = req.getServerPort();
+        // 수정: HQ 계정이면 IP 검사 스킵
+        if (isHq) {
+          chain.doFilter(req, res);
+          return;
+        }
 
-          Integer serverBranchSeq = branchSvc.findBypIp(serverIp)
-              .filter(b -> b.getPPort().equals(serverPort))
-              .map(TbranchEntity::getBranchSeq)
-              .orElse(null);
+        // 지점 사용자만 server IP/port → branchSeq 비교
+        String hostHeader = Optional.ofNullable(req.getHeader("Host")).orElse("");
+        String serverIp = hostHeader.contains(":")
+            ? hostHeader.split(":")[0]
+            : req.getLocalAddr();
+        int serverPort = req.getServerPort();
 
-          if (serverBranchSeq != null && !serverBranchSeq.equals(userBranchSeq)) {
-            res.sendError(HttpServletResponse.SC_FORBIDDEN,
-                "다른 지사 서버로 접근했습니다.");
-            return;
-          }
+        Integer serverBranchSeq = branchSvc.findBypIp(serverIp)
+            .filter(b -> b.getPPort().equals(serverPort))
+            .map(TbranchEntity::getBranchSeq)
+            .orElse(null);
+
+        if (serverBranchSeq != null && !serverBranchSeq.equals(userBranchSeq)) {
+          res.sendError(HttpServletResponse.SC_FORBIDDEN,
+              "다른 지사 서버로 접근했습니다.");
+          return;
         }
       }
     }
