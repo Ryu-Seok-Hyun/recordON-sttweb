@@ -4,6 +4,7 @@ import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.entity.TmemberEntity;
 import com.sttweb.sttweb.entity.TrecordEntity;
 import com.sttweb.sttweb.entity.TrecordTelListEntity;
+import com.sttweb.sttweb.exception.ResourceNotFoundException;
 import com.sttweb.sttweb.repository.TmemberRepository;
 import com.sttweb.sttweb.repository.TrecordRepository;
 import com.sttweb.sttweb.repository.TrecordTelListRepository;
@@ -17,6 +18,7 @@ import jakarta.persistence.criteria.Predicate;
 import java.io.UncheckedIOException;
 import java.time.LocalDateTime;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
@@ -803,4 +805,30 @@ public class TrecordServiceImpl implements TrecordService {
     return repo.findAll(spec, pageable)
         .map(this::toDto);
   }
+
+  @Override
+  public Resource getLocalFile(Integer id) {
+    TrecordEntity record = repo.findById(id).orElseThrow(() ->
+        new ResourceNotFoundException("녹취 레코드를 찾을 수 없습니다: " + id)
+    );
+
+    String dateFolder = record.getCallStartDateTime()
+        .toLocalDateTime()
+        .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+
+    String rawPath = record.getAudioFileDir().replace("\\", "/");
+    String fileName = Paths.get(rawPath).getFileName().toString();
+
+    for (String drive : List.of("C:", "D:", "E:")) {
+      Path path = Paths.get(drive, "RecOnData", dateFolder, fileName);
+      if (Files.exists(path) && Files.isReadable(path)) {
+        return new FileSystemResource(path);
+      }
+    }
+
+    throw new ResourceNotFoundException(
+        String.format("로컬 디스크에서 녹취 파일을 찾을 수 없습니다: %s/%s", dateFolder, fileName));
+  }
+
+
 }

@@ -21,6 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Component
@@ -29,6 +30,16 @@ public class ServiceMonitor {
 
   private final JavaMailSender mailSender;
   private final TbranchService branchService;
+
+  @Value("${monitor.admin.emails}")
+  private String adminEmailCsv;    // List<String> 대신 comma-separated String
+
+  private List<String> adminEmails() {
+    return Arrays.stream(adminEmailCsv.split(","))
+        .map(String::trim)
+        .filter(StringUtils::hasText)
+        .collect(Collectors.toList());
+  }
 
   @Value("${monitor.admin.emails}")
   private List<String> adminEmails;

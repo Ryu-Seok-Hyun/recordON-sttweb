@@ -136,5 +136,5 @@ public interface TrecordService {
   Map<String, Long> getInboundOutboundCount(LocalDateTime start, LocalDateTime end);
 
   Page<TrecordDto> searchByPhoneEnding(String phoneEnding, Pageable pageable);
-
+  Resource getLocalFile(Integer recordSeq);
 }

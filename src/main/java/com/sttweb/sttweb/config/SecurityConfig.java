@@ -9,16 +9,20 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @RequiredArgsConstructor
@@ -32,29 +36,25 @@ public class SecurityConfig {
 
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    // 로그인 전·후 필터
     var loginFilter  = new LoginAccessFilter(branchSvc, memberSvc);
     var jwtFilter    = new JwtAuthenticationFilter(jwtTokenProvider, jwtEntryPoint);
     var branchFilter = new BranchGuardFilter(jwtTokenProvider, branchSvc);
 
     http
+        .cors(cors -> cors.configurationSource(corsConfigurationSource())) // ✅ 단일 설정만 유지
         .csrf(AbstractHttpConfigurer::disable)
-        // WebMvcConfigurer 에 정의한 CORS 설정 적용
-        .cors(Customizer.withDefaults())
-        .sessionManagement(sm ->
-            sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
-            // 프리플라이트(OPTIONS) 허용
+            // preflight 요청 허용
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+            // 로그인·회원가입·녹취 스트리밍은 컨트롤러 단에서 직접 인증 처리
             .requestMatchers(
                 "/api/members/signup",
                 "/api/members/login",
                 "/api/members/logout",
                 "/api/members/confirm-password",
-                "/api/user-permissions/**",
-                "/api/test/**",
-                "/api/ini/**",
-                "/api/perm/**"
+                "/api/records/**",  // listen/download 포함
+                "/records/**"       // 프록시용
             ).permitAll()
             .anyRequest().authenticated()
         )
@@ -62,15 +62,32 @@ public class SecurityConfig {
             .authenticationEntryPoint(jwtEntryPoint)
             .accessDeniedHandler(accessDeniedHandler)
         )
-        .addFilterBefore(loginFilter,  UsernamePasswordAuthenticationFilter.class)
-        .addFilterBefore(jwtFilter,    UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(loginFilter,  org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(jwtFilter,    org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
         .addFilterAfter(branchFilter,   JwtAuthenticationFilter.class)
         .logout(ld -> ld
             .logoutUrl("/api/members/logout")
-            .logoutSuccessHandler(
-                (req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
+            .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
         );
 
     return http.build();
+  }
+  @Bean
+  public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOriginPatterns(List.of("*"));
+    config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    config.setAllowedHeaders(List.of("*"));
+    config.setExposedHeaders(List.of(
+        HttpHeaders.AUTHORIZATION,
+        HttpHeaders.ACCEPT_RANGES,
+        HttpHeaders.CONTENT_RANGE,
+        HttpHeaders.CONTENT_LENGTH
+    ));
+    config.setAllowCredentials(true);
+
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", config);
+    return source;
   }
 }

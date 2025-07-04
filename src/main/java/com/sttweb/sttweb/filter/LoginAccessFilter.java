@@ -12,7 +12,6 @@ import jakarta.servlet.http.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.ContentCachingRequestWrapper;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -41,19 +40,23 @@ public class LoginAccessFilter extends OncePerRequestFilter {
         }
       }
     } catch (Exception e) {
+      // 실제 프로덕션에서는 로깅 프레임워크 사용 권장
       e.printStackTrace();
     }
     return ips;
   }
 
-//  @Override
-//  protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
-//    // POST /api/members/login 이외의 요청은 이 필터를 통과시킴
-//    return !(
-//        HttpMethod.POST.matches(request.getMethod())
-//            && "/api/members/login".equals(request.getServletPath())
-//    );
-//  }
+  // ▼▼▼ 이 메서드의 주석을 해제하여 활성화합니다. ▼▼▼
+  @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+    // 요청 URL이 "/api/members/login" 이고 메서드가 POST가 "아닌" 모든 경우에
+    // 이 필터는 동작하지 않도록(true를 반환) 설정합니다.
+    // 따라서 OPTIONS 요청은 이 필터를 그냥 통과하게 됩니다.
+    return !(
+        "/api/members/login".equals(request.getServletPath()) &&
+            HttpMethod.POST.matches(request.getMethod())
+    );
+  }
 
   @Override
   protected void doFilterInternal(
@@ -61,6 +64,18 @@ public class LoginAccessFilter extends OncePerRequestFilter {
       HttpServletResponse response,
       FilterChain chain
   ) throws ServletException, IOException {
+
+    // CORS Preflight 요청(OPTIONS)은 토큰 검사 없이 통과
+    if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+      response.setStatus(HttpServletResponse.SC_OK);
+      response.setHeader("Access-Control-Allow-Origin", request.getHeader("Origin"));
+      response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+      response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+      response.setHeader("Access-Control-Allow-Credentials", "true");
+      response.setHeader("Vary", "Origin");
+      chain.doFilter(request, response); // <- 중요!
+      return;
+    }
 
     // 1) 멀티리드 요청 래핑
     MultiReadHttpServletRequest wrap = new MultiReadHttpServletRequest(request);
@@ -73,14 +88,14 @@ public class LoginAccessFilter extends OncePerRequestFilter {
     // 3) JSON 본문에서 userId 추출
     String body = new String(wrap.getInputStream().readAllBytes(), wrap.getCharacterEncoding());
     String userId = null;
-    if (wrap.getContentType() != null && wrap.getContentType().contains("application/json")) {
+    if (wrap.getContentType() != null && wrap.getContentType().contains("application/json") && !body.isEmpty()) {
       System.out.println("[DEBUG] 요청 BODY 내용: " + body);
       JsonNode json = objectMapper.readTree(body);
       userId = json.has("userId") ? json.get("userId").asText() : null;
       System.out.println("[DEBUG] 추출된 userId: " + userId);
     }
 
-    // 4) 폼 파라미터에서 userId
+    // 4) 폼 파라미터에서 userId (현재 로직에서는 거의 사용되지 않음)
     if (userId == null || userId.isBlank()) {
       userId = wrap.getParameter("userId");
       System.out.println("[DEBUG] 파라미터로부터 userId 추출됨: " + userId);
@@ -99,7 +114,14 @@ public class LoginAccessFilter extends OncePerRequestFilter {
       return;
     }
     TbranchEntity home = branchSvc.findEntityBySeq(user.getBranchSeq());
-    boolean isHqUser = home != null && "0".equals(home.getHqYn());
+    // home이 null일 경우를 대비한 방어 코드 추가
+    if (home == null) {
+      // 혹은 적절한 예외 처리
+      chain.doFilter(wrap, response);
+      return;
+    }
+
+    boolean isHqUser = "0".equals(home.getHqYn());
     if (isHqUser) {
       System.out.println("[DEBUG] 본사 사용자로 확인됨. 필터 통과");
       chain.doFilter(wrap, response);
@@ -112,8 +134,18 @@ public class LoginAccessFilter extends OncePerRequestFilter {
     for (TbranchEntity b : branchSvc.findAllEntities()) {
       String pip  = Optional.ofNullable(b.getPIp()).orElse("").trim();
       String pbip = Optional.ofNullable(b.getPbIp()).orElse("").trim();
-      int pPort   = Optional.ofNullable(b.getPPort()).map(Integer::parseInt).orElse(-1);
-      int pbPort  = Optional.ofNullable(b.getPbPort()).map(Integer::parseInt).orElse(-1);
+
+      // 포트 번호가 null이거나 비어있을 경우를 대비
+      int pPort   = -1;
+      int pbPort  = -1;
+      try {
+        if(b.getPPort() != null && !b.getPPort().isEmpty()) pPort = Integer.parseInt(b.getPPort());
+        if(b.getPbPort() != null && !b.getPbPort().isEmpty()) pbPort = Integer.parseInt(b.getPbPort());
+      } catch (NumberFormatException e) {
+        // 포트 번호 형식이 잘못된 경우 로그 남기기
+        System.out.println("[ERROR] 잘못된 포트 번호 형식: " + b.getBranchSeq());
+      }
+
 
       if ((localIps.contains(pip) && pPort == serverPort) ||
           (localIps.contains(pbip) && pbPort == serverPort)) {

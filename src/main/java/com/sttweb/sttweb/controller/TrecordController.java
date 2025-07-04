@@ -1,5 +1,7 @@
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.crypto.CryptoProperties;
+import com.sttweb.sttweb.crypto.CryptoUtil;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.entity.TbranchEntity;
@@ -13,6 +15,8 @@ import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.entity.TrecordTelListEntity;
+import jakarta.servlet.ServletOutputStream;
+import java.io.InputStream;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -59,6 +63,7 @@ public class TrecordController {
   private final TrecordTelListRepository trecordTelListRepository;
   private final TbranchService branchSvc;
   private final RestTemplate restTemplate;
+  private final CryptoProperties cryptoProps;
 
   // ── 1) 헤더에서 토큰 파싱 & 사용자 조회 ──
   private Info requireLogin(String authHeader) {
@@ -69,7 +74,18 @@ public class TrecordController {
     if (!jwtTokenProvider.validateToken(token)) {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
     }
-    return memberSvc.getMyInfoByUserId(jwtTokenProvider.getUserId(token));
+
+    String userId = jwtTokenProvider.getUserId(token);
+    log.debug("[requireLogin] 추출된 userId: {}", userId);
+
+    Info info = memberSvc.getMyInfoByUserId(userId);
+    if (info == null) {
+      log.warn("[requireLogin] userId로 사용자 정보를 찾을 수 없음: {}", userId);
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "사용자 정보를 찾을 수 없습니다.");
+    }
+
+    log.debug("[requireLogin] 사용자 정보 조회 성공: userId={}, memberSeq={}", info.getUserId(), info.getMemberSeq());
+    return info;
   }
 
   // ── 2) 헤더 또는 쿠키에서 토큰 파싱 & 사용자 조회 ──
@@ -331,8 +347,8 @@ public class TrecordController {
 
 
        // ▶▶ 바로 path(절대경로)만 내려줍니다.
-         rec.setListenUrl("/records/"  + rec.getRecordSeq() + "/listen");
-       rec.setDownloadUrl("/records/" + rec.getRecordSeq() + "/download");
+    rec.setListenUrl("/api/records/"  + rec.getRecordSeq() + "/listen");
+    rec.setDownloadUrl("/api/records/" + rec.getRecordSeq() + "/download");
     // ────────────────────────────────────────
   }
 
@@ -480,66 +496,239 @@ public class TrecordController {
     return ResponseEntity.ok(dto);
   }
 
-  /** ── 스트리밍(청취) ── */
-  @LogActivity(type = "record", activity = "청취", contents = "녹취Seq=#{#id}")
-  @GetMapping("/{id}/listen")
-  public ResponseEntity<StreamingResponseBody> streamAudio(
-      HttpServletRequest request, @PathVariable Integer id) throws IOException {
-    Info me = requireLogin(request);
-    Resource audio = recordSvc.getFile(id);
-    if (audio == null || !audio.exists() || !audio.isReadable()) {
-      throw new ResourceNotFoundException("파일을 찾을 수 없습니다: " + id);
-    }
-    MediaType mediaType = MediaTypeFactory.getMediaType(audio)
-        .orElse(MediaType.APPLICATION_OCTET_STREAM);
 
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(mediaType);
-    headers.setContentLength(audio.contentLength());
 
-    StreamingResponseBody body = os -> {
-      try (var is = audio.getInputStream()) {
-        byte[] buf = new byte[8192];
-        int len;
-        while ((len = is.read(buf)) != -1) {
-          os.write(buf, 0, len);
-        }
+
+
+
+
+  /**
+   * `.aes` 확장자는 복호화 스트림을, 그 외는 원본 스트림을 그대로 반환합니다.
+   */
+  private StreamingResponseBody buildStream(Resource audio) throws Exception {
+    InputStream raw = audio.getInputStream();
+    InputStream in = audio.getFilename().toLowerCase().endsWith(".aes")
+        ? CryptoUtil.decryptingStream(raw, cryptoProps.getSecretKey())
+        : raw;
+
+    return out -> {
+      try (InputStream is = in) {
+        StreamUtils.copy(is, out);
       }
     };
-    return new ResponseEntity<>(body, headers, HttpStatus.OK);
   }
 
 
-  /** ── 다운로드 ── */
+
+  /**
+   * ── 녹취 스트리밍 (프록시 기능 추가) ──
+   * 요청된 녹취 파일이 현재 서버에 있으면 직접 스트리밍하고,
+   * 다른 지점 서버에 있으면 해당 서버로 요청을 프록시하여 결과를 스트리밍합니다.
+   */
+  @LogActivity(type = "record", activity = "청취", contents = "녹취Seq=#{#id}")
+  @GetMapping("/{id}/listen")
+  public ResponseEntity<StreamingResponseBody> listen(
+      HttpServletRequest request,
+      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+      @PathVariable("id") Integer id
+  ) throws Exception {
+    // 1) 인증
+    requireLogin(authHeader);
+
+    // 2) 리소스(오디오 파일) 로드
+    Resource audio = recordSvc.getFile(id);
+    if (audio == null || !audio.exists() || !audio.isReadable()) {
+      log.debug("[녹취 청취] 파일을 찾을 수 없습니다. 녹취 ID={}", id);
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다: " + id);
+    }
+
+    // 3) MediaType & Range 확인
+    long contentLength = audio.contentLength();
+    MediaType mediaType = MediaTypeFactory.getMediaType(audio)
+        .orElse(MediaType.APPLICATION_OCTET_STREAM);
+    String rangeHeader = request.getHeader(HttpHeaders.RANGE);
+    List<HttpRange> ranges = HttpRange.parseRanges(rangeHeader);
+
+    if (!ranges.isEmpty()) {
+      HttpRange range = ranges.get(0);
+      long start = range.getRangeStart(contentLength);
+      long end = range.getRangeEnd(contentLength);
+      long rangeLength = end - start + 1;
+
+      InputStream rangeStream = audio.getInputStream();
+      rangeStream.skip(start);
+
+      StreamingResponseBody rangeBody = out -> {
+        byte[] buffer = new byte[8192];
+        long remaining = rangeLength;
+        int bytesRead;
+        while (remaining > 0 && (bytesRead = rangeStream.read(buffer, 0,
+            (int) Math.min(buffer.length, remaining))) != -1) {
+          out.write(buffer, 0, bytesRead);
+          out.flush();
+          remaining -= bytesRead;
+        }
+        rangeStream.close();
+      };
+
+      return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+          .contentType(mediaType)
+          .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+          .header(HttpHeaders.CONTENT_RANGE,
+              String.format("bytes %d-%d/%d", start, end, contentLength))
+          .contentLength(rangeLength)
+          .body(rangeBody);
+    }
+
+    // ▶ 전체 스트리밍 (aes 복호화 포함)
+    StreamingResponseBody fullBody = buildStream(audio);
+    return ResponseEntity.ok()
+        .contentType(mediaType)
+        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+        .contentLength(contentLength)
+        .body(fullBody);
+  }
+
+
+  // ─────────────────────────────────────────────
+  @GetMapping("/{id}/test-listen")
+  public ResponseEntity<String> testListen(
+      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+      @PathVariable("id") Integer id
+  ) {
+    requireLogin(authHeader);
+
+    try {
+      Resource audio = recordSvc.getFile(id);
+      if (audio == null) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body("파일 객체가 null입니다.");
+      }
+
+      if (!audio.exists()) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body("파일이 존재하지 않습니다.");
+      }
+
+      if (!audio.isReadable()) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body("파일이 존재하지만 읽을 수 없습니다.");
+      }
+
+      long length = audio.contentLength();
+      String info = String.format("파일 확인 완료\n크기: %d bytes\n이름: %s",
+          length,
+          audio.getFilename());
+      return ResponseEntity.ok(info);
+
+    } catch (IOException e) {
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .body("파일 확인 중 오류 발생: " + e.getMessage());
+    }
+  }
+
+
+  // ─────────────────────────────────────────────
+  /**
+   * ── 다운로드 (프록시 기능 추가) ──
+   */
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취Seq=#{#id}")
   @GetMapping("/{id}/download")
-  public void downloadById(HttpServletRequest request,
+  public void downloadById(
+      HttpServletRequest request,
       HttpServletResponse response,
-      @PathVariable Integer id) throws IOException {
+      @PathVariable Integer id) throws Exception {
+
     Info me = requireLogin(request);
-    // 만약 권한 체크가 필요하면 hasPermissionForNumber(...) 호출
-    serveLocalFile(id, response, true);
+    TrecordDto recordDto = recordSvc.findById(id);
+    if (recordDto.getBranchSeq() == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "녹취 파일의 소속 지점 정보를 찾을 수 없습니다.");
+    }
+
+    TbranchEntity branch = branchSvc.findEntityBySeq(recordDto.getBranchSeq());
+    if (isCurrentServerBranch(branch, request)) {
+      log.debug("녹취 파일(ID: {})을 로컬에서 다운로드합니다.", id);
+      serveLocalFile(id, response);
+    } else {
+      log.debug("녹취 파일(ID: {})을 원격 지점({})으로 프록시 다운로드 요청합니다.", id, branch.getPIp());
+      proxyFileRequest(branch, id, "download", request, response);
+    }
   }
 
-  /** 공통: 로컬 파일 서빙 */
+  /**
+   * 로컬 저장된 녹취(.wav 또는 .aes)를 buildStream 으로 읽어서 다운로드합니다.
+   */
   private void serveLocalFile(Integer id,
-      HttpServletResponse response,
-      boolean isDownload) throws IOException {
+      HttpServletResponse response) throws Exception {
     Resource file = recordSvc.getFile(id);
     if (file == null || !file.exists() || !file.isReadable()) {
       response.sendError(HttpStatus.NOT_FOUND.value(), "파일을 찾을 수 없습니다: " + id);
       return;
     }
+
     MediaType mediaType = MediaTypeFactory.getMediaType(file)
         .orElse(MediaType.APPLICATION_OCTET_STREAM);
     response.setContentType(mediaType.toString());
+    response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+        "attachment; filename=\"" +
+            UriUtils.encode(file.getFilename(), StandardCharsets.UTF_8) + "\"");
     response.setContentLengthLong(file.contentLength());
-    if (isDownload) {
-      String fn = UriUtils.encode(file.getFilename(), StandardCharsets.UTF_8);
-      response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
-          "attachment; filename=\"" + fn + "\"");
+
+    // buildStream 으로 복호화 포함 스트리밍
+    StreamingResponseBody body = buildStream(file);
+    try (ServletOutputStream out = response.getOutputStream()) {
+      body.writeTo(out);
     }
-    StreamUtils.copy(file.getInputStream(), response.getOutputStream());
+  }
+
+  /**
+   * 신규 추가: 원격 지점 서버로 파일 요청을 중계(프록시)하는 헬퍼 메소드
+   */
+  private void proxyFileRequest(TbranchEntity targetBranch, Integer recordId, String action,
+      HttpServletRequest request, HttpServletResponse response) {
+
+    // 1. 목표 URL 생성 (예: http://192.168.0.10:39090/api/records/123/listen)
+    String targetUrl = String.format("http://%s:%s/api/records/%d/%s",
+        targetBranch.getPIp(), targetBranch.getPPort(), recordId, action);
+
+    try {
+      // 2. RestTemplate을 사용하여 원격 서버에 요청 실행
+      restTemplate.execute(
+          URI.create(targetUrl),
+          HttpMethod.GET,
+          clientRequest -> {
+            // 3. 원본 요청의 헤더를 프록시 요청에 복사 (특히 Authorization 헤더가 중요)
+            Collections.list(request.getHeaderNames()).forEach(headerName -> {
+              // host, content-length 등 일부 헤더는 RestTemplate이 자동으로 관리하므로 제외
+              if (!headerName.equalsIgnoreCase(HttpHeaders.HOST) &&
+                  !headerName.equalsIgnoreCase(HttpHeaders.CONTENT_LENGTH)) {
+                clientRequest.getHeaders().add(headerName, request.getHeader(headerName));
+              }
+            });
+          },
+          clientResponse -> {
+            // 4. 원격 서버의 응답을 클라이언트의 응답으로 복사
+            response.setStatus(clientResponse.getStatusCode().value());
+            clientResponse.getHeaders().forEach((name, values) -> {
+              // Transfer-Encoding 헤더는 복사하지 않음 (스트리밍 시 문제 발생 가능)
+              if (!name.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
+                values.forEach(value -> response.addHeader(name, value));
+              }
+            });
+            // 5. 원격 서버의 응답 본문(오디오 데이터)을 클라이언트 응답으로 스트리밍
+            StreamUtils.copy(clientResponse.getBody(), response.getOutputStream());
+            return null;
+          }
+      );
+    } catch (Exception e) {
+      log.error("원격 지점({})으로의 프록시 요청 실패: {}", targetUrl, e.getMessage());
+      try {
+        // 프록시 실패 시 클라이언트에 에러 응답 전송
+        response.sendError(HttpStatus.BAD_GATEWAY.value(), "원격 서버로부터 파일을 가져오는 데 실패했습니다.");
+      } catch (IOException ioException) {
+        log.error("프록시 실패 에러 응답 전송 중 오류 발생", ioException);
+      }
+    }
   }
 
   @GetMapping("/branch/{branchSeq}")
