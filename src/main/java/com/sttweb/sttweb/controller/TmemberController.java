@@ -168,19 +168,22 @@ public class TmemberController {
     TbranchEntity home = branchSvc.findEntityBySeq(user.getBranchSeq());
     boolean isHqUser = home != null && "0".equals(home.getHqYn());
 
-    // 서버 IP/Port 결정
-    String nicIp = detectBranchIpFromLocalNics();
-    final String serverIp = (nicIp != null)
-        ? nicIp
-        : Optional.ofNullable(request.getHeader("Host"))
-            .filter(h -> h.contains(":"))
-            .map(h -> h.split(":")[0])
-            .orElse(request.getLocalAddr());
-    final String serverPortStr = String.valueOf(request.getServerPort());
+    // 1) 실제 클라이언트가 접속한 Host/IP
+    String hostIp = Optional.ofNullable(request.getHeader("X-Forwarded-Host"))
+        .orElseGet(() -> Optional.ofNullable(request.getHeader("Host")).orElse(""))
+        .replaceAll(":.*", "");          // "192.168.55.180:39080" → "192.168.55.180"
 
-    // 지사 서버 조회
-    List<TbranchEntity> srvBranches = branchSvc.findByIpAndPort(serverIp, serverPortStr);
-    TbranchEntity srvBr = srvBranches.isEmpty() ? null : srvBranches.get(0);
+// 2) 실제 접속 Port (프록시가 넣어주고, 없으면 톰캣 포트)
+    String portStr = Optional.ofNullable(request.getHeader("X-Forwarded-Port"))
+        .orElse(String.valueOf(request.getServerPort()));   // 프록시 없으면 39090
+
+// 3) 지사 조회 (IP+Port → IP만 fallback)
+    List<TbranchEntity> candidates = branchSvc.findByIpAndPort(hostIp, portStr);
+    if (candidates.isEmpty()) {
+      branchSvc.findBypIp(hostIp).ifPresent(candidates::add);
+      branchSvc.findByPbIp(hostIp).ifPresent(candidates::add);
+    }
+    TbranchEntity srvBr = candidates.isEmpty() ? null : candidates.get(0);
 
     System.out.printf("[DBG] user.branchSeq=%s, home=%s%n",
         user.getBranchSeq(),
@@ -221,8 +224,8 @@ public class TmemberController {
     info.setToken(token);
     info.setTokenType("Bearer");
 
-    String redirectHost = srvBr != null ? serverIp : "127.0.0.1";
-    String redirectPort = srvBr != null ? serverPortStr : "8080";
+    String redirectHost = srvBr != null ? hostIp : "127.0.0.1";   // ← serverIp → hostIp
+    String redirectPort = srvBr != null ? portStr : "8080";
     String redirectUrl = "http://" + redirectHost + ":" + redirectPort + "?token=" + token;
 
     LoginResponse loginRes = new LoginResponse(
