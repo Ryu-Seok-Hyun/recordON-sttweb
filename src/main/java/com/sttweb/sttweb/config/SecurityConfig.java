@@ -15,7 +15,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -41,20 +40,22 @@ public class SecurityConfig {
     var branchFilter = new BranchGuardFilter(jwtTokenProvider, branchSvc);
 
     http
-        .cors(cors -> cors.configurationSource(corsConfigurationSource())) // ✅ 단일 설정만 유지
+        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(auth -> auth
-            // preflight 요청 허용
+            // preflight
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-            // 로그인·회원가입·녹취 스트리밍은 컨트롤러 단에서 직접 인증 처리
+            // 로그인 페이지(GET) 및 실제 로그인 처리(POST) 허용
+            .requestMatchers(HttpMethod.GET,  "/login").permitAll()
+            .requestMatchers(HttpMethod.POST, "/login", "/api/members/login").permitAll()
+            // 그 외 회원가입·로그아웃·확인·녹취 스트리밍
             .requestMatchers(
                 "/api/members/signup",
-                "/api/members/login",
                 "/api/members/logout",
                 "/api/members/confirm-password",
-                "/api/records/**",  // listen/download 포함
-                "/records/**"       // 프록시용
+                "/api/records/**",
+                "/records/**"
             ).permitAll()
             .anyRequest().authenticated()
         )
@@ -62,21 +63,24 @@ public class SecurityConfig {
             .authenticationEntryPoint(jwtEntryPoint)
             .accessDeniedHandler(accessDeniedHandler)
         )
+        // 로그인 직전에 실행될 필터
         .addFilterBefore(loginFilter,  org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
         .addFilterBefore(jwtFilter,    org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
         .addFilterAfter(branchFilter,   JwtAuthenticationFilter.class)
         .logout(ld -> ld
             .logoutUrl("/api/members/logout")
             .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_OK))
-        );
+        )
+    ;
 
     return http.build();
   }
+
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
     config.setAllowedOriginPatterns(List.of("*"));
-    config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+    config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
     config.setAllowedHeaders(List.of("*"));
     config.setExposedHeaders(List.of(
         HttpHeaders.AUTHORIZATION,
