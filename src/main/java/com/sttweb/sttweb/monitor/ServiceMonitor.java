@@ -163,7 +163,8 @@ public class ServiceMonitor {
   private enum Service {
     APACHE(39080, "XAMPP(Apache)"),
     TOMCAT(39090, "Tomcat"),
-    OPENSEARCH(9200, "OpenSearch");
+    OPENSEARCH(9200, "OpenSearch"),
+    STT(39500, "STT Service");
 
     final int port;
     final String label;
