@@ -532,8 +532,20 @@ public class TrecordController {
       @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
       @PathVariable("id") Integer id
   ) throws Exception {
-    // 1) 인증
-    requireLogin(authHeader);
+    // 1) 인증 → Info 객체 리턴받도록 변경
+    Info me = requireLogin(authHeader);
+
+    // 2) 청취 권한 확인 (permLevel >= 3)
+    TrecordDto recDto = recordSvc.findById(id);
+    boolean canListen =
+        hasPermissionForNumber(me.getUserId(), recDto.getNumber1(), 3)
+            || hasPermissionForNumber(me.getUserId(), recDto.getNumber2(), 3)
+            || "0".equals(me.getUserLevel())  // super-admin
+            || "1".equals(me.getUserLevel()); // branch-admin
+    if (!canListen) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "녹취 재생 권한이 없습니다.");
+    }
+
 
     // 2) 리소스(오디오 파일) 로드
     Resource audio = recordSvc.getFile(id);
@@ -639,8 +651,21 @@ public class TrecordController {
       HttpServletResponse response,
       @PathVariable Integer id) throws Exception {
 
+    // 1) 인증
     Info me = requireLogin(request);
+
+    // 2) 다운로드 권한 확인 (permLevel >= 4)
     TrecordDto recordDto = recordSvc.findById(id);
+    boolean canDownload =
+        hasPermissionForNumber(me.getUserId(), recordDto.getNumber1(), 4)
+            || hasPermissionForNumber(me.getUserId(), recordDto.getNumber2(), 4)
+            || "0".equals(me.getUserLevel())  // super-admin
+            || "1".equals(me.getUserLevel()); // branch-admin
+    if (!canDownload) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+    }
+
+
     if (recordDto.getBranchSeq() == null) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "녹취 파일의 소속 지점 정보를 찾을 수 없습니다.");
     }

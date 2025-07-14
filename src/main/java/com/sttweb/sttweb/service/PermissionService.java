@@ -29,21 +29,29 @@ public class PermissionService {
 
   @Transactional
   public void grantAndSyncLinePerm(GrantDto req) {
-    // 1. tuser_permission 갱신
+    // 1. tuser_permission 갱신 또는 생성
     var upOpt = permRepo.findByMemberSeqAndLineId(req.getMemberSeq(), req.getLineId());
-    UserPermission up;
-    if (upOpt.isPresent()) {
-      up = upOpt.get();
-      up.setPermLevel(req.getPermLevel());
-    } else {
-      up = new UserPermission();
-      up.setMemberSeq(req.getMemberSeq());
-      up.setLineId(req.getLineId());
-      up.setPermLevel(req.getPermLevel());
-    }
+    UserPermission up = upOpt.map(existing -> {
+      existing.setPermLevel(req.getPermLevel());
+      return existing;
+    }).orElseGet(() -> {
+      UserPermission created = new UserPermission();
+      created.setMemberSeq(req.getMemberSeq());
+      created.setLineId(req.getLineId());
+      created.setPermLevel(req.getPermLevel());
+      return created;
+    });
     permRepo.save(up);
 
-    // 2. tmember_line_perm 동기화 (Optional 처리)
+    // 2. tmember_line_perm 동기화
+    // — 조회 권한(2)만 주는 경우: 기존에 sync 되어 있던 청취·다운로드 권한 제거
+    if (req.getPermLevel().equals(2)) {
+      memberLinePermRepo.findByMemberMemberSeqAndLineId(req.getMemberSeq(), req.getLineId())
+          .ifPresent(memberLinePermRepo::delete);
+      return;
+    }
+
+    // — 청취(3) 또는 다운로드(4) 권한인 경우에만 role sync
     Integer roleSeq = permLevelToRoleSeq(req.getPermLevel());
     memberLinePermRepo.findByMemberMemberSeqAndLineId(req.getMemberSeq(), req.getLineId())
         .ifPresentOrElse(
@@ -61,6 +69,7 @@ public class PermissionService {
             }
         );
   }
+
 
 
   @Transactional
