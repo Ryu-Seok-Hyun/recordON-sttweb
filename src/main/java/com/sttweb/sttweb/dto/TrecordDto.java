@@ -34,6 +34,9 @@ public class TrecordDto {
   private Integer roleSeq;
   private Integer lineId;
 
+  /** JSON 생성 여부 */
+  private Boolean jsonExists;
+
   // ─────────── 여기에 두 필드를 추가 ───────────
   /** HQ 서버를 통해 접근할 수 있는 스트리밍 URL */
   private String listenUrl;

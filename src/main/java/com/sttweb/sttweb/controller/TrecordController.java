@@ -11,6 +11,7 @@ import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.repository.TrecordTelListRepository;
 import com.sttweb.sttweb.repository.UserPermissionRepository;
+import com.sttweb.sttweb.service.RecOnDataService;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
@@ -64,6 +65,8 @@ public class TrecordController {
   private final TbranchService branchSvc;
   private final RestTemplate restTemplate;
   private final CryptoProperties cryptoProps;
+  private final RecOnDataService recOnDataService;
+
 
   // ── 1) 헤더에서 토큰 파싱 & 사용자 조회 ──
   private Info requireLogin(String authHeader) {
@@ -332,25 +335,45 @@ public class TrecordController {
   }
 
   private void postProcessRecordDto(TrecordDto rec, Info me) {
-    if (rec.getNumber1() != null) rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
-    if (me.getMaskFlag() != null && me.getMaskFlag() == 0) rec.maskNumber2();
+    if (rec.getNumber1() != null)
+      rec.setNumber1(convertToExtensionDisplay(rec.getNumber1()));
+    if (me.getMaskFlag() != null && me.getMaskFlag() == 0)
+      rec.maskNumber2();
 
     // 기존 listenAuth 세팅 로직
     boolean canListen = "0".equals(me.getUserLevel())
         || "1".equals(me.getUserLevel())
-        || ("2".equals(me.getUserLevel()) && hasPermissionForNumber(me.getUserId(), rec.getNumber1(), 3));
+        || ("2".equals(me.getUserLevel()) && hasPermissionForNumber(me.getUserId(),
+        rec.getNumber1(), 3));
     try {
       Field f = TrecordDto.class.getDeclaredField("listenAuth");
       f.setAccessible(true);
       f.set(rec, canListen ? "가능" : "불가능");
-    } catch (Exception ignored) {}
+    } catch (Exception ignored) {
+    }
 
-
-       // ▶▶ 바로 path(절대경로)만 내려줍니다.
-    rec.setListenUrl("/api/records/"  + rec.getRecordSeq() + "/listen");
+    // ▶▶ 바로 path(절대경로)만 내려줍니다.
+    rec.setListenUrl("/api/records/" + rec.getRecordSeq() + "/listen");
     rec.setDownloadUrl("/api/records/" + rec.getRecordSeq() + "/download");
     // ────────────────────────────────────────
+
+    String csdt = rec.getCallStartDateTime();
+    if (csdt != null) {
+      String dateDir = csdt.substring(0,10).replace("-", "");
+      // "../20250619/…". 앞의 "../" 제거
+      String afd = rec.getAudioFileDir()
+          .replace("\\","/")
+          .replaceFirst("^\\.\\./+","");
+      String fname = afd.substring(afd.lastIndexOf('/') + 1);
+
+      log.debug("[JSON 체크] dateDir={}, fname={}", dateDir, fname);
+      boolean exists = recOnDataService.isJsonGenerated(dateDir, fname);
+      rec.setJsonExists(exists);
+    } else {
+      rec.setJsonExists(false);
+    }
   }
+
 
   private Map<String, Object> buildPaginatedResponse(Page<TrecordDto> paged, long inboundCount, long outboundCount) {
     Map<String, Object> body = new LinkedHashMap<>();
