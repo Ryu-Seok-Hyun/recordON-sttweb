@@ -242,7 +242,11 @@ public class TrecordController {
       @RequestParam(name = "end", required = false) String endStr
   ) {
     Info me = requireLogin(authHeader);
-    Pageable reqPage = PageRequest.of(page, size);
+    Pageable reqPage = PageRequest.of(
+               page,
+                size,
+                Sort.by(Sort.Direction.DESC, "callStartDateTime")
+                );
 
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     LocalDateTime start = StringUtils.hasText(startStr) ? LocalDateTime.parse(startStr, fmt) : null;
