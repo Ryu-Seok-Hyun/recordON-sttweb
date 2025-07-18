@@ -14,21 +14,8 @@ java {
 	}
 }
 
-// 내장용 fat JAR/Bootable WAR 비활성화
-bootJar {
-	enabled = false
-}
-bootWar {
-	enabled = false
-}
-
-// Plain WAR 하나만 생성 (classifier 제거 + 이름 고정)
-war {
-	enabled = true
-	// default plain-war 에 붙는 "-plain" classifier 를 지웁니다
-	archiveClassifier = ''
-	// 톰캣에 올릴 파일명을 명시적으로 지정
-	archiveFileName = 'ROOT.war'
+repositories {
+	mavenCentral()
 }
 
 configurations {
@@ -37,49 +24,47 @@ configurations {
 	}
 }
 
-repositories {
-	mavenCentral()
-}
-
 dependencies {
-	// 서블릿 API (컴파일 타임에만 필요)
+	// 서블릿 API (컴파일 타임)
 	compileOnly 'jakarta.servlet:jakarta.servlet-api:6.0.0'
 
-	// 내장 톰캣 제외
+	// Spring Web (내장 톰캣 제외)
 	implementation('org.springframework.boot:spring-boot-starter-web') {
 		exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
 	}
-	// 외부 톰캣 제공
 	providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
 
+	// JPA, Security, Thymeleaf 등
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 	implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
 
+	// JWT
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 	runtimeOnly  'io.jsonwebtoken:jjwt-impl:0.11.5'
 	runtimeOnly  'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
+	// Validation, Lombok, MariaDB
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	compileOnly 'org.projectlombok:lombok'
-	providedRuntime 'org.mariadb.jdbc:mariadb-java-client:2.7.5'
 	annotationProcessor 'org.projectlombok:lombok'
+	providedRuntime 'org.mariadb.jdbc:mariadb-java-client:2.7.5'
 
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testImplementation 'org.springframework.security:spring-security-test'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
+	// AOP, Mail, Jasypt
 	implementation 'org.springframework.boot:spring-boot-starter-aop'
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
-
 	implementation 'com.github.ulisesbocchio:jasypt-spring-boot-starter:3.0.5'
 	implementation 'org.jasypt:jasypt:1.9.3'
 
+	// 기타
 	implementation 'jakarta.annotation:jakarta.annotation-api'
-
 	implementation 'org.xerial:sqlite-jdbc:3.45.3.0'
 
+	// 테스트
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 springBoot {
@@ -89,4 +74,19 @@ springBoot {
 tasks.withType(JavaCompile) {
 	options.encoding = 'UTF-8'
 	options.compilerArgs += ['-parameters']
+}
+
+// 1) 내장 jar/bootable WAR 모두 비활성화
+bootJar {
+	enabled = false
+}
+bootWar {
+	enabled = false
+}
+
+// 2) 순수 WAR 하나만 활성화
+war {
+	enabled = true
+	archiveClassifier = ''
+	archiveFileName = 'ROOT.war'
 }

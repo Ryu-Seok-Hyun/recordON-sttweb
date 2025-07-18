@@ -336,12 +336,14 @@ public class TrecordController {
 
     paged.getContent().forEach(rec -> postProcessRecordDto(rec, me));
 
+    // ------- STT 활성화 값 채우기 (핵심 부분) -------
     Map<String, Integer> extSttMap = recOnDataService.parseSttStatusFromIni();
     paged.getContent().forEach(rec -> {
       String ext = rec.getNumber1();
       if (ext != null) ext = ext.replaceAll("^0+", "");
       rec.setSttEnabled(extSttMap.getOrDefault(ext, 0));
     });
+    // --------------------------------------------
 
     return ResponseEntity.ok(buildPaginatedResponse(paged, inboundCount, outboundCount));
   }

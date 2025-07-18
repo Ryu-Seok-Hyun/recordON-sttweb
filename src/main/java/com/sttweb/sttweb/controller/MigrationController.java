@@ -40,8 +40,32 @@ public class MigrationController {
    */
   @PostMapping(value = "/migrate", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public String migrateSqliteToMysql(@RequestParam("dbfile") MultipartFile dbfile) throws Exception {
-    File tempFile = File.createTempFile("uploaded_", ".db");
-    dbfile.transferTo(tempFile);
+    File tempFile = null;
+    IOException lastException = null;
+
+    // 시도할 경로 순서
+    String[] baseDirs = { "C:/temp", "D:/temp", "E:/temp" };
+
+    for (String dirPath : baseDirs) {
+      try {
+        File tempDir = new File(dirPath);
+        if (!tempDir.exists()) tempDir.mkdirs(); // 폴더 없으면 생성
+        // 권한까지 확인하고 생성
+        if (tempDir.exists() && tempDir.canWrite()) {
+          tempFile = File.createTempFile("uploaded_", ".db", tempDir);
+          dbfile.transferTo(tempFile);
+          break;
+        }
+      } catch (IOException e) {
+        lastException = e;
+        // 다음 경로로 시도
+      }
+    }
+    if (tempFile == null) {
+      // 모두 실패하면 OS 기본 temp폴더 사용(여기도 안되면 예외 발생)
+      tempFile = File.createTempFile("uploaded_", ".db");
+      dbfile.transferTo(tempFile);
+    }
 
     String resultMsg;
     try {
@@ -51,6 +75,7 @@ public class MigrationController {
     }
     return resultMsg;
   }
+
 
   /**
    * SQLite DB에서 테이블/컬럼/데이터를 읽어 MySQL로 복사

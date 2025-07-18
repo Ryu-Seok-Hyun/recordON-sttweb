@@ -74,7 +74,6 @@ public class RecOnDataService {
    */
   public Map<String, Integer> parseSttStatusFromIni() {
     Map<String, Integer> extSttMap = new HashMap<>();
-    // 실제 파일 경로/이름은 환경에 맞게 수정하세요
     for (String drive : drives) {
       File iniFile = new File(drive + File.separator + baseFolder + File.separator + "RecOnLineInfo.ini");
       if (!iniFile.exists()) continue;
@@ -82,20 +81,29 @@ public class RecOnDataService {
       try (BufferedReader reader = new BufferedReader(new FileReader(iniFile))) {
         String line;
         while ((line = reader.readLine()) != null) {
-          // 예시: 1010,1
-          String[] arr = line.trim().split(",");
-          if (arr.length >= 2) {
-            String ext = arr[0].replaceAll("^0+", "");
-            int enabled = 0;
-            try { enabled = Integer.parseInt(arr[1]); } catch (Exception ignored) {}
-            extSttMap.put(ext, enabled);
+          line = line.trim();
+          int eqIdx = line.indexOf('=');
+          if (eqIdx < 0) continue;
+          String[] fields = line.substring(eqIdx + 1).split(";");
+          if (fields.length < 2) continue;
+          String ext = fields[0].replaceAll("^0+", "");
+          int enabled = 0;
+          // 마지막부터 역순으로 숫자를 찾음 (마지막에 ; 공백 있을 수 있어서)
+          for (int i = fields.length - 1; i >= 0; i--) {
+            String val = fields[i].trim();
+            if (!val.isEmpty() && val.matches("\\d+")) {
+              enabled = Integer.parseInt(val);
+              break;
+            }
           }
+          extSttMap.put(ext, enabled);
         }
       } catch (IOException e) {
-        // 필요하면 로깅
         e.printStackTrace();
       }
     }
     return extSttMap;
   }
+
+
 }

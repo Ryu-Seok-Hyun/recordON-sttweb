@@ -16,8 +16,12 @@ import com.sttweb.sttweb.service.TrecordService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.criteria.Predicate;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.time.LocalDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -48,7 +52,7 @@ import java.util.stream.Stream;
 @Service
 public class TrecordServiceImpl implements TrecordService {
 
-
+  private static final Logger log = LoggerFactory.getLogger(TrecordServiceImpl.class);
   private static final String[] SEARCH_DRIVES = {"C:", "D:", "E:"};
   private static final String REC_ON_DATA_SUB = "\\RecOnData";
   private static final DateTimeFormatter DT_FMT =
@@ -825,45 +829,7 @@ public class TrecordServiceImpl implements TrecordService {
         String.format("로컬 디스크에서 녹취 파일을 찾을 수 없습니다: %s/%s", dateFolder, fileName));
   }
 
-  // RecOnLineInfo.ini
-  private Map<String, Integer> parseSttStatusFromIni() {
-    String[] drives = {"C:", "D:", "E:"};
-    String subPath = "\\RecOnData\\RecOnLineInfo.ini";
 
-    // *** [고정 위치: 9번째 값(인덱스 8)] ***
-    final int STT_ENABLED_INDEX = 8;
-    final int EXTENSION_INDEX = 0;
 
-    for (String drv : drives) {
-      Path iniPath = Paths.get(drv + subPath);
-      if (Files.exists(iniPath)) {
-        try (BufferedReader br = Files.newBufferedReader(iniPath, java.nio.charset.Charset.forName("MS949"))) {
-          Map<String, Integer> extSttMap = new HashMap<>();
-          String line;
-          boolean inSection = false;
-          while ((line = br.readLine()) != null) {
-            line = line.trim();
-            if (!inSection) {
-              if (line.startsWith("[RECORD_TELLIST]")) inSection = true;
-              continue;
-            }
-            if (line.isEmpty() || !Character.isDigit(line.charAt(0))) continue;
-            String[] kv = line.split("=", 2);
-            if (kv.length < 2) continue;
-            String[] tokens = kv[1].split(";");
-            // --- [핵심] STT 인덱스 고정, 배열 길이만 체크 (안전하게!)
-            if (tokens.length > STT_ENABLED_INDEX) {
-              String ext = tokens[EXTENSION_INDEX].replaceAll("^0+", ""); // "0447" -> "447"
-              int stt = 0;
-              try { stt = Integer.parseInt(tokens[STT_ENABLED_INDEX].trim()); } catch (Exception ignored) {}
-              extSttMap.put(ext, stt);
-            }
-          }
-          return extSttMap;
-        } catch (Exception ignored) {}
-      }
-    }
-    return Collections.emptyMap();
-  }
 
 }
