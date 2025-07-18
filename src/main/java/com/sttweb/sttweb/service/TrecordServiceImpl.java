@@ -829,6 +829,11 @@ public class TrecordServiceImpl implements TrecordService {
   private Map<String, Integer> parseSttStatusFromIni() {
     String[] drives = {"C:", "D:", "E:"};
     String subPath = "\\RecOnData\\RecOnLineInfo.ini";
+
+    // *** [고정 위치: 9번째 값(인덱스 8)] ***
+    final int STT_ENABLED_INDEX = 8;
+    final int EXTENSION_INDEX = 0;
+
     for (String drv : drives) {
       Path iniPath = Paths.get(drv + subPath);
       if (Files.exists(iniPath)) {
@@ -846,11 +851,13 @@ public class TrecordServiceImpl implements TrecordService {
             String[] kv = line.split("=", 2);
             if (kv.length < 2) continue;
             String[] tokens = kv[1].split(";");
-            if (tokens.length < 9) continue;
-            String ext = tokens[0].replaceAll("^0+", ""); // "0447" -> "447"
-            int stt = 0;
-            try { stt = Integer.parseInt(tokens[8].trim()); } catch (Exception ignored) {}
-            extSttMap.put(ext, stt);
+            // --- [핵심] STT 인덱스 고정, 배열 길이만 체크 (안전하게!)
+            if (tokens.length > STT_ENABLED_INDEX) {
+              String ext = tokens[EXTENSION_INDEX].replaceAll("^0+", ""); // "0447" -> "447"
+              int stt = 0;
+              try { stt = Integer.parseInt(tokens[STT_ENABLED_INDEX].trim()); } catch (Exception ignored) {}
+              extSttMap.put(ext, stt);
+            }
           }
           return extSttMap;
         } catch (Exception ignored) {}
@@ -858,6 +865,5 @@ public class TrecordServiceImpl implements TrecordService {
     }
     return Collections.emptyMap();
   }
-
 
 }
