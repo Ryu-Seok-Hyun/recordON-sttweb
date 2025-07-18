@@ -67,6 +67,7 @@ public class TbranchController {
   public ResponseEntity<?> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
       @RequestParam(name = "keyword", required = false) String keyword,
+      @RequestParam(name = "serverStatus", required = false) String serverStatus,
       Pageable pageable
   ) {
     // 1) 토큰 검사
@@ -78,33 +79,58 @@ public class TbranchController {
     String lvl = me.getUserLevel();
     Integer myBranchSeq = me.getBranchSeq();
 
-    if ("0".equals(lvl)) {
-      // 본사 관리자 → 전체 or 검색
-      if (keyword != null && !keyword.isBlank()) {
-        Page<TbranchDto> searched = branchSvc.search(keyword.trim(), pageable);
-        return ResponseEntity.ok(searched);
-      } else {
-        Page<TbranchDto> all = branchSvc.findAll(pageable);
-        return ResponseEntity.ok(all);
+    // 3) 서버상태 파싱 (on/off/1/0)
+    Boolean isAlive = null;
+    if (serverStatus != null) {
+      if (serverStatus.equalsIgnoreCase("on") || serverStatus.equals("1")) {
+        isAlive = true;
+      } else if (serverStatus.equalsIgnoreCase("off") || serverStatus.equals("0")) {
+        isAlive = false;
       }
+    }
+
+    if ("0".equals(lvl)) {
+      // ─── 본사 관리자
+      Page<TbranchDto> page;
+
+      if (keyword != null && !keyword.isBlank() && isAlive != null) {
+        // 검색 + 상태 동시
+        page = branchSvc.searchWithStatus(keyword.trim(), isAlive, pageable);
+      } else if (keyword != null && !keyword.isBlank()) {
+        // 검색만
+        page = branchSvc.search(keyword.trim(), pageable);
+      } else if (isAlive != null) {
+        // 상태만
+        page = branchSvc.findAllByStatus(isAlive, pageable);
+      } else {
+        // 전체
+        page = branchSvc.findAll(pageable);
+      }
+      return ResponseEntity.ok(page);
 
     } else if ("1".equals(lvl)) {
-      // 지사 관리자 → 자신의 지점만
-      if (myBranchSeq == null) {
+      // ─── 지사 관리자
+      if (myBranchSeq == null)
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
             .body("내 지점 정보가 설정되어 있지 않습니다.");
-      }
+
       TbranchDto dto = branchSvc.findById(myBranchSeq);
-      Page<TbranchDto> single =
-          new PageImpl<>(List.of(dto), pageable, 1);
+
+      // 상태 조건 필터
+      if (isAlive != null && !isAlive.equals(dto.getIsAlive())) {
+        return ResponseEntity.ok(Page.empty(pageable)); // 조건 불일치시 빈 결과
+      }
+      Page<TbranchDto> single = new PageImpl<>(List.of(dto), pageable, 1);
       return ResponseEntity.ok(single);
 
     } else {
-      // 일반 유저
+      // ─── 일반 유저
       return ResponseEntity.status(HttpStatus.FORBIDDEN)
           .body("권한이 없습니다.");
     }
   }
+
+
 
   /**
    * 지점 단건 조회

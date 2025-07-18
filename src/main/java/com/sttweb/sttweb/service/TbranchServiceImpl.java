@@ -276,6 +276,19 @@ public class TbranchServiceImpl implements TbranchService {
     // **static** 이 아니라, 인스턴스(repository)에서 findAll() 호출!
     return repository.findAll();
   }
+
+  @Override
+  public Page<TbranchDto> findAllByStatus(boolean isAlive, Pageable pageable) {
+    return branchRepository.findByIsAlive(isAlive, pageable)
+        .map(TbranchDto::fromEntity);
+  }
+
+  @Override
+  public Page<TbranchDto> searchWithStatus(String keyword, Boolean isAlive, Pageable pageable) {
+    return branchRepository.findByCompanyNameContainingAndIsAlive(keyword, isAlive, pageable)
+        .map(TbranchDto::fromEntity);
+  }
+
 }
 
 

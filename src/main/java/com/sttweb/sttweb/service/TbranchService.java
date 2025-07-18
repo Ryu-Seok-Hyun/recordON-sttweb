@@ -65,4 +65,11 @@ public interface TbranchService {
   void updateHealthStatus(String ip, int port, boolean isUp);
 
   List<TbranchEntity> findAllBranches();
+
+  // 상태로만 조회
+  Page<TbranchDto> findAllByStatus(boolean isAlive, Pageable pageable);
+  // 검색+상태 조회
+  Page<TbranchDto> searchWithStatus(String keyword, Boolean isAlive, Pageable pageable);
+
+
 }

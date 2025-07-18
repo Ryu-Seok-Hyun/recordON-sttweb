@@ -236,7 +236,8 @@ public class TmemberController {
         info.getCurrentBranchSeq(),
         info.getCurrentBranchName(),
         info.getBranchSeq(),
-        info.getBranchName()
+        info.getBranchName(),
+        isTempPassword
     );
     return ResponseEntity.ok(loginRes);
   }

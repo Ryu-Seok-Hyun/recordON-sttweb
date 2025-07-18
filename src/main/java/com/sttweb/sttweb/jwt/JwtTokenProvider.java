@@ -50,7 +50,7 @@ public class JwtTokenProvider {
     claims.put("hqYn",       info.getHqYn());
     claims.put("currentBranchSeq",  info.getCurrentBranchSeq());
     claims.put("currentBranchName", info.getCurrentBranchName());
-    // 그 외 필요한 추가 필드
+    claims.put("mustChangePassword", info.getMustChangePassword());
     claims.put("position",   info.getPosition());
     claims.put("maskFlag",   info.getMaskFlag());
     claims.put("rank",       info.getRank());

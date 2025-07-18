@@ -67,6 +67,10 @@ public class TrecordDto {
     }
   }
 
+  private Integer sttEnabled;
+  public Integer getSttEnabled() { return sttEnabled; }
+  public void setSttEnabled(Integer sttEnabled) { this.sttEnabled = sttEnabled; }
+
   public static TrecordDto from(TrecordEntity e) {
     if (e == null) return null;
     return TrecordDto.builder()

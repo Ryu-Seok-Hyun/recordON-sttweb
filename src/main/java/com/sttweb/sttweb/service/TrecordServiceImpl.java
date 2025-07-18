@@ -15,6 +15,7 @@ import com.sttweb.sttweb.service.TrecordService;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.criteria.Predicate;
+import java.io.BufferedReader;
 import java.io.UncheckedIOException;
 import java.time.LocalDateTime;
 import org.springframework.cache.annotation.Cacheable;
@@ -485,38 +486,32 @@ public class TrecordServiceImpl implements TrecordService {
     TrecordEntity e = repo.findById(recordSeq)
         .orElseThrow(() -> new EntityNotFoundException("녹취를 찾을 수 없습니다: " + recordSeq));
 
-    // 파일 경로 정리
+    // audioFileDir 정리
     String raw = e.getAudioFileDir().replace("\\", "/");
     if (raw.startsWith("../")) {
       raw = raw.substring(3);
     }
 
-    // RecOnData 루트 폴더 검색
-    Path recOnRoot = findRecOnDataRoot();
-    if (recOnRoot == null) {
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "서버에서 RecOnData 폴더를 찾을 수 없습니다."
-      );
+    // C:, D:, E: 드라이브 순으로 실제 파일이 있는지 검사
+    for (String drive : SEARCH_DRIVES) {
+      Path candidate = Paths.get(drive + REC_ON_DATA_SUB, raw).normalize();
+      try {
+        UrlResource res = new UrlResource(candidate.toUri());
+        if (res.exists() && res.isReadable()) {
+          return res;
+        }
+      } catch (MalformedURLException ignore) {
+        // URL 변환 실패 시 다음 드라이브로
+      }
     }
 
-    Path full = recOnRoot.resolve(raw).normalize();
-    try {
-      UrlResource res = new UrlResource(full.toUri());
-      if (!res.exists() || !res.isReadable()) {
-        throw new ResponseStatusException(
-            HttpStatus.NOT_FOUND,
-            "파일을 찾을 수 없습니다: " + full
-        );
-      }
-      return res;
-    } catch (MalformedURLException ex) {
-      throw new ResponseStatusException(
-          HttpStatus.INTERNAL_SERVER_ERROR,
-          "파일 URL 생성 실패: " + full, ex
-      );
-    }
+    // 어떤 드라이브에서도 못 찾았으면 404
+    throw new ResponseStatusException(
+        HttpStatus.NOT_FOUND,
+        "파일을 찾을 수 없습니다: " + raw
+    );
   }
+
 
 
   private Path findRecOnDataRoot() {
@@ -828,6 +823,40 @@ public class TrecordServiceImpl implements TrecordService {
 
     throw new ResourceNotFoundException(
         String.format("로컬 디스크에서 녹취 파일을 찾을 수 없습니다: %s/%s", dateFolder, fileName));
+  }
+
+  // RecOnLineInfo.ini
+  private Map<String, Integer> parseSttStatusFromIni() {
+    String[] drives = {"C:", "D:", "E:"};
+    String subPath = "\\RecOnData\\RecOnLineInfo.ini";
+    for (String drv : drives) {
+      Path iniPath = Paths.get(drv + subPath);
+      if (Files.exists(iniPath)) {
+        try (BufferedReader br = Files.newBufferedReader(iniPath, java.nio.charset.Charset.forName("MS949"))) {
+          Map<String, Integer> extSttMap = new HashMap<>();
+          String line;
+          boolean inSection = false;
+          while ((line = br.readLine()) != null) {
+            line = line.trim();
+            if (!inSection) {
+              if (line.startsWith("[RECORD_TELLIST]")) inSection = true;
+              continue;
+            }
+            if (line.isEmpty() || !Character.isDigit(line.charAt(0))) continue;
+            String[] kv = line.split("=", 2);
+            if (kv.length < 2) continue;
+            String[] tokens = kv[1].split(";");
+            if (tokens.length < 9) continue;
+            String ext = tokens[0].replaceAll("^0+", ""); // "0447" -> "447"
+            int stt = 0;
+            try { stt = Integer.parseInt(tokens[8].trim()); } catch (Exception ignored) {}
+            extSttMap.put(ext, stt);
+          }
+          return extSttMap;
+        } catch (Exception ignored) {}
+      }
+    }
+    return Collections.emptyMap();
   }
 
 

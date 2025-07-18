@@ -1,5 +1,6 @@
 package com.sttweb.sttweb.service;
 
+import com.sttweb.sttweb.dto.TbranchDto;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import java.util.List;
@@ -137,4 +138,6 @@ public interface TrecordService {
 
   Page<TrecordDto> searchByPhoneEnding(String phoneEnding, Pageable pageable);
   Resource getLocalFile(Integer recordSeq);
+
+
 }

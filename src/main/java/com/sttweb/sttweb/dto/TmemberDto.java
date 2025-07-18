@@ -161,6 +161,7 @@ public class TmemberDto {
     private String  currentBranchName;
     private Integer branchSeq;
     private String  branchName;
+    private boolean mustChangePassword;
   }
 
   /**

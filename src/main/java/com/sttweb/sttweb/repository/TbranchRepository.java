@@ -36,4 +36,7 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
       @Param("port") String port
   );
 
+  Page<TbranchEntity> findByIsAlive(boolean isAlive, Pageable pageable);
+  Page<TbranchEntity> findByCompanyNameContainingAndIsAlive(String keyword, boolean isAlive, Pageable pageable);
+
 }

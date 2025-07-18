@@ -2,13 +2,18 @@ package com.sttweb.sttweb.service;
 
 
 import com.sttweb.sttweb.dto.RecordStatusDto;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -61,5 +66,36 @@ public class RecOnDataService {
       if (Files.exists(jsonPath)) return true;
     }
     return false;
+  }
+
+  /**
+   * 내선별 STT 활성화 여부를 INI(혹은 텍스트파일)에서 파싱
+   * (예시로 "C:/RecOnData/RecOnLineInfo.ini" 파일에서 읽어옴)
+   */
+  public Map<String, Integer> parseSttStatusFromIni() {
+    Map<String, Integer> extSttMap = new HashMap<>();
+    // 실제 파일 경로/이름은 환경에 맞게 수정하세요
+    for (String drive : drives) {
+      File iniFile = new File(drive + File.separator + baseFolder + File.separator + "RecOnLineInfo.ini");
+      if (!iniFile.exists()) continue;
+
+      try (BufferedReader reader = new BufferedReader(new FileReader(iniFile))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          // 예시: 1010,1
+          String[] arr = line.trim().split(",");
+          if (arr.length >= 2) {
+            String ext = arr[0].replaceAll("^0+", "");
+            int enabled = 0;
+            try { enabled = Integer.parseInt(arr[1]); } catch (Exception ignored) {}
+            extSttMap.put(ext, enabled);
+          }
+        }
+      } catch (IOException e) {
+        // 필요하면 로깅
+        e.printStackTrace();
+      }
+    }
+    return extSttMap;
   }
 }

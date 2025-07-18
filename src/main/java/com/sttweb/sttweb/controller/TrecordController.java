@@ -335,6 +335,14 @@ public class TrecordController {
     }
 
     paged.getContent().forEach(rec -> postProcessRecordDto(rec, me));
+
+    Map<String, Integer> extSttMap = recOnDataService.parseSttStatusFromIni();
+    paged.getContent().forEach(rec -> {
+      String ext = rec.getNumber1();
+      if (ext != null) ext = ext.replaceAll("^0+", "");
+      rec.setSttEnabled(extSttMap.getOrDefault(ext, 0));
+    });
+
     return ResponseEntity.ok(buildPaginatedResponse(paged, inboundCount, outboundCount));
   }
 
@@ -673,38 +681,39 @@ public class TrecordController {
    */
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취Seq=#{#id}")
   @GetMapping("/{id}/download")
-  public void downloadById(
+  public ResponseEntity<StreamingResponseBody> downloadById(
       HttpServletRequest request,
-      HttpServletResponse response,
       @PathVariable Integer id) throws Exception {
 
     // 1) 인증
     Info me = requireLogin(request);
 
-    // 2) 다운로드 권한 확인 (permLevel >= 4)
-    TrecordDto recordDto = recordSvc.findById(id);
+    // 2) 권한 확인 (permLevel >= 4)
+    TrecordDto rec = recordSvc.findById(id);
     boolean canDownload =
-        hasPermissionForNumber(me.getUserId(), recordDto.getNumber1(), 4)
-            || hasPermissionForNumber(me.getUserId(), recordDto.getNumber2(), 4)
-            || "0".equals(me.getUserLevel())  // super-admin
-            || "1".equals(me.getUserLevel()); // branch-admin
+        hasPermissionForNumber(me.getUserId(), rec.getNumber1(), 4)
+            || hasPermissionForNumber(me.getUserId(), rec.getNumber2(), 4)
+            || "0".equals(me.getUserLevel())
+            || "1".equals(me.getUserLevel());
     if (!canDownload) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
     }
 
+    // 3) 로컬 파일 리소스 조회 (C:, D:, E: 드라이브 중 자동 탐색)
+    Resource audio = recordSvc.getLocalFile(id);
 
-    if (recordDto.getBranchSeq() == null) {
-      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "녹취 파일의 소속 지점 정보를 찾을 수 없습니다.");
-    }
+    // 4) 스트리밍 준비
+    MediaType mediaType = MediaTypeFactory.getMediaType(audio)
+        .orElse(MediaType.APPLICATION_OCTET_STREAM);
+    String filename = UriUtils.encode(audio.getFilename(), StandardCharsets.UTF_8);
 
-    TbranchEntity branch = branchSvc.findEntityBySeq(recordDto.getBranchSeq());
-    if (isCurrentServerBranch(branch, request)) {
-      log.debug("녹취 파일(ID: {})을 로컬에서 다운로드합니다.", id);
-      serveLocalFile(id, response);
-    } else {
-      log.debug("녹취 파일(ID: {})을 원격 지점({})으로 프록시 다운로드 요청합니다.", id, branch.getPIp());
-      proxyFileRequest(branch, id, "download", request, response);
-    }
+    StreamingResponseBody body = buildStream(audio);
+
+    // 5) 응답 리턴
+    return ResponseEntity.ok()
+        .contentType(mediaType)
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+        .body(body);
   }
 
   /**
