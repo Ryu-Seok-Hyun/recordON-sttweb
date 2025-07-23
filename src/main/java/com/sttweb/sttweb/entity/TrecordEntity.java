@@ -4,13 +4,14 @@ package com.sttweb.sttweb.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-
+import org.hibernate.annotations.Where;
 import java.sql.Time;
 import java.sql.Timestamp;
 
 @Getter
 @Setter
 @Entity
+@Where(clause = "audioPlayTime <> '00:00:00'")
 @Table(
     name = "trecord",
     uniqueConstraints = @UniqueConstraint(

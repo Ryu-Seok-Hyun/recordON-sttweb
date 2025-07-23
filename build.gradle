@@ -69,7 +69,7 @@ dependencies {
 	implementation 'org.springframework.retry:spring-retry'
 	implementation 'net.javacrumbs.shedlock:shedlock-spring:5.15.0'
 	implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.15.0'
-
+	implementation 'org.hibernate:hibernate-core:6.6.11.Final'
 }
 
 springBoot {
