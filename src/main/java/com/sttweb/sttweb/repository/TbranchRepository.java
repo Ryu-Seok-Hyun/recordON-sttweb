@@ -39,4 +39,11 @@ public interface TbranchRepository extends JpaRepository<TbranchEntity, Integer>
   Page<TbranchEntity> findByIsAlive(boolean isAlive, Pageable pageable);
   Page<TbranchEntity> findByCompanyNameContainingAndIsAlive(String keyword, boolean isAlive, Pageable pageable);
 
+  /** 회사 ID로 지점 개수 조회 */
+  @Query("SELECT COUNT(b) FROM TbranchEntity b WHERE b.companyId = :companyId")
+  int countByCompanyId(@Param("companyId") Long companyId);
+  /**
+   * hqYn 컬럼이 '1'인(지사) 레코드가 하나라도 있으면 true
+   */
+  boolean existsByHqYn(String hqYn);
 }

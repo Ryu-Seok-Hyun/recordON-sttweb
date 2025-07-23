@@ -113,6 +113,15 @@ public class LoginAccessFilter extends OncePerRequestFilter {
       chain.doFilter(wrap, response);
       return;
     }
+
+       // ── branchSeq가 null 이거나 userLevel=3(슈퍼유저)이면 필터 스킵 ──
+       boolean isSuperUser = "3".equals(user.getUserLevel());
+       if (isSuperUser || user.getBranchSeq() == null) {
+           chain.doFilter(wrap, response);
+           return;
+         }
+
+
     TbranchEntity home = branchSvc.findEntityBySeq(user.getBranchSeq());
     // home이 null일 경우를 대비한 방어 코드 추가
     if (home == null) {

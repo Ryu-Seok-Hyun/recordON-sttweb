@@ -163,9 +163,23 @@ public class TmemberController {
           "아이디 또는 비밀번호가 잘못되었습니다."
       );
     }
+       // ── 슈퍼유저(userLevel=3) 여부 체크 ──
+          boolean isSuperUser = "3".equals(user.getUserLevel());
 
     // 2) “본사(hqYn=0) 아니면, 자기 지사 서버여야” 검사
-    TbranchEntity home = branchSvc.findEntityBySeq(user.getBranchSeq());
+
+     // ① 기본 home 세팅 (일반 사용자는 자신의 branchSeq, 슈퍼유저는 HQ 브랜치)
+    TbranchEntity home = null;
+     if (!isSuperUser && user.getBranchSeq() != null) {
+           home = branchSvc.findEntityBySeq(user.getBranchSeq());
+       } else if (isSuperUser) {
+           // 슈퍼유저는 ip_type==HQ_ONLY_TYPE 인 본사(=HQ) 브랜치로 세팅
+       home = branchSvc.findAllEntities().stream()
+                    // hqYn 컬럼이 "0" 이면 본사
+                      .filter(b -> "0".equals(b.getHqYn()))
+                      .findFirst()
+                      .orElse(null);
+       }
     boolean isHqUser = home != null && "0".equals(home.getHqYn());
 
     // 1) 실제 클라이언트가 접속한 Host/IP
@@ -191,7 +205,7 @@ public class TmemberController {
     System.out.printf("[DBG] srvBr=%s%n",
         (srvBr == null ? "empty" : srvBr.getBranchSeq() + "/" + srvBr.getCompanyName()));
 
-    if (!isHqUser) {
+    if (!isHqUser && !isSuperUser) {
       // 지사 계정인데, 접속 서버가 없거나 내 지사와 다르면 차단
       if (srvBr == null || !srvBr.getBranchSeq().equals(home.getBranchSeq())) {
         throw new ResponseStatusException(
@@ -203,16 +217,21 @@ public class TmemberController {
 
     // 3) JWT 생성 이하 로직
     Info info = Info.fromEntity(user);
-    if (home != null) info.setBranchName(home.getCompanyName());
+     // ── 홈 브랜치 정보로 덮어쓰기 ──
+         if (home != null) {
+         info.setBranchSeq(home.getBranchSeq());
+         info.setBranchName(home.getCompanyName());
+       }
 
-    // “현재 접속 지사” 세팅
-    if (srvBr != null) {
-      info.setCurrentBranchSeq(srvBr.getBranchSeq());
-      info.setCurrentBranchName(srvBr.getCompanyName());
-    } else {
-      info.setCurrentBranchSeq(info.getBranchSeq());
-      info.setCurrentBranchName(info.getBranchName());
-    }
+// “현재 접속 지사” 세팅
+     if (srvBr != null) {
+         info.setCurrentBranchSeq(srvBr.getBranchSeq());
+         info.setCurrentBranchName(srvBr.getCompanyName());
+       } else if (home != null) {
+         // 서버지점이 없으면 home 값을 current 로도 복사
+             info.setCurrentBranchSeq(home.getBranchSeq());
+         info.setCurrentBranchName(home.getCompanyName());
+       }
 
     boolean isTempPassword = passwordEncoder.matches("1234", user.getUserPass());
     info.setMustChangePassword(isTempPassword);

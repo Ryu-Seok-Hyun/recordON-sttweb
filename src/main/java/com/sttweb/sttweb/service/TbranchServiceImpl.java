@@ -289,6 +289,13 @@ public class TbranchServiceImpl implements TbranchService {
         .map(TbranchDto::fromEntity);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public int countByCompanyId(Long companyId) {
+    return repo.countByCompanyId(companyId);
+  }
+
+
 }
 
 

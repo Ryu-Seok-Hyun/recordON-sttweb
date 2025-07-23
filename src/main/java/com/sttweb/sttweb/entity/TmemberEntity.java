@@ -2,7 +2,11 @@ package com.sttweb.sttweb.entity;
 
 import jakarta.persistence.*;
 import java.util.List;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
@@ -11,6 +15,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
+@NoArgsConstructor                // ← public no-arg 생성자
+@AllArgsConstructor
+@Builder
 public class TmemberEntity {
 
   @Id
@@ -34,6 +41,7 @@ public class TmemberEntity {
    * "0" = 관리자, "1" = 일반
    * 필드 기본값과 DDL DEFAULT 까지 설정
    */
+  @Builder.Default
   @Column(
       name = "user_level",
       nullable = false,
@@ -54,7 +62,7 @@ public class TmemberEntity {
   @Column(name = "department", length = 50, nullable = true)
   private String department;
 
-
+  @Builder.Default
   @Column(
       name = "discd",
       nullable = false,
@@ -74,6 +82,7 @@ public class TmemberEntity {
   /**
    * 1=조회만, 2=조회+청취, 3=조회+청취+다운로드
    */
+  @Builder.Default
   @Column(
       name = "role_seq",
       nullable = false,
@@ -83,6 +92,7 @@ public class TmemberEntity {
 
 
   /** 마스킹 여부 (0=마스킹, 1=마스킹 안 함) */
+  @Builder.Default
   @Column(name = "mask_flag", nullable = false, columnDefinition = "TINYINT(1) default 0")
   private Integer maskFlag = 0;
 

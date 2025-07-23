@@ -71,5 +71,11 @@ public interface TbranchService {
   // 검색+상태 조회
   Page<TbranchDto> searchWithStatus(String keyword, Boolean isAlive, Pageable pageable);
 
+  /**
+   * 회사 단위 지점 개수 조회
+   * @param companyId 회사 ID
+   * @return 지점 수
+   */
+  int countByCompanyId(Long companyId);
 
 }

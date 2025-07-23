@@ -8,6 +8,7 @@ import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.repository.TbranchRepository;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
+import java.util.Collections;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -30,6 +31,7 @@ public class TbranchController {
   private final TmemberService memberSvc;
   private final JwtTokenProvider jwtTokenProvider;
   private final TbranchRepository branchRepository;
+
 
   /**
    * 1) 공통: Authorization 헤더에 Bearer 토큰 유효성 검사
@@ -89,7 +91,7 @@ public class TbranchController {
       }
     }
 
-    if ("0".equals(lvl)) {
+    if ("0".equals(lvl) || "3".equals(lvl)) {
       // ─── 본사 관리자
       Page<TbranchDto> page;
 
@@ -154,7 +156,7 @@ public class TbranchController {
     Integer myBranchSeq = me.getBranchSeq();
 
     // 3) 분기
-    if ("0".equals(lvl)) {
+    if ("0".equals(lvl) || "3".equals(lvl)) {
       // 본사 관리자
       return ResponseEntity.ok(branchSvc.findById(id));
 
@@ -322,4 +324,39 @@ public class TbranchController {
     return ResponseEntity.ok(result);
   }
 
+  /**
+   * 회사 전체 지점 수 반환
+   * GET /api/companies/{companyId}/branches/count
+   */
+//  @GetMapping("/{companyId}/branches/count")
+//  public ResponseEntity<Integer> getBranchCount(@PathVariable Long companyId) {
+//    int count = branchService.countByCompanyId(companyId);
+//    return ResponseEntity.ok(count);
+//  }
+
+  /**
+   * 회사에 지사가 없고(only HQ) 본사만 있으면 true,
+   * 지사가 하나라도 있으면 false 반환
+   *
+   * GET /api/branches/{companyId}/branches/exists
+   */
+  @GetMapping("/{companyId}/branches/exists")
+  public ResponseEntity<?> onlyHeadquarterExists(
+      @PathVariable("companyId") Long companyId,
+      @RequestHeader(value = "Authorization", required = false) String authHeader
+  ) {
+    // 1) 인증 검사
+    ResponseEntity<String> err = checkToken(authHeader);
+    if (err != null) return err;
+
+    // 2) hqYn='1'인 지사 레코드가 하나라도 있는지 확인
+    boolean hasSubsidiary = branchRepository.existsByHqYn("1");
+    // 지사가 없으면 true, 있으면 false
+    boolean onlyHeadquarter = !hasSubsidiary;
+
+    // 3) 결과 반환
+    return ResponseEntity.ok(
+        Collections.singletonMap("onlyHeadquarter", onlyHeadquarter)
+    );
+  }
 }
