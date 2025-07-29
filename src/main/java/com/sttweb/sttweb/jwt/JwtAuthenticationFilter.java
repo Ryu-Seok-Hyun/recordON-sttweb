@@ -51,43 +51,38 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   @Override
   protected void doFilterInternal(HttpServletRequest request,
       HttpServletResponse response,
-      FilterChain        chain)
+      FilterChain chain)
       throws ServletException, IOException {
 
     try {
-      /* ───── 1) 표준 Bearer 토큰 ───── */
       String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
       if (authHeader != null && authHeader.startsWith("Bearer ")) {
         String token = authHeader.substring(7);
-        if (jwtTokenProvider.validateToken(token)) {
 
-          String  userId     = jwtTokenProvider.getUserId(token);
-          String  userLevel  = jwtTokenProvider.getUserLevel(token);      // HQ 판별용
-          List<String> roles = jwtTokenProvider.getRoles(token);          // List<String>
+        //  parseClaims()는 ExpiredJwtException을 그대로 throw 한다
+        var claims = jwtTokenProvider.parseClaims(token);
 
-          /* 권한 매핑 */
-          List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        String userId    = claims.getSubject();
+        String userLevel = claims.get("userLevel", String.class);
+        List<String> roles = claims.get("roles", List.class);
 
-          // 본사 레벨("0") → ROLE_ADMIN
-          if ("0".equals(userLevel)) {
-            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
-          }
-
-          // 토큰 roles → ROLE_xxx 형태로 매핑
-          if (roles != null) {
-            authorities.addAll(roles.stream()
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toList()));
-          }
-
-          UsernamePasswordAuthenticationToken authentication =
-              new UsernamePasswordAuthenticationToken(userId, null, authorities);
-
-          SecurityContextHolder.getContext().setAuthentication(authentication);
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        if ("0".equals(userLevel)) {
+          authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
         }
+        if (roles != null) {
+          authorities.addAll(roles.stream()
+              .map(SimpleGrantedAuthority::new)
+              .collect(Collectors.toList()));
+        }
+
+        UsernamePasswordAuthenticationToken authentication =
+            new UsernamePasswordAuthenticationToken(userId, null, authorities);
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
       }
 
-      /* ───── 2) 재인증 토큰 (X-ReAuth-Token 헤더) ───── */
+      /* 재인증 토큰 */
       String reAuthHeader = request.getHeader("X-ReAuth-Token");
       if (reAuthHeader != null && jwtTokenProvider.validateReAuthToken(reAuthHeader)) {
         String userId = jwtTokenProvider.getUserId(reAuthHeader);
@@ -102,11 +97,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       SecurityContextHolder.clearContext();
       entryPoint.commence(request, response,
           new InsufficientAuthenticationException("토큰 만료", ex));
+      return;
 
     } catch (JwtException | IllegalArgumentException ex) {
       SecurityContextHolder.clearContext();
       entryPoint.commence(request, response,
           new InsufficientAuthenticationException("토큰 오류", ex));
+      return;
     }
   }
 }

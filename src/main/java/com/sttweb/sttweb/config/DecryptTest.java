@@ -13,7 +13,7 @@ public class DecryptTest {
     SimpleStringPBEConfig config = new SimpleStringPBEConfig();
 
     config.setPassword("070qlvmf1!"); // 복호화 키
-    config.setAlgorithm("PBEWithMD5AndDES");
+    config.setAlgorithm("$2a$10$trY7uCiRnZO3hXMYwI8yEOhmzlh8m3xq6RCzrgVC/9myuGerijQ4q");
     config.setKeyObtentionIterations("1000");
     config.setPoolSize("1"); // 중요
     config.setProviderName("SunJCE");

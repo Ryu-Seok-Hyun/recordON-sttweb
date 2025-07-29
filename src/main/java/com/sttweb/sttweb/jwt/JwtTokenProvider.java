@@ -125,6 +125,22 @@ public class JwtTokenProvider {
       return false;
     }
   }
+  /*────────────────────────────────────────────────────────*/
+
+  // ─────────────────── 3‑1) 토큰 파싱 헬퍼 ───────────────────
+  /**
+   * 토큰을 파싱해 Claims를 반환합니다.
+   * extractToken() 등에서 유효·만료 검증용으로 호출합니다.
+   */
+  public Claims parseClaims(String token) throws ExpiredJwtException, JwtException {
+    return Jwts.parserBuilder()
+        .setSigningKey(secretKey)
+        .build()
+        .parseClaimsJws(token)
+        .getBody();
+  }
+// ─────────────────────────────────────────────────────────
+
 
   /*────────────────── 4) 개별 Claim 추출 ───────────────────*/
   /** subject(userId) */

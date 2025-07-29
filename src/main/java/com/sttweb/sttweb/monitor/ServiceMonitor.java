@@ -48,7 +48,7 @@ public class ServiceMonitor {
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   // 서비스별 상태 캐시 (서비스+죽은 지점명 List)
-  private final Map<Service, Set<String>> lastDownBranchNames = new ConcurrentHashMap<>();
+  private final Map<Service, Set<Endpoint>> lastDownBranchNames = new ConcurrentHashMap<>();
 
   // 한도 초과 시 비활성화
   private volatile boolean emailEnabled = true;
@@ -80,22 +80,18 @@ public class ServiceMonitor {
           .collect(Collectors.toList());
 
       // 다운된 지점명 리스트
-      Set<String> currentDownBranchNames = endpoints.stream()
+      Set<Endpoint> currentDownEndpoints = endpoints.stream()
           .filter(ep -> !isReachable(ep.ip, ep.port))
-          .map(ep -> ep.branchName)
           .collect(Collectors.toSet());
 
-      Set<String> beforeDownBranchNames = lastDownBranchNames.getOrDefault(svc, new HashSet<>());
+      Set<Endpoint> previousDownEndpoints = lastDownBranchNames.getOrDefault(svc, new HashSet<>());
 
-      // 장애 감지 (DOWN된 지점명 집합이 바뀌었을 때만)
-      if (!currentDownBranchNames.equals(beforeDownBranchNames)) {
-        // 복구된 지점명
-        Set<String> recovered = new HashSet<>(beforeDownBranchNames);
-        recovered.removeAll(currentDownBranchNames);
+      if (!currentDownEndpoints.equals(previousDownEndpoints)) {
+        Set<Endpoint> recovered = new HashSet<>(previousDownEndpoints);
+        recovered.removeAll(currentDownEndpoints);
 
-        // 새롭게 장애된 지점명
-        Set<String> newlyDown = new HashSet<>(currentDownBranchNames);
-        newlyDown.removeAll(beforeDownBranchNames);
+        Set<Endpoint> newlyDown = new HashSet<>(currentDownEndpoints);
+        newlyDown.removeAll(previousDownEndpoints);
 
         if (!newlyDown.isEmpty()) {
           sendServiceMail(svc, false, newlyDown, LocalDateTime.now());
@@ -103,25 +99,55 @@ public class ServiceMonitor {
         if (!recovered.isEmpty()) {
           sendServiceMail(svc, true, recovered, LocalDateTime.now());
         }
-        // 상태 저장
-        lastDownBranchNames.put(svc, currentDownBranchNames);
+
+        lastDownBranchNames.put(svc, currentDownEndpoints);
       }
 
-      // DB 상태 동기화
-      endpoints.forEach(ep -> branchService.updateHealthStatus(ep.ip, ep.port, !currentDownBranchNames.contains(ep.branchName)));
-    }
+//      Set<String> beforeDownBranchNames = lastDownBranchNames.getOrDefault(svc, new HashSet<>());
+//
+//      // 장애 감지 (DOWN된 지점명 집합이 바뀌었을 때만)
+//      if (!currentDownBranchNames.equals(beforeDownBranchNames)) {
+//        // 복구된 지점명
+//        Set<String> recovered = new HashSet<>(beforeDownBranchNames);
+//        recovered.removeAll(currentDownBranchNames);
+//
+//        // 새롭게 장애된 지점명
+//        Set<String> newlyDown = new HashSet<>(currentDownBranchNames);
+//        newlyDown.removeAll(beforeDownBranchNames);
+//
+//        if (!newlyDown.isEmpty()) {
+//          sendServiceMail(svc, false, newlyDown, LocalDateTime.now());
+//        }
+//        if (!recovered.isEmpty()) {
+//          sendServiceMail(svc, true, recovered, LocalDateTime.now());
+//        }
+//        // 상태 저장
+//        lastDownBranchNames.put(svc, currentDownBranchNames);
+//      }
+//
+//      // DB 상태 동기화
+//      endpoints.forEach(ep -> branchService.updateHealthStatus(ep.ip, ep.port, !currentDownBranchNames.contains(ep.branchName)));
+   }
   }
 
-  private void sendServiceMail(Service svc, boolean recovered, Set<String> branchNames, LocalDateTime now) {
-    if (branchNames.isEmpty()) return;
+  private void sendServiceMail(Service svc, boolean recovered, Set<Endpoint> endpoints, LocalDateTime now) {
+    if (endpoints.isEmpty()) return;
+
     String time = now.format(TS_FMT);
     String status = recovered ? "복구" : "장애";
     String subject = String.format("[서비스 알림] %s %s", svc.label, status);
 
+    String detail = endpoints.stream()
+        .map(ep -> ep.branchName + " (" + ep.ip + ")")
+        .sorted()
+        .collect(Collectors.joining(", "));
+
     String body = String.format(
-        "서비스: %s%n상태: %s%n발생시각: %s%n영향 지점: %s",
-        svc.label, recovered ? "복구되었습니다." : "중지되었습니다.", time,
-        String.join(", ", branchNames)
+        "서비스: %s%n상태: %s%n발생 시각: %s%n발생 지점: %s",
+        svc.label,
+        recovered ? "복구되었습니다." : "중지되었습니다.",
+        time,
+        detail
     );
 
     SimpleMailMessage msg = new SimpleMailMessage();
@@ -131,7 +157,7 @@ public class ServiceMonitor {
 
     try {
       mailSender.send(msg);
-      log.info("▶ 메일발송 [{}] {} - {}", status, svc.label, branchNames);
+      log.info("▶ 메일발송 [{}] {} - {}", status, svc.label, detail);
     } catch (MailException ex) {
       Throwable cause = ex.getCause();
       if (cause instanceof SMTPSendFailedException
@@ -143,6 +169,7 @@ public class ServiceMonitor {
       }
     }
   }
+
 
   @Scheduled(cron = "0 0 0 * * *")
   public void resetEmailFlag() {

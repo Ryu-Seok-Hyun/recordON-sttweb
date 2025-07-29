@@ -10,63 +10,76 @@ import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.List;
-import org.springframework.util.StringUtils;
+import java.util.stream.Collectors;
 
-@Component
 @Slf4j
 @RequiredArgsConstructor
+@Component
 public class ShutdownListener implements ApplicationListener<ContextClosedEvent> {
 
-  private final JavaMailSender  mailSender;
-  private final TbranchService  branchService;
+  private final JavaMailSender mailSender;
+  private final TbranchService branchService;
 
-  /** application.properties → monitor.admin.emails=aaa@bb.com,ccc@dd.com … */
-  @Value("${monitor.admin.emails:}")               // ← 값이 없으면 빈 문자열
-  private String adminEmailsProp;                  // ※ List 로 주입-받으면 null 이 나올 수 있음
+  @Value("${monitor.admin.emails:}")
+  private String adminEmailsProp;
 
   private static final DateTimeFormatter TS_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
   @Override
   public void onApplicationEvent(ContextClosedEvent event) {
+    String time = LocalDateTime.now().format(TS_FMT);
 
-    String now = LocalDateTime.now().format(TS_FMT);
-
-    /* ── 1) 지점별 메일 ─────────────────────────────────────────────── */
+    // 1) 지점별 메일
     for (TbranchEntity b : branchService.findAllBranches()) {
+      String to = b.getMailAddress();
+      if (!StringUtils.hasText(to)) continue;
 
-      // 지점의 메일 주소가 없으면 skip
-      if (!StringUtils.hasText(b.getMailAddress())) continue;
+      String subject = "[서비스 알림] Tomcat 정상 종료";
+      String body = String.format(
+          "지점명: %s%nIP: %s%n%nTomcat이 정상 종료되었습니다.%n종료시각: %s",
+          b.getCompanyName(), b.getPIp(), time
+      );
 
       SimpleMailMessage msg = new SimpleMailMessage();
-      msg.setTo(b.getMailAddress());
-      msg.setSubject("[서비스 알림] Tomcat 정상 종료");
-      msg.setText(String.format(
-          "지점명: %s%nIP: %s%n%nTomcat이 정상 종료되었습니다.%n종료시각: %s",
-          b.getCompanyName(), b.getPIp(), now
-      ));
+      msg.setTo(to);
+      msg.setSubject(subject);
+      msg.setText(body);
       mailSender.send(msg);
     }
 
-    /* ── 2) 관리자 메일 ─────────────────────────────────────────────── */
+    // 2) 관리자 전체메일 (지점명 + IP 목록 포함)
     if (StringUtils.hasText(adminEmailsProp)) {
-      String[] admins = adminEmailsProp.split("\\s*,\\s*");   // 콤마 분리
+      List<String> admins = Arrays.stream(adminEmailsProp.split("\\s*,\\s*"))
+          .filter(StringUtils::hasText)
+          .collect(Collectors.toList());
 
-      for (String admin : admins) {
-        if (!StringUtils.hasText(admin)) continue;           // 빈 값 skip
+      List<TbranchEntity> branches = branchService.findAllBranches();
+      String detail = branches.stream()
+          .filter(b -> StringUtils.hasText(b.getPIp()))
+          .map(b -> b.getCompanyName() + " (" + b.getPIp() + ")")
+          .sorted()
+          .collect(Collectors.joining(", "));
 
-        SimpleMailMessage msg = new SimpleMailMessage();
-        msg.setTo(admin);
-        msg.setSubject("[서비스 알림] Tomcat 정상 종료 (전체)");
-        msg.setText("모든 지점의 Tomcat이 정상 종료되었습니다.\n종료시각: " + now);
-        mailSender.send(msg);
-      }
+      String adminSubject = "[서비스 알림] Tomcat 정상 종료";
+      String adminBody = String.format(
+          "Tomcat이 정상 종료된 지점 목록:%n%s%n%n종료시각: %s",
+          detail, time
+      );
+
+      SimpleMailMessage adminMsg = new SimpleMailMessage();
+      adminMsg.setTo(admins.toArray(new String[0]));
+      adminMsg.setSubject(adminSubject);
+      adminMsg.setText(adminBody);
+      mailSender.send(adminMsg);
     }
 
-    log.info("Shutdown mail sent at {}", now);
+    log.info("Shutdown mail sent at {}", time);
   }
 }

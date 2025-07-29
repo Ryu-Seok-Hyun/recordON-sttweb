@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -21,21 +23,27 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
   public void commence(HttpServletRequest request,
       HttpServletResponse response,
       AuthenticationException authException) throws IOException {
-    // 기본 401
+
     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding("UTF-8");
 
     Throwable cause = authException.getCause();
-    String msg;
+    String code;
+    String message;
+
     if (cause instanceof ExpiredJwtException) {
-      msg = "TOKEN_EXPIRED";
+      code = "EXPIRED_TOKEN";
+      message = "토큰이 만료되었습니다.";
     } else {
-      msg = "UNAUTHORIZED";
+      code = "UNAUTHORIZED";
+      message = "인증되지 않은 요청입니다.";
     }
 
-    // {"msg":"TOKEN_EXPIRED"} 또는 {"msg":"UNAUTHORIZED"} 반환
-    objectMapper.writeValue(response.getWriter(),
-        Collections.singletonMap("msg", msg));
+    Map<String, String> body = new HashMap<>();
+    body.put("code", code);
+    body.put("message", message);
+
+    objectMapper.writeValue(response.getWriter(), body);
   }
 }

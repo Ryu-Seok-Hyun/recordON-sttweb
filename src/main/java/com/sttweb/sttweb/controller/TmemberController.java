@@ -9,6 +9,8 @@ import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.PermissionService;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -74,9 +76,13 @@ public class TmemberController {
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
 
     String token = authHeader.substring(7).trim();
-    if (!jwtTokenProvider.validateToken(token))
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
-
+    try {
+      jwtTokenProvider.parseClaims(token);
+    } catch (ExpiredJwtException e) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 만료되었습니다.", e);
+    } catch (JwtException | IllegalArgumentException e) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.", e);
+    }
     return token;
   }
 
