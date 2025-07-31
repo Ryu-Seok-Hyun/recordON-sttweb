@@ -17,10 +17,7 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.retry.annotation.EnableRetry;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@EnableScheduling
-@EnableAspectJAutoProxy(proxyTargetClass = true)
-@EnableRetry
-@EnableSchedulerLock(defaultLockAtMostFor = "PT14M")
+
 @SpringBootApplication(
 		scanBasePackages = "com.sttweb",
 		exclude = {
@@ -29,6 +26,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 				ErrorMvcAutoConfiguration.class
 		}
 )
+@EnableScheduling
+@EnableAspectJAutoProxy(proxyTargetClass = true)
+@EnableRetry
+@EnableSchedulerLock(defaultLockAtMostFor = "PT14M")
 public class SttwebApplication extends SpringBootServletInitializer {
 	private static final Logger log = LoggerFactory.getLogger(SttwebApplication.class);
 

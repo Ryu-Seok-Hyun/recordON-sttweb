@@ -121,7 +121,7 @@ public class TmemberController {
 
     Info me  = requireLogin(authHeader);
     String lvl = me.getUserLevel();
-    if (!"0".equals(lvl) && !"1".equals(lvl))
+    if (!"0".equals(lvl) && !"1".equals(lvl) && !"3".equals(lvl))
       return ResponseEntity.status(HttpStatus.FORBIDDEN).body("관리자만 접근 가능합니다.");
 
     if (svc.existsByUserId(req.getUserId()))
@@ -333,7 +333,7 @@ public class TmemberController {
 
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel())))
+    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel()) || "3".equals(me.getUserLevel())))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 및 지사 관리자만 접근 가능합니다.");
 
     svc.resetPassword(memberSeq, "1234", me.getUserId());
@@ -353,7 +353,7 @@ public class TmemberController {
 
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel())))
+    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel()) || "3".equals(me.getUserLevel())))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 및 지사 관리자만 접근 가능합니다.");
 
     svc.resetPasswords(memberSeqs, "1234", me.getUserId());
@@ -370,7 +370,7 @@ public class TmemberController {
 
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel())))
+    if (!("0".equals(me.getUserLevel()) || "1".equals(me.getUserLevel()) || "3".equals(me.getUserLevel())))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 및 지사 관리자만 접근 가능합니다.");
 
     svc.resetAllPasswords("1234", me.getUserId());
@@ -414,7 +414,7 @@ public class TmemberController {
     String lvl = me.getUserLevel();
     Pageable pr = PageRequest.of(page, size);
 
-    if ("0".equals(lvl)) { // 본사 관리자
+    if ("0".equals(lvl) || "3".equals(lvl)) { // 본사 관리자
       boolean hasKw = keyword    != null && !keyword.isBlank();
       boolean hasBn = branchName != null && !branchName.isBlank();
       Page<Info> p;
@@ -502,7 +502,7 @@ public class TmemberController {
       @PathVariable("memberSeq") Integer memberSeq) {
 
     Info me = requireLogin(authHeader);
-    if (!"0".equals(me.getUserLevel()) && !"1".equals(me.getUserLevel()))
+    if (!"0".equals(me.getUserLevel()) && !"1".equals(me.getUserLevel()) && !"3".equals(me.getUserLevel()))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "권한이 없습니다.");
 
     return ResponseEntity.ok(svc.getInfoByMemberSeq(memberSeq));
@@ -520,7 +520,7 @@ public class TmemberController {
 
     Info me = requireLogin(authHeader);
     requireReAuth();
-    if (!"0".equals(me.getUserLevel()))
+    if (!"0".equals(me.getUserLevel()) && !"3".equals(me.getUserLevel()))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 접근 가능합니다.");
 
     svc.changeStatus(memberSeq, req);

@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TmemberServiceImpl implements TmemberService {
 
+  private static final String HIDE_USER = "IQ200admin";
   private final TmemberRepository repo;
   private final PasswordEncoder passwordEncoder;
   private final HttpSession session;
@@ -194,17 +195,17 @@ public class TmemberServiceImpl implements TmemberService {
     return dto;
   }
 
-  /** 본사 관리자: 전체 유저 페이징 조회 */
+  /** 본사 관리자: 전체 유저 페이징 조회 (IQ200admin 제외) */
   @Override
   public Page<Info> listAllUsers(Pageable pageable) {
-    return repo.findAll(pageable)
+    return repo.findByUserIdNot(HIDE_USER, pageable)
         .map(this::toDtoWithBranchNameAndPosition);
   }
 
-  /** 본사 관리자: 키워드 검색 */
+  /** 본사 관리자: 키워드 검색 (IQ200admin 제외) */
   @Override
   public Page<Info> searchUsers(String keyword, Pageable pageable) {
-    return repo.findByUserIdContainingOrNumberContaining(keyword, keyword, pageable)
+    return repo.findByExcludedUserIdAndKeyword(HIDE_USER, keyword, pageable)
         .map(this::toDtoWithBranchNameAndPosition);
   }
 

@@ -80,5 +80,20 @@ public interface TmemberRepository extends JpaRepository<TmemberEntity, Integer>
 
   List<TmemberEntity> findByNumberIn(Collection<String> numbers);
 
+  /** 전체 조회 시 IQ200admin 제외 */
+  Page<TmemberEntity> findByUserIdNot(String excludedUserId, Pageable pageable);
+
+  /** 검색 시 IQ200admin 제외 + 키워드 매칭 */
+  @Query("""
+    SELECT e
+      FROM TmemberEntity e
+     WHERE e.userId <> :excluded
+       AND (e.userId LIKE %:kw% OR e.number LIKE %:kw%)
+  """)
+  Page<TmemberEntity> findByExcludedUserIdAndKeyword(
+      @Param("excluded") String excluded,
+      @Param("kw")       String keyword,
+      Pageable pageable
+  );
 
 }

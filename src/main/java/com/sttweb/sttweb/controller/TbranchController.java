@@ -10,6 +10,7 @@ import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import java.util.Collections;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/branches")
 @RequiredArgsConstructor
@@ -173,22 +175,24 @@ public class TbranchController {
   /**
    * 지점 등록 (본사 관리자만)
    */
+  /** 지점 등록 (본사 관리자, 레벨 3만) **/
   @LogActivity(type = "branch", activity = "등록", contents = "지점 등록")
   @PostMapping
   public ResponseEntity<?> createBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
       @RequestBody TbranchDto reqDto
   ) {
-    // 1) 토큰 검사
     ResponseEntity<String> err = checkToken(authHeader);
     if (err != null) return err;
-    // 2) 본사 관리자 여부
+
     Info me = getMe(authHeader);
-    if (!"0".equals(me.getUserLevel())) {
+    String lvl = me.getUserLevel();
+    // 0, 3, 1 허용
+    if (!("0".equals(lvl) || "3".equals(lvl) || "1".equals(lvl))) {
       return ResponseEntity.status(HttpStatus.FORBIDDEN)
-          .body("본사 관리자만 접근 가능합니다.");
+          .body("권한이 없습니다.");
     }
-    // 3) 생성 (중복 예외 핸들)
+
     try {
       TbranchDto created = branchSvc.createBranch(reqDto);
       return ResponseEntity.status(HttpStatus.CREATED).body(created);
@@ -197,9 +201,7 @@ public class TbranchController {
     }
   }
 
-  /**
-   * 지점 수정 (본사 관리자 OR 지사 관리자(자기관할 지점만))
-   */
+  /** 지점 수정 (본사 관리자, 레벨 3, 또는 지사 관리자(자기관할 지점)) **/
   @LogActivity(type = "branch", activity = "수정", contents = "지점 수정")
   @PutMapping("/{id}")
   public ResponseEntity<?> updateBranch(
@@ -207,22 +209,23 @@ public class TbranchController {
       @PathVariable("id") Integer id,
       @RequestBody TbranchDto dto
   ) {
-    // 1) 토큰 검사
     ResponseEntity<String> err = checkToken(authHeader);
     if (err != null) return err;
 
-    // 2) 권한 검사
     Info me = getMe(authHeader);
     String lvl = me.getUserLevel();
     Integer myBranchSeq = me.getBranchSeq();
 
-    if ("0".equals(lvl) || ("1".equals(lvl) && myBranchSeq != null && myBranchSeq.equals(id))) {
-      // 본사 관리자 OR 지사 관리자(자기관할 지점)
+    log.debug(">> updateBranch called: lvl={}, myBranchSeq={}, targetId={}", lvl, myBranchSeq, id);
+
+    if ("0".equals(lvl)
+        || "3".equals(lvl)
+        || ("1".equals(lvl) && myBranchSeq != null && myBranchSeq.equals(id))
+    ) {
       TbranchDto updated = branchSvc.update(id, dto);
       return ResponseEntity.ok(updated);
     } else {
-      return ResponseEntity.status(HttpStatus.FORBIDDEN)
-          .body("권한이 없습니다.");
+      return ResponseEntity.status(HttpStatus.FORBIDDEN).body("권한이 없습니다.");
     }
   }
 

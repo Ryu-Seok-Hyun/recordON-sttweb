@@ -1,27 +1,35 @@
 package com.sttweb.sttweb.monitor;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.sttweb.sttweb.entity.TbranchEntity;
 import com.sttweb.sttweb.service.TbranchService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.eclipse.angus.mail.smtp.SMTPSendFailedException;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
 
-import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
-import org.springframework.util.StringUtils;
+
 
 @Slf4j
 @Component
@@ -30,174 +38,206 @@ public class ServiceMonitor {
 
   private final JavaMailSender mailSender;
   private final TbranchService branchService;
+  private final RestTemplate restTemplate;
 
   @Value("${monitor.admin.emails}")
-  private String adminEmailCsv;    // List<String> 대신 comma-separated String
+  private String adminEmailCsv;
+  @Value("${monitor.debounce.minutes:1}")
+  private int debounceMinutes;
 
-  private List<String> adminEmails() {
-    return Arrays.stream(adminEmailCsv.split(","))
-        .map(String::trim)
-        .filter(StringUtils::hasText)
-        .collect(Collectors.toList());
+  private final AtomicBoolean monitorRunning = new AtomicBoolean(false);
+  private final Map<Service, Set<Endpoint>> lastStableDown = new ConcurrentHashMap<>();
+  private final Map<Endpoint, LocalDateTime> downSince     = new ConcurrentHashMap<>();
+  private final Map<Endpoint, LocalDateTime> recoveredSince= new ConcurrentHashMap<>();
+  private static final Cache<String, Boolean> notifyCache = Caffeine.newBuilder().build();
+
+  private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+
+  private String getSetHash(Set<Endpoint> set) {
+    // set이 null이면 빈값 반환
+    if (set == null) return "0";
+    // Set의 순서가 달라도 같은 hash가 나오게, 정렬해서 hash코드 생성
+    return Integer.toHexString(
+        set.stream()
+            .map(Object::hashCode)
+            .sorted()
+            .reduce(0, (a, b) -> 31 * a + b)
+    );
   }
-
-  @Value("${monitor.admin.emails}")
-  private List<String> adminEmails;
-
-  private static final DateTimeFormatter TS_FMT =
-      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-  // 서비스별 상태 캐시 (서비스+죽은 지점명 List)
-  private final Map<Service, Set<Endpoint>> lastDownBranchNames = new ConcurrentHashMap<>();
-
-  // 한도 초과 시 비활성화
-  private volatile boolean emailEnabled = true;
-
-  // 내부 레코드
-  private record Endpoint(String branchName, String ip, int port, Service service) {}
 
   @PostConstruct
-  public void initializeStatusCache() {
+  public void init() {
+    log.info("ServiceMonitor Bean 해시코드: {}", System.identityHashCode(this));
     for (Service svc : Service.values()) {
-      lastDownBranchNames.put(svc, new HashSet<>());
+      lastStableDown.put(svc, new HashSet<>());
     }
-    log.info("서비스 모니터 캐시 초기화 완료");
+    log.info("ServiceMonitor Bean 해시코드: {}", System.identityHashCode(this));
+    log.info("서비스 모니터 초기화 완료");
   }
 
-  @Scheduled(fixedRateString = "${monitor.fixedRate:60000}", initialDelayString = "${monitor.initialDelay:30000}")
+
+  @Scheduled(fixedRateString = "${monitor.fixedRate:60000}",
+      initialDelayString = "${monitor.initialDelay:30000}")
+  @SchedulerLock(
+      name            = "ServiceMonitor_monitorAll",    // 락 키 (유니크)
+      lockAtMostFor   = "PT5M",                         // 최대 5분간 락을 보유
+      lockAtLeastFor  = "PT0S"                          // 최소 보유 시간 (즉시 해제)
+  )
   public void monitorAll() {
-    if (!emailEnabled) {
-      log.warn("메일 발송 비활성화 상태, 스킵");
+    log.info("monitorAll called: " + LocalDateTime.now());
+    if (!monitorRunning.compareAndSet(false, true)) {
+      log.debug("monitorAll: 이전 실행 중, 스킵");
       return;
     }
-
-    List<TbranchEntity> branches = branchService.findAllBranches();
-    for (Service svc : Service.values()) {
-      // p_ip로만 체크 (127.0.0.1 제외)
-      List<Endpoint> endpoints = branches.stream()
-          .filter(b -> b.getPIp() != null && !b.getPIp().isBlank() && !b.getPIp().startsWith("127."))
-          .map(b -> new Endpoint(b.getCompanyName(), b.getPIp(), svc.port, svc))
-          .collect(Collectors.toList());
-
-      // 다운된 지점명 리스트
-      Set<Endpoint> currentDownEndpoints = endpoints.stream()
-          .filter(ep -> !isReachable(ep.ip, ep.port))
-          .collect(Collectors.toSet());
-
-      Set<Endpoint> previousDownEndpoints = lastDownBranchNames.getOrDefault(svc, new HashSet<>());
-
-      if (!currentDownEndpoints.equals(previousDownEndpoints)) {
-        Set<Endpoint> recovered = new HashSet<>(previousDownEndpoints);
-        recovered.removeAll(currentDownEndpoints);
-
-        Set<Endpoint> newlyDown = new HashSet<>(currentDownEndpoints);
-        newlyDown.removeAll(previousDownEndpoints);
-
-        if (!newlyDown.isEmpty()) {
-          sendServiceMail(svc, false, newlyDown, LocalDateTime.now());
-        }
-        if (!recovered.isEmpty()) {
-          sendServiceMail(svc, true, recovered, LocalDateTime.now());
-        }
-
-        lastDownBranchNames.put(svc, currentDownEndpoints);
-      }
-
-//      Set<String> beforeDownBranchNames = lastDownBranchNames.getOrDefault(svc, new HashSet<>());
-//
-//      // 장애 감지 (DOWN된 지점명 집합이 바뀌었을 때만)
-//      if (!currentDownBranchNames.equals(beforeDownBranchNames)) {
-//        // 복구된 지점명
-//        Set<String> recovered = new HashSet<>(beforeDownBranchNames);
-//        recovered.removeAll(currentDownBranchNames);
-//
-//        // 새롭게 장애된 지점명
-//        Set<String> newlyDown = new HashSet<>(currentDownBranchNames);
-//        newlyDown.removeAll(beforeDownBranchNames);
-//
-//        if (!newlyDown.isEmpty()) {
-//          sendServiceMail(svc, false, newlyDown, LocalDateTime.now());
-//        }
-//        if (!recovered.isEmpty()) {
-//          sendServiceMail(svc, true, recovered, LocalDateTime.now());
-//        }
-//        // 상태 저장
-//        lastDownBranchNames.put(svc, currentDownBranchNames);
-//      }
-//
-//      // DB 상태 동기화
-//      endpoints.forEach(ep -> branchService.updateHealthStatus(ep.ip, ep.port, !currentDownBranchNames.contains(ep.branchName)));
-   }
-  }
-
-  private void sendServiceMail(Service svc, boolean recovered, Set<Endpoint> endpoints, LocalDateTime now) {
-    if (endpoints.isEmpty()) return;
-
-    String time = now.format(TS_FMT);
-    String status = recovered ? "복구" : "장애";
-    String subject = String.format("[서비스 알림] %s %s", svc.label, status);
-
-    String detail = endpoints.stream()
-        .map(ep -> ep.branchName + " (" + ep.ip + ")")
-        .sorted()
-        .collect(Collectors.joining(", "));
-
-    String body = String.format(
-        "서비스: %s%n상태: %s%n발생 시각: %s%n발생 지점: %s",
-        svc.label,
-        recovered ? "복구되었습니다." : "중지되었습니다.",
-        time,
-        detail
-    );
-
-    SimpleMailMessage msg = new SimpleMailMessage();
-    msg.setTo(adminEmails.toArray(new String[0]));
-    msg.setSubject(subject);
-    msg.setText(body);
-
     try {
-      mailSender.send(msg);
-      log.info("▶ 메일발송 [{}] {} - {}", status, svc.label, detail);
-    } catch (MailException ex) {
-      Throwable cause = ex.getCause();
-      if (cause instanceof SMTPSendFailedException
-          && ex.getMessage().contains("Daily user sending limit exceeded")) {
-        emailEnabled = false;
-        log.error("‼ Gmail 일일 한도 초과, 이후 메일발송 중단");
-      } else {
-        log.error("메일 전송 실패: {}", ex.getMessage(), ex);
+      LocalDateTime now = LocalDateTime.now();
+      List<TbranchEntity> branches = branchService.findAllBranches();
+
+      for (Service svc : Service.values()) {
+        List<Endpoint> endpoints = branches.stream()
+            .filter(b -> StringUtils.hasText(b.getPIp()) && !b.getPIp().startsWith("127."))
+            .map(b -> new Endpoint(b.getCompanyName(), b.getPIp(), svc))
+            .collect(Collectors.toList());
+
+        Set<Endpoint> stableDown = new HashSet<>();
+        for (Endpoint ep : endpoints) {
+          boolean up = checkService(ep.ip, svc);
+          if (!up) {
+            downSince.putIfAbsent(ep, now);
+            if (debounceMinutes <= 0
+                || Duration.between(downSince.get(ep), now).toMinutes() >= debounceMinutes) {
+              stableDown.add(ep);
+            }
+            recoveredSince.remove(ep);
+          } else {
+            recoveredSince.putIfAbsent(ep, now);
+            if (debounceMinutes <= 0
+                || Duration.between(recoveredSince.get(ep), now).toMinutes() >= debounceMinutes) {
+              downSince.remove(ep);
+            }
+          }
+        }
+
+        Set<Endpoint> prev = lastStableDown.get(svc);
+
+        String setHash = getSetHash(stableDown);
+        String prevHash = getSetHash(prev);
+
+        String downKey = svc.name() + ":DOWN:" + setHash;
+        String recKey  = svc.name() + ":RECOVERED:" + prevHash;
+
+        // LOG: 조건별 분기 로그
+        if (!stableDown.equals(prev)) {
+          log.warn(">>> 상태 변경 감지 - svc={}, prev={}, stableDown={}", svc.name(), prev, stableDown);
+          if (prev.isEmpty() && !stableDown.isEmpty()) {
+            log.warn(">>> 장애 시작 분기 진입 - downKey={}", downKey);
+            if (notifyCache.getIfPresent(downKey) == null) {
+              sendMail(svc, false, stableDown, now);
+              notifyCache.put(downKey, true);
+            }
+          } else if (!prev.isEmpty() && stableDown.isEmpty()) {
+            log.warn(">>> 복구 분기 진입 - recKey={}", recKey);
+            if (notifyCache.getIfPresent(recKey) == null) {
+              sendMail(svc, true, prev, now);
+              notifyCache.put(recKey, true);
+            }
+          } else if (!prev.isEmpty() && !stableDown.isEmpty()) {
+            log.warn(">>> 장애 대상 변경 분기 진입 - downKey={}", downKey);
+            if (notifyCache.getIfPresent(downKey) == null) {
+              sendMail(svc, false, stableDown, now);
+              notifyCache.put(downKey, true);
+            }
+          }
+        }
+        lastStableDown.put(svc, stableDown);
       }
+    } finally {
+      monitorRunning.set(false);
     }
   }
 
 
   @Scheduled(cron = "0 0 0 * * *")
-  public void resetEmailFlag() {
-    emailEnabled = true;
-    log.info("▶ 이메일 발송 플래그 자정 초기화");
+  public void resetDaily() {
+    for (Service svc : Service.values()) {
+      lastStableDown.get(svc).clear();
+    }
+    log.info("데일리 리셋 완료");
   }
 
-  private boolean isReachable(String host, int port) {
-    try (Socket s = new Socket()) {
-      s.connect(new InetSocketAddress(host, port), 2000);
-      return true;
-    } catch (IOException e) {
-      return false;
+  private final Map<Endpoint, Integer> failureCount = new ConcurrentHashMap<>();
+  private static final int MAX_FAILS = 3;  // 3회 연속 실패 시에만 장애로 판단
+
+  private boolean checkService(String host, Service svc) {
+    String url = svc == Service.OPENSEARCH
+        ? "http://" + host + ":" + svc.port + "/"
+        : "http://" + host + ":" + svc.port + svc.healthPath;
+
+    try {
+      ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
+      boolean ok = resp.getStatusCode().is2xxSuccessful();
+      if (ok) {
+        failureCount.put(new Endpoint("", host, svc), 0); // 성공시 실패카운트 초기화
+      }
+      return ok;
+    } catch (Exception e) {
+      int fails = failureCount.getOrDefault(new Endpoint("", host, svc), 0) + 1;
+      failureCount.put(new Endpoint("", host, svc), fails);
+      log.warn("{} 체크 실패 {}회: host={}, err={}", svc, fails, host, e.getMessage());
+      // N회 이상 연속 실패한 경우에만 false 리턴
+      return fails >= MAX_FAILS ? false : true;
     }
   }
 
-  // 서비스 종류
+  private String joinDetail(Set<Endpoint> list) {
+    return list.stream()
+        .map(ep -> ep.branchName + " (" + ep.ip + ")")
+        .sorted()
+        .collect(Collectors.joining(", "));
+  }
+
+  private void sendMail(Service svc, boolean recovered, Set<Endpoint> eps, LocalDateTime now) {
+    String detail = joinDetail(eps);
+    String time   = now.format(TS_FMT);
+    String subj   = String.format("[서비스 알림] %s %s [%s]",
+        svc.label, recovered ? "복구" : "장애", detail);
+
+    // 로그 추가
+    log.warn(">>> sendMail 실행 - svc={}, recovered={}, subj={}, to={}, eps={}", svc.name(), recovered, subj, Arrays.toString(adminEmailList()), eps);
+
+    String body   = String.format("서비스: %s%n상태: %s%n시각: %s%n발생지점: %s",
+        svc.label, recovered ? "복구되었습니다." : "장애 발생", time, detail);
+
+    SimpleMailMessage msg = new SimpleMailMessage();
+    msg.setTo(adminEmailList());
+    msg.setSubject(subj);
+    msg.setText(body);
+    try {
+      mailSender.send(msg);
+      log.info("메일발송 [{}] {} - {}", recovered ? "RECOVERED":"DOWN", svc.label, detail);
+    } catch (MailException ex) {
+      log.error("메일 전송 실패: {}", ex.getMessage(), ex);
+    }
+  }
+
+  private String[] adminEmailList() {
+    String[] arr = Arrays.stream(adminEmailCsv.split(","))
+        .map(String::trim).filter(StringUtils::hasText)
+        .distinct().toArray(String[]::new);
+    log.warn(">>> adminEmailList: {}", Arrays.toString(arr));
+    return arr;
+  }
+
   private enum Service {
-    APACHE(39080, "XAMPP(Apache)"),
-    TOMCAT(39090, "Tomcat"),
-    OPENSEARCH(9200, "OpenSearch"),
-    STT(39500, "STT Service");
+    APACHE(39080,"XAMPP(Apache)","/server-status?auto"),
+    TOMCAT(39090,"Tomcat","/actuator/health"),
+    OPENSEARCH(9200,"OpenSearch",null),
+    STT(39500,"STT Service","/health");
 
-    final int port;
-    final String label;
-    Service(int port, String label) {
-      this.port = port;
-      this.label = label;
-    }
+    final int port; final String label; final String healthPath;
+    Service(int p, String l, String h){ port=p; label=l; healthPath=h; }
   }
+
+  private record Endpoint(String branchName, String ip, Service svc) {}
 }
