@@ -71,7 +71,6 @@ public class ServiceMonitor {
   )
   public void monitorAll() {
     if (!monitorRunning.compareAndSet(false, true)) {
-      log.debug("이전 실행 중—스킵");
       return;
     }
     try {
@@ -79,6 +78,11 @@ public class ServiceMonitor {
       List<TbranchEntity> branches = branchService.findAllBranches();
 
       for (Service svc : Service.values()) {
+        if (svc == Service.OPENSEARCH) {
+          log.debug("OpenSearch 모니터링 및 알람 생략");
+          continue;
+        }
+
         List<Endpoint> endpoints = branches.stream()
             .filter(b -> StringUtils.hasText(b.getPIp()) && !b.getPIp().startsWith("127."))
             .map(b -> new Endpoint(b.getCompanyName(), b.getPIp(), svc))
@@ -142,16 +146,16 @@ public class ServiceMonitor {
   // ─── 신규 추가 메서드 ───
 
   /**
-   * 로컬(127.0.0.1)의 포트가 열려 있는지 확인
-   */
-  private boolean isPortOpenLocally(int port, int timeoutMillis) {
-    try (Socket sock = new Socket()) {
-      sock.connect(new InetSocketAddress("127.0.0.1", port), timeoutMillis);
-      return true;
-    } catch (IOException e) {
-      return false;
-    }
-  }
+  +  * 지정된 호스트(host)의 포트가 열려 있는지 확인
+  +  */
+     private boolean isPortOpen(String host, int port, int timeoutMillis) {
+       try (Socket sock = new Socket()) {
+           sock.connect(new InetSocketAddress(host, port), timeoutMillis);
+           return true;
+         } catch (IOException e) {
+           return false;
+         }
+     }
 
   /**
    * HTTP GET 요청으로 200 OK를 반환하는지 확인
@@ -187,12 +191,22 @@ public class ServiceMonitor {
    * 포트 → HTTP 순으로 로컬에서 서비스 가용성 체크
    */
   private boolean checkService(String host, Service svc) {
-    // 1) 포트 체크
-    if (!isPortOpenLocally(svc.port, 1_000)) return false;
 
-    // 2) HTTP 상태 체크
-    String path = svc.healthPath != null ? svc.healthPath : "/";
-    String url  = "http://127.0.0.1:" + svc.port + path;
+    // 1) 포트 체크 (127.0.0.1 → host)
+        if (!isPortOpen(host, svc.port, 1_000)) {
+          log.warn("{} 포트 열림 실패: host={}, port={}", svc, host, svc.port);
+          return false;
+          }
+
+      // OpenSearch는 포트만 열려 있으면 정상 처리
+          if (svc == Service.OPENSEARCH) {
+          return true;
+        }
+
+    // 2) HTTP 상태 체크 (127.0.0.1 → host)
+        String path = svc.healthPath != null ? svc.healthPath : "/";
+        String url  = "http://" + host + ":" + svc.port + path;
+
     boolean ok = isHttpHealthy(url);    // <-- 여기만 변경
     if (!ok) {
       log.warn("{} HTTP 응답 실패: url={}", svc, url);
