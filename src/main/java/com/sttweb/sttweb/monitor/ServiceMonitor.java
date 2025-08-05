@@ -99,13 +99,12 @@ public class ServiceMonitor {
             }
             recoveredSince.remove(ep);
           } else {
-            recoveredSince.putIfAbsent(ep, now);
-            if (debounceMinutes <= 0
-                || Duration.between(recoveredSince.get(ep), now).toMinutes() >= debounceMinutes) {
-              downSince.remove(ep);
-            }
+            // 즉시 복구 처리: downSince 즉시 제거
+            downSince.remove(ep);
+            recoveredSince.remove(ep);
           }
         }
+
 
         Set<Endpoint> prev = lastStableDown.get(svc);
         String hashNow  = getSetHash(stableDown);
@@ -118,10 +117,13 @@ public class ServiceMonitor {
           if (prev.isEmpty() && !stableDown.isEmpty() && notifyCache.getIfPresent(downKey) == null) {
             sendMail(svc, false, stableDown, now);
             notifyCache.put(downKey, true);
-          } else if (!prev.isEmpty() && stableDown.isEmpty() && notifyCache.getIfPresent(recKey) == null) {
+          }
+          else if (!prev.isEmpty() && stableDown.isEmpty()) {
             sendMail(svc, true, prev, now);
-            notifyCache.put(recKey, true);
-          } else if (!prev.isEmpty() && !stableDown.isEmpty() && notifyCache.getIfPresent(downKey) == null) {
+            notifyCache.invalidate(downKey);
+          }
+
+          else if (!prev.isEmpty() && !stableDown.isEmpty() && notifyCache.getIfPresent(downKey) == null) {
             sendMail(svc, false, stableDown, now);
             notifyCache.put(downKey, true);
           }
