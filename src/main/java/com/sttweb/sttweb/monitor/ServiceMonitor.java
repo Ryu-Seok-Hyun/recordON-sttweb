@@ -9,14 +9,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
@@ -29,7 +30,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
-
 
 @Slf4j
 @Component
@@ -53,41 +53,25 @@ public class ServiceMonitor {
 
   private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-
-  private String getSetHash(Set<Endpoint> set) {
-    // set이 null이면 빈값 반환
-    if (set == null) return "0";
-    // Set의 순서가 달라도 같은 hash가 나오게, 정렬해서 hash코드 생성
-    return Integer.toHexString(
-        set.stream()
-            .map(Object::hashCode)
-            .sorted()
-            .reduce(0, (a, b) -> 31 * a + b)
-    );
-  }
-
   @PostConstruct
   public void init() {
-    log.info("ServiceMonitor Bean 해시코드: {}", System.identityHashCode(this));
+    log.info("ServiceMonitor 초기화, 해시코드: {}", System.identityHashCode(this));
     for (Service svc : Service.values()) {
       lastStableDown.put(svc, new HashSet<>());
     }
-    log.info("ServiceMonitor Bean 해시코드: {}", System.identityHashCode(this));
     log.info("서비스 모니터 초기화 완료");
   }
-
 
   @Scheduled(fixedRateString = "${monitor.fixedRate:60000}",
       initialDelayString = "${monitor.initialDelay:30000}")
   @SchedulerLock(
-      name            = "ServiceMonitor_monitorAll",    // 락 키 (유니크)
-      lockAtMostFor   = "PT5M",                         // 최대 5분간 락을 보유
-      lockAtLeastFor  = "PT0S"                          // 최소 보유 시간 (즉시 해제)
+      name            = "ServiceMonitor_monitorAll",
+      lockAtMostFor   = "PT5M",
+      lockAtLeastFor  = "PT0S"
   )
   public void monitorAll() {
-    log.info("monitorAll called: " + LocalDateTime.now());
     if (!monitorRunning.compareAndSet(false, true)) {
-      log.debug("monitorAll: 이전 실행 중, 스킵");
+      log.debug("이전 실행 중—스킵");
       return;
     }
     try {
@@ -120,34 +104,22 @@ public class ServiceMonitor {
         }
 
         Set<Endpoint> prev = lastStableDown.get(svc);
+        String hashNow  = getSetHash(stableDown);
+        String hashPrev = getSetHash(prev);
+        String downKey  = svc.name() + ":DOWN:" + hashNow;
+        String recKey   = svc.name() + ":RECOVERED:" + hashPrev;
 
-        String setHash = getSetHash(stableDown);
-        String prevHash = getSetHash(prev);
-
-        String downKey = svc.name() + ":DOWN:" + setHash;
-        String recKey  = svc.name() + ":RECOVERED:" + prevHash;
-
-        // LOG: 조건별 분기 로그
         if (!stableDown.equals(prev)) {
-          log.warn(">>> 상태 변경 감지 - svc={}, prev={}, stableDown={}", svc.name(), prev, stableDown);
-          if (prev.isEmpty() && !stableDown.isEmpty()) {
-            log.warn(">>> 장애 시작 분기 진입 - downKey={}", downKey);
-            if (notifyCache.getIfPresent(downKey) == null) {
-              sendMail(svc, false, stableDown, now);
-              notifyCache.put(downKey, true);
-            }
-          } else if (!prev.isEmpty() && stableDown.isEmpty()) {
-            log.warn(">>> 복구 분기 진입 - recKey={}", recKey);
-            if (notifyCache.getIfPresent(recKey) == null) {
-              sendMail(svc, true, prev, now);
-              notifyCache.put(recKey, true);
-            }
-          } else if (!prev.isEmpty() && !stableDown.isEmpty()) {
-            log.warn(">>> 장애 대상 변경 분기 진입 - downKey={}", downKey);
-            if (notifyCache.getIfPresent(downKey) == null) {
-              sendMail(svc, false, stableDown, now);
-              notifyCache.put(downKey, true);
-            }
+          log.warn("상태 변경 감지—svc={}, prev={}, now={}", svc.name(), prev, stableDown);
+          if (prev.isEmpty() && !stableDown.isEmpty() && notifyCache.getIfPresent(downKey) == null) {
+            sendMail(svc, false, stableDown, now);
+            notifyCache.put(downKey, true);
+          } else if (!prev.isEmpty() && stableDown.isEmpty() && notifyCache.getIfPresent(recKey) == null) {
+            sendMail(svc, true, prev, now);
+            notifyCache.put(recKey, true);
+          } else if (!prev.isEmpty() && !stableDown.isEmpty() && notifyCache.getIfPresent(downKey) == null) {
+            sendMail(svc, false, stableDown, now);
+            notifyCache.put(downKey, true);
           }
         }
         lastStableDown.put(svc, stableDown);
@@ -157,55 +129,96 @@ public class ServiceMonitor {
     }
   }
 
-
   @Scheduled(cron = "0 0 0 * * *")
   public void resetDaily() {
     for (Service svc : Service.values()) {
       lastStableDown.get(svc).clear();
     }
+    notifyCache.invalidateAll();
     log.info("데일리 리셋 완료");
   }
 
-  private final Map<Endpoint, Integer> failureCount = new ConcurrentHashMap<>();
-  private static final int MAX_FAILS = 3;  // 3회 연속 실패 시에만 장애로 판단
 
-  private boolean checkService(String host, Service svc) {
-    String url = svc == Service.OPENSEARCH
-        ? "http://" + host + ":" + svc.port + "/"
-        : "http://" + host + ":" + svc.port + svc.healthPath;
+  // ─── 신규 추가 메서드 ───
 
-    try {
-      // 응답만 오면 성공으로 처리
-      restTemplate.getForEntity(url, String.class);
-      failureCount.put(new Endpoint("", host, svc), 0);
+  /**
+   * 로컬(127.0.0.1)의 포트가 열려 있는지 확인
+   */
+  private boolean isPortOpenLocally(int port, int timeoutMillis) {
+    try (Socket sock = new Socket()) {
+      sock.connect(new InetSocketAddress("127.0.0.1", port), timeoutMillis);
       return true;
-    } catch (Exception e) {
-      int fails = failureCount.getOrDefault(new Endpoint("", host, svc), 0) + 1;
-      failureCount.put(new Endpoint("", host, svc), fails);
-      log.warn("{} 체크 실패 {}회: host={}, err={}", svc, fails, host, e.getMessage());
-      return fails >= MAX_FAILS;
+    } catch (IOException e) {
+      return false;
     }
   }
 
+  /**
+   * HTTP GET 요청으로 200 OK를 반환하는지 확인
+   */
+  private boolean isHttp200(String url) {
+    try {
+      ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
+      return resp.getStatusCodeValue() == 200;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  /**
+   * HTTP 응답이 500 미만(2xx, 4xx)이면 정상으로 처리
+   */
+  private boolean isHttpHealthy(String url) {
+    try {
+      ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
+       int code = resp.getStatusCodeValue();
+       // 2xx 또는 4xx 범위를 정상으로 간주
+      return (code >= 200 && code < 300) || (code >= 400 && code < 500);
+    } catch (HttpClientErrorException e) {
+      // 4xx 에러지만 서버가 응답함 → 정상
+      return true;
+    } catch (Exception e) {
+      // 5xx, 연결 실패 등 → 비정상
+      return false;
+    }
+  }
+
+  /**
+   * 포트 → HTTP 순으로 로컬에서 서비스 가용성 체크
+   */
+  private boolean checkService(String host, Service svc) {
+    // 1) 포트 체크
+    if (!isPortOpenLocally(svc.port, 1_000)) return false;
+
+    // 2) HTTP 상태 체크
+    String path = svc.healthPath != null ? svc.healthPath : "/";
+    String url  = "http://127.0.0.1:" + svc.port + path;
+    boolean ok = isHttpHealthy(url);    // <-- 여기만 변경
+    if (!ok) {
+      log.warn("{} HTTP 응답 실패: url={}", svc, url);
+    }
+    return ok;
+  }
+
+  // ────────────────────────
 
 
-  private String joinDetail(Set<Endpoint> list) {
-    return list.stream()
-        .map(ep -> ep.branchName + " (" + ep.ip + ")")
-        .sorted()
-        .collect(Collectors.joining(", "));
+  private String getSetHash(Set<Endpoint> set) {
+    if (set == null) return "0";
+    return Integer.toHexString(
+        set.stream().map(Object::hashCode).sorted()
+            .reduce(0, (a, b) -> 31 * a + b)
+    );
   }
 
   private void sendMail(Service svc, boolean recovered, Set<Endpoint> eps, LocalDateTime now) {
-    String detail = joinDetail(eps);
-    String time   = now.format(TS_FMT);
-    String subj   = String.format("[서비스 알림] %s %s [%s]",
+    String detail = eps.stream()
+        .map(ep -> ep.branchName + " (" + ep.ip + ")")
+        .sorted().collect(Collectors.joining(", "));
+    String time = now.format(TS_FMT);
+    String subj = String.format("[서비스 알림] %s %s [%s]",
         svc.label, recovered ? "복구" : "장애", detail);
-
-    // 로그 추가
-    log.warn(">>> sendMail 실행 - svc={}, recovered={}, subj={}, to={}, eps={}", svc.name(), recovered, subj, Arrays.toString(adminEmailList()), eps);
-
-    String body   = String.format("서비스: %s%n상태: %s%n시각: %s%n발생지점: %s",
+    String body = String.format("서비스: %s%n상태: %s%n시각: %s%n발생지점: %s",
         svc.label, recovered ? "복구되었습니다." : "장애 발생", time, detail);
 
     SimpleMailMessage msg = new SimpleMailMessage();
@@ -214,28 +227,28 @@ public class ServiceMonitor {
     msg.setText(body);
     try {
       mailSender.send(msg);
-      log.info("메일발송 [{}] {} - {}", recovered ? "RECOVERED":"DOWN", svc.label, detail);
+      log.info("메일발송 [{}] {} - {}", recovered ? "RECOVERED" : "DOWN", svc.label, detail);
     } catch (MailException ex) {
       log.error("메일 전송 실패: {}", ex.getMessage(), ex);
     }
   }
 
   private String[] adminEmailList() {
-    String[] arr = Arrays.stream(adminEmailCsv.split(","))
+    return Arrays.stream(adminEmailCsv.split(","))
         .map(String::trim).filter(StringUtils::hasText)
         .distinct().toArray(String[]::new);
-    log.warn(">>> adminEmailList: {}", Arrays.toString(arr));
-    return arr;
   }
 
   private enum Service {
-    APACHE(39080,"XAMPP(Apache)","/server-status?auto"),
-    TOMCAT(39090,"Tomcat","/actuator/health"),
-    OPENSEARCH(9200,"OpenSearch",null),
-    STT(39500,"STT Service","/health");
+    APACHE(39080, "XAMPP(Apache)", "/server-status?auto"),
+    TOMCAT(39090, "Tomcat", "/actuator/health"),
+    OPENSEARCH(9200, "OpenSearch", null),
+    STT(39500, "STT Service", "/health");
 
-    final int port; final String label; final String healthPath;
-    Service(int p, String l, String h){ port=p; label=l; healthPath=h; }
+    final int port;
+    final String label;
+    final String healthPath;
+    Service(int p, String l, String h) { port = p; label = l; healthPath = h; }
   }
 
   private record Endpoint(String branchName, String ip, Service svc) {}
