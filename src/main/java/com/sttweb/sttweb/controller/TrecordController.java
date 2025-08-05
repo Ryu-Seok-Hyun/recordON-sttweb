@@ -17,7 +17,10 @@ import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import com.sttweb.sttweb.entity.TrecordTelListEntity;
 import jakarta.servlet.ServletOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -66,6 +69,50 @@ public class TrecordController {
   private final RestTemplate restTemplate;
   private final CryptoProperties cryptoProps;
   private final RecOnDataService recOnDataService;
+
+  // 컨트롤러 필드 바로 아래에 추가
+  private static final long TEMP_CLEANUP_THRESHOLD_MS = 60 * 60 * 1000; // 1시간
+
+  private void cleanOldTempFiles() {
+    File tmpDir = new File(System.getProperty("java.io.tmpdir"));
+    File[] files = tmpDir.listFiles((dir, name) -> name.startsWith("decrypted-") && name.endsWith(".tmp"));
+    if (files == null) return;
+    long cutoff = System.currentTimeMillis() - TEMP_CLEANUP_THRESHOLD_MS;
+    for (File f : files) {
+      try {
+        if (f.lastModified() < cutoff) {
+          f.delete();
+        }
+      } catch (Exception ignored) { }
+    }
+  }
+
+  private InputStream openRangeStream(Resource audio, long start) throws IOException {
+    try {
+      // 파일 기반이면 RandomAccessFile로 효율적 처리
+      File file = audio.getFile(); // 실패하면 예외 발생 -> fallback
+      RandomAccessFile raf = new RandomAccessFile(file, "r");
+      raf.seek(start);
+      return new FileInputStream(raf.getFD()) {
+        @Override
+        public void close() throws IOException {
+          super.close();
+          raf.close();
+        }
+      };
+    } catch (Exception e) {
+      // fallback: 일반 InputStream.skip
+      InputStream is = audio.getInputStream();
+      long skipped = 0;
+      while (skipped < start) {
+        long s = is.skip(start - skipped);
+        if (s <= 0) break;
+        skipped += s;
+      }
+      return is;
+    }
+  }
+
 
 
   // ── 1) 헤더에서 토큰 파싱 & 사용자 조회 ──
@@ -710,81 +757,229 @@ public class TrecordController {
    * 다른 지점 서버에 있으면 해당 서버로 요청을 프록시하여 결과를 스트리밍합니다.
    */
   @LogActivity(type = "record", activity = "청취", contents = "녹취Seq=#{#id}")
+//  @GetMapping("/{id}/listen")
+//  public ResponseEntity<StreamingResponseBody> listen(
+//      HttpServletRequest request,
+//      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+//      @PathVariable("id") Integer id
+//  ) throws Exception {
+//    // 1) 인증 → Info 객체 리턴받도록 변경
+//    Info me = requireLogin(authHeader);
+//
+//    // 2) 청취 권한 확인 (permLevel >= 3)
+//    TrecordDto recDto = recordSvc.findById(id);
+//    boolean canListen =
+//        hasPermissionForNumber(me.getUserId(), recDto.getNumber1(), 3)
+//            || hasPermissionForNumber(me.getUserId(), recDto.getNumber2(), 3)
+//            || "0".equals(me.getUserLevel())  // super-admin
+//            || "1".equals(me.getUserLevel()) // branch-admin
+//            || "3".equals(me.getUserLevel()); // 슈퍼유저
+//    if (!canListen) {
+//      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "녹취 재생 권한이 없습니다.");
+//    }
+//
+//
+//    // 2) 리소스(오디오 파일) 로드
+//    Resource audio = recordSvc.getFile(id);
+//    if (audio == null || !audio.exists() || !audio.isReadable()) {
+//      log.debug("[녹취 청취] 파일을 찾을 수 없습니다. 녹취 ID={}", id);
+//      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다: " + id);
+//    }
+//
+//    // 3) MediaType & Range 확인
+//    long contentLength = audio.contentLength();
+//    MediaType mediaType = MediaTypeFactory.getMediaType(audio)
+//        .orElse(MediaType.APPLICATION_OCTET_STREAM);
+//    String rangeHeader = request.getHeader(HttpHeaders.RANGE);
+//    List<HttpRange> ranges = HttpRange.parseRanges(rangeHeader);
+//
+//    if (!ranges.isEmpty()) {
+//      HttpRange range = ranges.get(0);
+//      long start = range.getRangeStart(contentLength);
+//      long end = range.getRangeEnd(contentLength);
+//      long rangeLength = end - start + 1;
+//
+//      InputStream rangeStream = audio.getInputStream();
+//      rangeStream.skip(start);
+//
+//      StreamingResponseBody rangeBody = out -> {
+//        byte[] buffer = new byte[8192];
+//        long remaining = rangeLength;
+//        int bytesRead;
+//        while (remaining > 0 && (bytesRead = rangeStream.read(buffer, 0,
+//            (int) Math.min(buffer.length, remaining))) != -1) {
+//          out.write(buffer, 0, bytesRead);
+//          out.flush();
+//          remaining -= bytesRead;
+//        }
+//        rangeStream.close();
+//      };
+//
+//      return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+//          .contentType(mediaType)
+//          .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+//          .header(HttpHeaders.CONTENT_RANGE,
+//              String.format("bytes %d-%d/%d", start, end, contentLength))
+//          .contentLength(rangeLength)
+//          .body(rangeBody);
+//    }
+//
+//    // ▶ 전체 스트리밍 (aes 복호화 포함)
+//    StreamingResponseBody fullBody = buildStream(audio);
+//    return ResponseEntity.ok()
+//        .contentType(mediaType)
+//        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+//        .contentLength(contentLength)
+//        .body(fullBody);
+//  }
+
   @GetMapping("/{id}/listen")
   public ResponseEntity<StreamingResponseBody> listen(
       HttpServletRequest request,
       @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
       @PathVariable("id") Integer id
   ) throws Exception {
-    // 1) 인증 → Info 객체 리턴받도록 변경
+    // temp cleanup 한 번 실행 (비정상 잔여 제거)
+    cleanOldTempFiles();
+
     Info me = requireLogin(authHeader);
 
-    // 2) 청취 권한 확인 (permLevel >= 3)
     TrecordDto recDto = recordSvc.findById(id);
     boolean canListen =
         hasPermissionForNumber(me.getUserId(), recDto.getNumber1(), 3)
             || hasPermissionForNumber(me.getUserId(), recDto.getNumber2(), 3)
-            || "0".equals(me.getUserLevel())  // super-admin
-            || "1".equals(me.getUserLevel()) // branch-admin
-            || "3".equals(me.getUserLevel()); // 슈퍼유저
+            || "0".equals(me.getUserLevel())
+            || "1".equals(me.getUserLevel())
+            || "3".equals(me.getUserLevel());
     if (!canListen) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "녹취 재생 권한이 없습니다.");
     }
 
-
-    // 2) 리소스(오디오 파일) 로드
     Resource audio = recordSvc.getFile(id);
     if (audio == null || !audio.exists() || !audio.isReadable()) {
-      log.debug("[녹취 청취] 파일을 찾을 수 없습니다. 녹취 ID={}", id);
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다: " + id);
     }
 
-    // 3) MediaType & Range 확인
-    long contentLength = audio.contentLength();
+    String filename = audio.getFilename();
+    boolean isEncrypted = filename != null && filename.toLowerCase().endsWith(".aes");
     MediaType mediaType = MediaTypeFactory.getMediaType(audio)
         .orElse(MediaType.APPLICATION_OCTET_STREAM);
     String rangeHeader = request.getHeader(HttpHeaders.RANGE);
     List<HttpRange> ranges = HttpRange.parseRanges(rangeHeader);
 
-    if (!ranges.isEmpty()) {
+    // ---- .aes + Range 요청인 경우: 전체 복호화 후 부분 제공, 실패하면 fallback 전체 스트리밍 ----
+    if (isEncrypted && !ranges.isEmpty()) {
+      try {
+        java.io.File tempPlain = java.nio.file.Files.createTempFile("decrypted-", ".tmp").toFile();
+        // 삭제 보장: 스트리밍 완료/범위 제공 후 삭제
+        try (InputStream raw = audio.getInputStream();
+            InputStream decrypted = CryptoUtil.decryptingStream(raw, cryptoProps.getSecretKey());
+            java.io.OutputStream os = new java.io.FileOutputStream(tempPlain)) {
+          StreamUtils.copy(decrypted, os);
+        }
+
+        long plainLength = tempPlain.length();
+        HttpRange range = ranges.get(0);
+        long start = range.getRangeStart(plainLength);
+        long end = range.getRangeEnd(plainLength);
+        long rangeLength = end - start + 1;
+
+        RandomAccessFile raf = new RandomAccessFile(tempPlain, "r");
+        raf.seek(start);
+        StreamingResponseBody rangeBody = out -> {
+          try (InputStream is = new java.io.FileInputStream(raf.getFD())) {
+            byte[] buffer = new byte[8192];
+            long remaining = rangeLength;
+            int read;
+            while (remaining > 0 && (read = is.read(buffer, 0, (int) Math.min(buffer.length, remaining))) != -1) {
+              out.write(buffer, 0, read);
+              out.flush();
+              remaining -= read;
+            }
+          } finally {
+            raf.close();
+            tempPlain.delete();
+          }
+        };
+
+        return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+            .contentType(mediaType)
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+            .header(HttpHeaders.CONTENT_RANGE,
+                String.format("bytes %d-%d/%d", start, end, plainLength))
+            .contentLength(rangeLength)
+            .body(rangeBody);
+      } catch (Exception ex) {
+        log.warn("[listen] .aes+Range 처리 실패, fallback 전체 복호화 스트리밍. id={}, reason={}", id, ex.getMessage(), ex);
+        InputStream raw = audio.getInputStream();
+        InputStream decrypted = CryptoUtil.decryptingStream(raw, cryptoProps.getSecretKey());
+        StreamingResponseBody fallbackBody = out -> {
+          try (InputStream is = decrypted) {
+            StreamUtils.copy(is, out);
+          }
+        };
+        return ResponseEntity.ok()
+            .contentType(mediaType)
+            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+            .body(fallbackBody);
+      }
+    }
+
+    // ---- Range 요청 처리 (비암호화) ----
+    if (!ranges.isEmpty() && !isEncrypted) {
+      long rawLength = audio.contentLength();
       HttpRange range = ranges.get(0);
-      long start = range.getRangeStart(contentLength);
-      long end = range.getRangeEnd(contentLength);
+      long start = range.getRangeStart(rawLength);
+      long end = range.getRangeEnd(rawLength);
       long rangeLength = end - start + 1;
 
-      InputStream rangeStream = audio.getInputStream();
-      rangeStream.skip(start);
-
+      InputStream rangeStream = openRangeStream(audio, start);
       StreamingResponseBody rangeBody = out -> {
-        byte[] buffer = new byte[8192];
-        long remaining = rangeLength;
-        int bytesRead;
-        while (remaining > 0 && (bytesRead = rangeStream.read(buffer, 0,
-            (int) Math.min(buffer.length, remaining))) != -1) {
-          out.write(buffer, 0, bytesRead);
-          out.flush();
-          remaining -= bytesRead;
+        try (InputStream is = rangeStream) {
+          byte[] buffer = new byte[8192];
+          long remaining = rangeLength;
+          int read;
+          while (remaining > 0 && (read = is.read(buffer, 0, (int) Math.min(buffer.length, remaining))) != -1) {
+            out.write(buffer, 0, read);
+            out.flush();
+            remaining -= read;
+          }
         }
-        rangeStream.close();
       };
 
       return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
           .contentType(mediaType)
           .header(HttpHeaders.ACCEPT_RANGES, "bytes")
           .header(HttpHeaders.CONTENT_RANGE,
-              String.format("bytes %d-%d/%d", start, end, contentLength))
+              String.format("bytes %d-%d/%d", range.getRangeStart(rawLength), range.getRangeEnd(rawLength), rawLength))
           .contentLength(rangeLength)
           .body(rangeBody);
     }
 
-    // ▶ 전체 스트리밍 (aes 복호화 포함)
-    StreamingResponseBody fullBody = buildStream(audio);
-    return ResponseEntity.ok()
-        .contentType(mediaType)
-        .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-        .contentLength(contentLength)
-        .body(fullBody);
+    // ---- 전체 스트리밍 ----
+    StreamingResponseBody fullBody;
+    if (isEncrypted) {
+      InputStream raw = audio.getInputStream();
+      InputStream decrypted = CryptoUtil.decryptingStream(raw, cryptoProps.getSecretKey());
+      fullBody = out -> {
+        try (InputStream is = decrypted) {
+          StreamUtils.copy(is, out);
+        }
+      };
+      return ResponseEntity.ok()
+          .contentType(mediaType)
+          .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+          .body(fullBody);
+    } else {
+      fullBody = buildStream(audio);
+      return ResponseEntity.ok()
+          .contentType(mediaType)
+          .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+          .contentLength(audio.contentLength())
+          .body(fullBody);
+    }
   }
+
 
 
   // ─────────────────────────────────────────────
@@ -825,47 +1020,99 @@ public class TrecordController {
   }
 
 
-  // ─────────────────────────────────────────────
-  /**
-   * ── 다운로드 (프록시 기능 추가) ──
-   */
+//  // ─────────────────────────────────────────────
+//  /**
+//   * ── 다운로드 ──
+//   */
+//  @LogActivity(type = "record", activity = "다운로드", contents = "녹취Seq=#{#id}")
+//  @GetMapping("/{id}/download")
+//  public ResponseEntity<StreamingResponseBody> downloadById(
+//      HttpServletRequest request,
+//      @PathVariable Integer id) throws Exception {
+//
+//    // 1) 인증
+//    Info me = requireLogin(request);
+//
+//    // 2) 권한 확인 (permLevel >= 4)
+//    TrecordDto rec = recordSvc.findById(id);
+//    boolean canDownload =
+//        hasPermissionForNumber(me.getUserId(), rec.getNumber1(), 4)
+//            || hasPermissionForNumber(me.getUserId(), rec.getNumber2(), 4)
+//            || "0".equals(me.getUserLevel())
+//            || "1".equals(me.getUserLevel())
+//            || "3".equals(me.getUserLevel()); // 슈퍼유저
+//    if (!canDownload) {
+//      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+//    }
+//
+//    // 3) 로컬 파일 리소스 조회 (C:, D:, E: 드라이브 중 자동 탐색)
+//    Resource audio = recordSvc.getLocalFile(id);
+//
+//    // 4) 스트리밍 준비
+//    MediaType mediaType = MediaTypeFactory.getMediaType(audio)
+//        .orElse(MediaType.APPLICATION_OCTET_STREAM);
+//    String filename = UriUtils.encode(audio.getFilename(), StandardCharsets.UTF_8);
+//
+//    StreamingResponseBody body = buildStream(audio);
+//
+//    // 5) 응답 리턴
+//    return ResponseEntity.ok()
+//        .contentType(mediaType)
+//        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+//        .body(body);
+//  }
+
+  //  // ─────────────────────────────────────────────
+//  /**
+//   * ── 다운로드 ──
+//   */
   @LogActivity(type = "record", activity = "다운로드", contents = "녹취Seq=#{#id}")
   @GetMapping("/{id}/download")
   public ResponseEntity<StreamingResponseBody> downloadById(
       HttpServletRequest request,
       @PathVariable Integer id) throws Exception {
 
-    // 1) 인증
     Info me = requireLogin(request);
-
-    // 2) 권한 확인 (permLevel >= 4)
     TrecordDto rec = recordSvc.findById(id);
     boolean canDownload =
         hasPermissionForNumber(me.getUserId(), rec.getNumber1(), 4)
             || hasPermissionForNumber(me.getUserId(), rec.getNumber2(), 4)
             || "0".equals(me.getUserLevel())
             || "1".equals(me.getUserLevel())
-            || "3".equals(me.getUserLevel()); // 슈퍼유저
+            || "3".equals(me.getUserLevel());
     if (!canDownload) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
     }
 
-    // 3) 로컬 파일 리소스 조회 (C:, D:, E: 드라이브 중 자동 탐색)
     Resource audio = recordSvc.getLocalFile(id);
+    if (audio == null || !audio.exists() || !audio.isReadable()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다: " + id);
+    }
 
-    // 4) 스트리밍 준비
+    String rawName = audio.getFilename();
+    String downloadName = (rawName != null && rawName.toLowerCase().endsWith(".aes"))
+        ? rawName.substring(0, rawName.length() - 4)
+        : rawName;
+
+    ContentDisposition disposition = ContentDisposition.attachment()
+        .filename(downloadName, StandardCharsets.UTF_8)
+        .build();
+
     MediaType mediaType = MediaTypeFactory.getMediaType(audio)
         .orElse(MediaType.APPLICATION_OCTET_STREAM);
-    String filename = UriUtils.encode(audio.getFilename(), StandardCharsets.UTF_8);
-
     StreamingResponseBody body = buildStream(audio);
 
-    // 5) 응답 리턴
-    return ResponseEntity.ok()
+    ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
         .contentType(mediaType)
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-        .body(body);
+        .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
+
+    if (!(rawName != null && rawName.toLowerCase().endsWith(".aes"))) {
+      builder = builder.contentLength(audio.contentLength());
+    }
+
+    return builder.body(body);
   }
+
 
   /**
    * 로컬 저장된 녹취(.wav 또는 .aes)를 buildStream 으로 읽어서 다운로드합니다.

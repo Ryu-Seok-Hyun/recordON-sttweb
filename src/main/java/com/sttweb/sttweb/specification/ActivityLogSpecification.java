@@ -43,4 +43,9 @@ public final class ActivityLogSpecification {
       return cb.or(pb,pv);
     };
   }
+
+  /** userId가 특정 값이 아닌 것 (예: IQ200admin 제외) */
+  public static Specification<TactivitylogEntity> notUserId(String userId) {
+    return (root, query, cb) -> cb.notEqual(root.get("userId"), userId);
+  }
 }

@@ -175,20 +175,19 @@ public class ServiceMonitor {
         : "http://" + host + ":" + svc.port + svc.healthPath;
 
     try {
-      ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
-      boolean ok = resp.getStatusCode().is2xxSuccessful();
-      if (ok) {
-        failureCount.put(new Endpoint("", host, svc), 0); // 성공시 실패카운트 초기화
-      }
-      return ok;
+      // 응답만 오면 성공으로 처리
+      restTemplate.getForEntity(url, String.class);
+      failureCount.put(new Endpoint("", host, svc), 0);
+      return true;
     } catch (Exception e) {
       int fails = failureCount.getOrDefault(new Endpoint("", host, svc), 0) + 1;
       failureCount.put(new Endpoint("", host, svc), fails);
       log.warn("{} 체크 실패 {}회: host={}, err={}", svc, fails, host, e.getMessage());
-      // N회 이상 연속 실패한 경우에만 false 리턴
-      return fails >= MAX_FAILS ? false : true;
+      return fails >= MAX_FAILS;
     }
   }
+
+
 
   private String joinDetail(Set<Endpoint> list) {
     return list.stream()

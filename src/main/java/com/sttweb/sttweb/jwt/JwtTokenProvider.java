@@ -178,4 +178,15 @@ public class JwtTokenProvider {
         .parseClaimsJws(token)
         .getBody();
   }
+
+  /** 외부 모듈에서 signing/verifying 할 때 사용할 Key 반환 */
+  public java.security.Key getSigningKey() {
+    return this.secretKey;
+  }
+
+  /** 또는 byte[] 형태로도 노출하고 싶다면 이렇게 */
+  public byte[] getSecretKeyBytes() {
+    return this.secretKey.getEncoded();
+  }
 }
+
