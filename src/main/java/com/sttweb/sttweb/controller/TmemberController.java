@@ -109,7 +109,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 회원가입
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "등록", contents = "사용자 등록")
+  @LogActivity(
+      type     = "member",
+      activity = "등록",
+      contents = "사용자 등록: userId=#{#req.userId}"
+  )
   @PostMapping("/signup")
   public ResponseEntity<String> signup(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -153,7 +157,11 @@ public class TmemberController {
   // ================================================================
 // 로그인 로직 전체 (오류 수정)
 // ================================================================
-  @LogActivity(type = "member", activity = "로그인")
+  @LogActivity(
+      type     = "member",
+      activity = "로그인",
+      contents = "로그인 ID =#{#req.userId}"
+  )
   @PostMapping("/login")
   public ResponseEntity<LoginResponse> login(
       @RequestBody LoginRequest req,
@@ -311,7 +319,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 비밀번호 변경
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "비밀번호 변경", contents = "내 비밀번호 변경")
+  @LogActivity(
+      type     = "member",
+      activity = "비밀번호 변경",
+      contents = "사용자 #{#userId} 자신의 비밀번호를 변경"
+  )
   @PutMapping("/password")
   public ResponseEntity<String> changeMyPassword(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -325,7 +337,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 단일 비밀번호 초기화
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "단일 초기화")
+  @LogActivity(
+      type     = "member",
+      activity = "비밀번호 초기화",
+      contents = "사용자 #{#userId}가 사용자 #{@tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 비밀번호 초기화"
+  )
   @PutMapping("/{memberSeq}/changpass")
   public ResponseEntity<String> resetPassword(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -345,7 +361,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 여러 명 비밀번호 초기화
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "여러 명 동시 초기화")
+  @LogActivity(
+      type     = "member",
+      activity = "비밀번호 초기화(일괄)",
+      contents = "사용자 #{#userId}가 사용자들 #{#memberSeqs}의 비밀번호를 일괄 초기화"
+  )
   @PutMapping("/changpass/bulk")
   public ResponseEntity<String> resetPasswordsBulk(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -363,7 +383,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 전체 비밀번호 초기화
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "비밀번호 초기화", contents = "전체 사용자 초기화")
+  @LogActivity(
+      type     = "member",
+      activity = "비밀번호 초기화(전체)",
+      contents = "사용자 #{#userId}가 전체 사용자의 비밀번호 초기화"
+  )
   @PutMapping("/changpass/all")
   public ResponseEntity<String> resetAllPasswords(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
@@ -380,7 +404,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 로그아웃
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "로그아웃")
+  @LogActivity(
+      type     = "member",
+      activity = "로그아웃",
+      contents = "사용자 #{#principal.name} 로그아웃"
+  )
   @PostMapping("/logout")
   public ResponseEntity<String> logout() {
     svc.logout();
@@ -390,7 +418,12 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 내 정보 조회
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "조회", contents = "내 정보 조회")
+  // 3) 내 정보 조회
+  @LogActivity(
+      type     = "member",
+      activity = "조회",
+      contents = "내 정보 조회"
+  )
   @GetMapping("/me")
   public ResponseEntity<Info> getMyInfo(
       @RequestHeader(value = "Authorization", required = false) String authHeader) {
@@ -401,7 +434,7 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 전체/검색 조회
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "조회", contents = "전체 유저 조회/검색")
+  @LogActivity(type = "member", activity = "회원관리", contents = "전체 유저 조회/검색")
   @GetMapping
   public ResponseEntity<?> listOrSearchUsers(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -450,7 +483,12 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 회원정보 종합 수정
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "수정", contents = "회원정보 종합 수정")
+  @LogActivity(
+      type     = "member",
+      activity = "수정",
+      contents =
+          "사용자 #{#userId}가 사용자 #{#tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 정보 수정"
+  )
   @PutMapping("/{memberSeq}")
   public ResponseEntity<Info> updateMember(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -495,7 +533,12 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 회원 상세조회
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "조회", contents = "회원 상세조회")
+  @LogActivity(
+      type     = "member",
+      activity = "조회",
+      contents =
+          "사용자 #{#userId}가 사용자 #{#tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 상세정보를 조회"
+  )
   @GetMapping("/{memberSeq:\\d+}")
   public ResponseEntity<Info> getMemberDetail(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -511,7 +554,12 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 상태 변경
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "수정", contents = "상태 변경")
+  @LogActivity(
+      type     = "member",
+      activity = "수정",
+      contents = "사용자 #{#userId}가 사용자 " +
+          "#{@tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 상태를 #{#req.status}로 변경했다"
+  )
   @PutMapping("/{memberSeq}/status")
   public ResponseEntity<String> changeStatus(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -530,7 +578,11 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 관리자 재인증(비밀번호 확인)
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "재인증", contents = "관리자 재인증")
+  @LogActivity(
+      type     = "member",
+      activity = "재인증",
+      contents = "관리자 페이지 인증"
+  )
   @PostMapping("/confirm-password")
   public ResponseEntity<ReauthResponse> confirmPassword(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
@@ -549,7 +601,12 @@ public class TmemberController {
   // -----------------------------------------------------------------
   // 마스킹 여부 수정
   // -----------------------------------------------------------------
-  @LogActivity(type = "member", activity = "수정", contents = "마스킹 여부 변경")
+  @LogActivity(
+      type     = "member",
+      activity = "수정",
+      contents = "사용자 #{#userId}가 마스킹 설정을 " +
+          "#{#req.maskFlag == 1 ? '해제' : '활성화'}함"
+  )
   @PutMapping("/mask")
   public ResponseEntity<String> updateMaskFlag(
       @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,

@@ -8,7 +8,6 @@ import com.sttweb.sttweb.service.TactivitylogService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TrecordService;
-import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import lombok.RequiredArgsConstructor;
@@ -40,80 +39,85 @@ public class ActivityLogAspect {
   private static final Logger log = LoggerFactory.getLogger(ActivityLogAspect.class);
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-  private final SpelExpressionParser parser = new SpelExpressionParser();
-  private final ParameterNameDiscoverer pd = new DefaultParameterNameDiscoverer();
-  private final TactivitylogService logService;
-  private final TmemberService memberSvc;
-  private final TbranchService branchSvc;
-  private final BeanFactory beanFactory;
-  private final TrecordService recordSvc;
+  private final SpelExpressionParser     parser      = new SpelExpressionParser();
+  private final ParameterNameDiscoverer pd          = new DefaultParameterNameDiscoverer();
+  private final TactivitylogService     logService;
+  private final TmemberService          memberSvc;
+  private final TbranchService          branchSvc;
+  private final TrecordService          recordSvc;
+  private final BeanFactory             beanFactory;
 
   @Around("@annotation(logActivity)")
   public Object around(ProceedingJoinPoint jp, LogActivity logActivity) throws Throwable {
-    // 1) 원본 메소드 실행
+    // 1) 실제 비즈니스 로직 실행
     Object result = jp.proceed();
 
-    // 2) HTTP 요청 아니면 종료
+    // 2) HTTP 요청이 아니면 스킵
     ServletRequestAttributes sa = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
     if (sa == null) return result;
     HttpServletRequest req = sa.getRequest();
 
-    // 3) 인증 정보 수집
+    // 3) operatorUserId 수집
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    String operatorUserId = "";
+    String operatorUserId   = "";
     String operatorWorkerId = "anonymous";
-    int operatorSeq = 0;
+    int    operatorSeq      = 0;
     if (auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken)) {
-      operatorUserId = auth.getName();
-      Info me = memberSvc.getMyInfoByUserId(operatorUserId);
+      operatorUserId   = auth.getName();
+      Info me          = memberSvc.getMyInfoByUserId(operatorUserId);
       operatorWorkerId = me.getUserId();
-      operatorSeq = me.getMemberSeq();
+      operatorSeq      = me.getMemberSeq();
     }
-    // 로그인/회원가입 시 userId 파라미터에서 추출
+    // 로그인/회원가입 시 userId 파라미터 추출
     if (operatorUserId.isEmpty()) {
       for (Object arg : jp.getArgs()) {
         if (arg instanceof LoginRequest) {
-          operatorUserId = ((LoginRequest) arg).getUserId();
+          operatorUserId   = ((LoginRequest) arg).getUserId();
           operatorWorkerId = operatorUserId;
           break;
         }
         if (arg instanceof SignupRequest) {
-          operatorUserId = ((SignupRequest) arg).getUserId();
+          operatorUserId   = ((SignupRequest) arg).getUserId();
           operatorWorkerId = operatorUserId;
           break;
         }
       }
     }
-    String userIdToLog = operatorUserId;
+    String userIdToLog = operatorUserId != null ? operatorUserId : "";
 
-    // 4) 지점·IP 정보 조회
-    int branchSeq = 0;
-    int memberSeq = operatorSeq;
+    // 4) branch/IP 조회
+    int    branchSeq   = 0;
+    int    memberSeq   = operatorSeq;
     String companyName = "";
-    String pbIp = "", pvIp = "";
+    String pbIp        = "";
+    String pvIp        = "";
     try {
-      Info userInfo = memberSvc.getMyInfoByUserId(userIdToLog);
-      branchSeq = userInfo.getBranchSeq();
-      var branch = branchSvc.findById(branchSeq);
-      if (branch != null) {
-        companyName = branch.getCompanyName();
-        pbIp = branch.getPbIp();
-        pvIp = branch.getPIp();
+      Info ui = memberSvc.getMyInfoByUserId(userIdToLog);
+      branchSeq = ui.getBranchSeq();
+      var b = branchSvc.findById(branchSeq);
+      if (b != null) {
+        companyName = b.getCompanyName();
+        pbIp        = b.getPbIp();
+        pvIp        = b.getPIp();
       }
-    } catch (Exception ignored) {}
+    } catch (Exception ignored) { }
     if (pbIp == null || pbIp.isBlank()) {
-      String xff = req.getHeader("X-Forwarded-For");
+      String xff    = req.getHeader("X-Forwarded-For");
       String remote = req.getRemoteAddr();
       pbIp = (xff != null && !xff.isBlank()) ? xff.split(",")[0].trim() : remote;
       pvIp = remote;
     }
 
-    // 5) 'id' 파라미터 추출
-    MethodSignature sig = (MethodSignature) jp.getSignature();
-    String[] paramNames = sig.getParameterNames();
-    Object[] args = jp.getArgs();
-    Integer idValue = null;
+    // 5) PathVariable 'id' 추출 (예: getMemberDetail, updateMember)
+    MethodSignature sig        = (MethodSignature) jp.getSignature();
+    String[]        paramNames = sig.getParameterNames();
+    Object[]        args       = jp.getArgs();
+    Integer         idValue    = null;
     for (int i = 0; i < paramNames.length; i++) {
+      if ("memberSeq".equals(paramNames[i]) && args[i] instanceof Integer) {
+        idValue = (Integer) args[i];
+        break;
+      }
       if ("id".equals(paramNames[i]) && args[i] instanceof Integer) {
         idValue = (Integer) args[i];
         break;
@@ -122,67 +126,78 @@ public class ActivityLogAspect {
 
     // 6) SpEL 컨텍스트 설정
     StandardEvaluationContext ctx = new StandardEvaluationContext();
-    // 파라미터·리턴·principal 등록
-    ctx.setVariable("id", idValue);
-    ctx.setVariable("return", result);
+    ctx.setBeanResolver(new BeanFactoryResolver(beanFactory));
+    // positional args
     for (int i = 0; i < args.length; i++) {
       ctx.setVariable("p" + i, args[i]);
     }
+    // named parameters
     String[] names = pd.getParameterNames(sig.getMethod());
     if (names != null) {
       for (int i = 0; i < names.length; i++) {
         ctx.setVariable(names[i], args[i]);
       }
     }
+    // 공통 변수
+    ctx.setVariable("id",        idValue);
+    ctx.setVariable("memberSeq", idValue);
+    ctx.setVariable("userId",    userIdToLog);
+    ctx.setVariable("dto",       args.length > 0 ? args[args.length - 1] : null);
+    ctx.setVariable("return",    result);
     ctx.setVariable("principal", auth != null ? auth.getPrincipal() : null);
-    // Bean 참조 허용
     ctx.setVariable("recordSvc", recordSvc);
+    ctx.setVariable("tmemberService", memberSvc);
 
-    // 7) contents 평가
-    String expr = logActivity.contents();
+    // 7) contents 평가 (정석 TemplateParserContext 사용)
+    String expr      = logActivity.contents();
     String contents;
-    if (expr != null && expr.contains("#{")) {
-      try {
+    try {
+      if (expr != null && expr.contains("#{")) {
         contents = parser
-            .parseExpression(expr, new TemplateParserContext())
+            .parseExpression(expr, new TemplateParserContext("#{", "}"))
             .getValue(ctx, String.class);
-      } catch (Exception ex) {
-        log.error("SpEL evaluation failed: {}", expr, ex);
-        contents = expr;
+      } else {
+        contents = expr != null ? expr : "";
       }
-    } else {
+    } catch (Exception ex) {
+      log.error("LogActivity contents SpEL evaluation failed: {}", expr, ex);
       contents = expr != null ? expr : "";
     }
 
-    // 8) dir 평가 (필요 시)
+    // 8) dir 평가도 동일하게
     String dirExpr = logActivity.dir();
-    String dir = "";
-    if (dirExpr != null && dirExpr.contains("#{")) {
+    String dir     = "";
+    if (dirExpr != null) {
       try {
-        dir = parser.parseExpression(dirExpr, new TemplateParserContext()).getValue(ctx, String.class);
+        if (dirExpr.contains("#{")) {
+          dir = parser
+              .parseExpression(dirExpr, new TemplateParserContext("#{", "}"))
+              .getValue(ctx, String.class);
+        } else {
+          dir = dirExpr;
+        }
       } catch (Exception ex) {
+        log.warn("LogActivity dir SpEL failed: {}", dirExpr, ex);
         dir = dirExpr;
       }
-    } else if (dirExpr != null) {
-      dir = dirExpr;
     }
 
-    // 9) DTO 생성 및 저장
+    // 9) DB 저장
     TactivitylogDto dto = TactivitylogDto.builder()
-        .type(logActivity.type())
-        .activity(logActivity.activity())
-        .contents(contents)
-        .dir(dir)
-        .branchSeq(branchSeq)
+        .type       (logActivity.type())
+        .activity   (logActivity.activity())
+        .contents   (contents)
+        .dir        (dir)
+        .branchSeq  (branchSeq)
         .companyName(companyName)
-        .memberSeq(memberSeq)
-        .userId(userIdToLog)
-        .employeeId(0)
-        .pbIp(pbIp)
-        .pvIp(pvIp)
-        .crtime(LocalDateTime.now().format(FMT))
-        .workerSeq(operatorSeq)
-        .workerId(operatorWorkerId)
+        .memberSeq  (memberSeq)
+        .userId     (userIdToLog)
+        .employeeId (0)
+        .pbIp       (pbIp)
+        .pvIp       (pvIp)
+        .crtime     (LocalDateTime.now().format(FMT))
+        .workerSeq  (operatorSeq)
+        .workerId   (operatorWorkerId)
         .build();
     logService.createLog(dto);
 

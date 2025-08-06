@@ -66,7 +66,12 @@ public class TbranchController {
    * - 지사 관리자(1): 자기 지점만 (키워드는 무시)
    * - 그 외(2): 403
    */
-  @LogActivity(type = "branch", activity = "조회", contents = "지점 조회")
+  @LogActivity(
+      type     = "branch",
+      activity = "조회",
+      contents =
+          "사용자 #{#userId}이(가) 전체 지점 목록 조회"
+  )
   @GetMapping
   public ResponseEntity<?> listAll(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -142,7 +147,11 @@ public class TbranchController {
    * - 지사 관리자(1): 자신의 지점만
    * - 그 외: 403
    */
-  @LogActivity(type = "branch", activity = "조회", contents = "지점 단건 조회")
+  @LogActivity(
+      type     = "branch",
+      activity = "조회",
+      contents = "사용자 #{userId}가 지점 상세조회: id=#{id}, name=#{return.body.branchName}"
+  )
   @GetMapping("/{id}")
   public ResponseEntity<?> getById(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -176,7 +185,13 @@ public class TbranchController {
    * 지점 등록 (본사 관리자만)
    */
   /** 지점 등록 (본사 관리자, 레벨 3만) **/
-  @LogActivity(type = "branch", activity = "등록", contents = "지점 등록")
+  @LogActivity(
+      type     = "branch",
+      activity = "등록",
+      contents =
+          "사용자 #{#userId}가 지점 등록: " +
+              "name=#{#reqDto.branchName}"
+  )
   @PostMapping
   public ResponseEntity<?> createBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -202,7 +217,11 @@ public class TbranchController {
   }
 
   /** 지점 수정 (본사 관리자, 레벨 3, 또는 지사 관리자(자기관할 지점)) **/
-  @LogActivity(type = "branch", activity = "수정", contents = "지점 수정")
+  @LogActivity(
+      type     = "branch",
+      activity = "수정",
+      contents = "사용자 #{userId}가 지점 수정: id=#{id}, name=#{dto.branchName}"
+  )
   @PutMapping("/{id}")
   public ResponseEntity<?> updateBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -232,7 +251,13 @@ public class TbranchController {
   /**
    * 지점 비활성화 (본사 관리자만)
    */
-  @LogActivity(type = "branch", activity = "비활성화", contents = "지점 비활성 함")
+  @LogActivity(
+      type     = "branch",
+      activity = "비활성화",
+      contents =
+          "사용자 #{#userId}가 지점 비활성화: " +
+              "id=#{#id}, name=#{#return.body.branchName}"
+  )
   @DeleteMapping("/{id}")
   public ResponseEntity<?> deactivateBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -257,7 +282,13 @@ public class TbranchController {
   /**
    * 지점 활성화 (본사 관리자만)
    */
-  @LogActivity(type = "branch", activity = "활성화", contents = "지점 활성화 함")
+  @LogActivity(
+      type     = "branch",
+      activity = "활성화",
+      contents =
+          "사용자 #{#userId}가 지점 활성화: " +
+              "id=#{#id}, name=#{#return.body.branchName}"
+  )
   @PutMapping("/{id}/activate")
   public ResponseEntity<?> activateBranch(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
@@ -287,7 +318,11 @@ public class TbranchController {
    * 지점 상태 조회 (DB 저장된 is_alive, last_health_check, last_downtime 반환)
    * 호출 URL: GET /api/branches/{id}/health
    */
-  @LogActivity(type = "branch", activity = "조회", contents = "지점 Health 조회 (DB 저장값)")
+  @LogActivity(
+      type     = "branch",
+      activity = "조회",
+      contents = "사용자 #{userId}가 지점 Health 조회: id=#{id}, name=#{return.body.branchName}"
+  )
   @GetMapping("/{id}/health")
   public ResponseEntity<?> getBranchHealthFromDb(
       @RequestHeader(value = "Authorization", required = false) String authHeader,
