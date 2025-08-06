@@ -756,7 +756,7 @@ public class TrecordController {
    * 요청된 녹취 파일이 현재 서버에 있으면 직접 스트리밍하고,
    * 다른 지점 서버에 있으면 해당 서버로 요청을 프록시하여 결과를 스트리밍합니다.
    */
-  @LogActivity(type = "record", activity = "청취", contents = "녹취Seq=#{#id}")
+ // @LogActivity(type = "record", activity = "청취", contents = "녹취Seq=#{#id}")
 //  @GetMapping("/{id}/listen")
 //  public ResponseEntity<StreamingResponseBody> listen(
 //      HttpServletRequest request,
@@ -832,7 +832,11 @@ public class TrecordController {
 //        .contentLength(contentLength)
 //        .body(fullBody);
 //  }
-
+  @LogActivity(
+      type     = "record",
+      activity = "청취",
+      contents = "녹취 파일명=#{#recordSvc.getFile(#id).filename}"
+  )
   @GetMapping("/{id}/listen")
   public ResponseEntity<StreamingResponseBody> listen(
       HttpServletRequest request,
@@ -1066,7 +1070,11 @@ public class TrecordController {
 //  /**
 //   * ── 다운로드 ──
 //   */
-  @LogActivity(type = "record", activity = "다운로드", contents = "녹취Seq=#{#id}")
+  @LogActivity(
+      type     = "record",
+      activity = "다운로드",
+      contents = "녹취 파일명=#{#recordSvc.getLocalFile(#id).filename}"
+  )
   @GetMapping("/{id}/download")
   public ResponseEntity<StreamingResponseBody> downloadById(
       HttpServletRequest request,

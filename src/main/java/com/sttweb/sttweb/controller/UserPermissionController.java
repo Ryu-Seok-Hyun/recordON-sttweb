@@ -2,6 +2,7 @@
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.dto.GrantDto;
+import com.sttweb.sttweb.dto.GrantRequest;
 import com.sttweb.sttweb.dto.TlineDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.UserPermissionViewDto;
@@ -32,17 +33,19 @@ public class UserPermissionController {
   private final PermissionService permissionService;
   private final UserPermissionRepository repo;
 
-  // 권한 부여
+
+
+  // 권한 부여 (배열 받기)
   @PostMapping
-  public ResponseEntity<Void> grant(@RequestBody GrantDto dto) {
-    permissionService.grantAndSyncLinePerm(dto);
+  public ResponseEntity<Void> grant(@RequestBody List<GrantDto> grants) {
+    grants.forEach(permissionService::grantAndSyncLinePerm);
     return ResponseEntity.ok().build();
   }
 
-  // 권한 회수
+  // 권한 회수 (배열 받기)
   @DeleteMapping
-  public ResponseEntity<Void> revoke(@RequestBody GrantDto dto) {
-    permissionService.revokeAndSyncLinePerm(dto.getMemberSeq(), dto.getLineId());
+  public ResponseEntity<Void> revokeAll(@RequestBody List<GrantDto> dtos) {
+    dtos.forEach(dto -> permissionService.revokeAndSyncLinePerm(dto.getMemberSeq(), dto.getLineId()));
     return ResponseEntity.noContent().build();
   }
 
