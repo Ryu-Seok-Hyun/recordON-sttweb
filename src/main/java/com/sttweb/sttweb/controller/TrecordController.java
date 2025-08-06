@@ -283,7 +283,7 @@ public class TrecordController {
   }
 
   // ── 9) 전체 녹취 리스트 (GET → POST) ──
-  @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 조회")
+  @LogActivity(type = "record", activity = "조회", contents = "전체 녹취 목록 조회")
   @PostMapping
   public ResponseEntity<Map<String, Object>> listAll(
       @RequestParam(name = "number",      required = false) String numberParam,

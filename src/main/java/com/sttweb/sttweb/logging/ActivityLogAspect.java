@@ -4,12 +4,17 @@ import com.sttweb.sttweb.dto.TactivitylogDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.TmemberDto.LoginRequest;
 import com.sttweb.sttweb.dto.TmemberDto.SignupRequest;
+import com.sttweb.sttweb.jwt.JwtTokenProvider;
 import com.sttweb.sttweb.service.TactivitylogService;
-import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TbranchService;
+import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Enumeration;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -31,6 +36,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 
 @Aspect
 @Component
@@ -39,17 +45,18 @@ public class ActivityLogAspect {
   private static final Logger log = LoggerFactory.getLogger(ActivityLogAspect.class);
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-  private final SpelExpressionParser     parser      = new SpelExpressionParser();
-  private final ParameterNameDiscoverer pd          = new DefaultParameterNameDiscoverer();
+  private final SpelExpressionParser    parser         = new SpelExpressionParser();
+  private final ParameterNameDiscoverer pd             = new DefaultParameterNameDiscoverer();
   private final TactivitylogService     logService;
   private final TmemberService          memberSvc;
   private final TbranchService          branchSvc;
   private final TrecordService          recordSvc;
+  private final JwtTokenProvider        jwtTokenProvider;
   private final BeanFactory             beanFactory;
 
   @Around("@annotation(logActivity)")
   public Object around(ProceedingJoinPoint jp, LogActivity logActivity) throws Throwable {
-    // 1) 실제 비즈니스 로직 실행
+    // 1) 실제 비즈니스 로직 수행
     Object result = jp.proceed();
 
     // 2) HTTP 요청이 아니면 스킵
@@ -62,32 +69,49 @@ public class ActivityLogAspect {
     String operatorUserId   = "";
     String operatorWorkerId = "anonymous";
     int    operatorSeq      = 0;
+
+    // 3-1) SecurityContext
     if (auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken)) {
-      operatorUserId   = auth.getName();
-      Info me          = memberSvc.getMyInfoByUserId(operatorUserId);
-      operatorWorkerId = me.getUserId();
-      operatorSeq      = me.getMemberSeq();
+      operatorUserId = auth.getName();
     }
-    // 로그인/회원가입 시 userId 파라미터 추출
+    // 3-2) LoginRequest/SignupRequest 파라미터
     if (operatorUserId.isEmpty()) {
       for (Object arg : jp.getArgs()) {
         if (arg instanceof LoginRequest) {
-          operatorUserId   = ((LoginRequest) arg).getUserId();
-          operatorWorkerId = operatorUserId;
-          break;
+          operatorUserId = ((LoginRequest) arg).getUserId(); break;
         }
         if (arg instanceof SignupRequest) {
-          operatorUserId   = ((SignupRequest) arg).getUserId();
-          operatorWorkerId = operatorUserId;
-          break;
+          operatorUserId = ((SignupRequest) arg).getUserId(); break;
         }
       }
     }
-    String userIdToLog = operatorUserId != null ? operatorUserId : "";
+    // 3-3) ReAuth 토큰
+    if (operatorUserId.isEmpty()) {
+      String reAuth = req.getHeader("X-ReAuth-Token");
+      if (reAuth!=null && jwtTokenProvider.validateReAuthToken(reAuth)) {
+        operatorUserId = jwtTokenProvider.getUserId(reAuth);
+      }
+    }
+    // 3-4) Authorization 헤더
+    if (operatorUserId.isEmpty()) {
+      String authH = req.getHeader(HttpHeaders.AUTHORIZATION);
+      if (authH!=null && authH.startsWith("Bearer ")) {
+        String tok = authH.substring(7).trim();
+        if (jwtTokenProvider.validateToken(tok)) {
+          operatorUserId = jwtTokenProvider.getUserId(tok);
+        }
+      }
+    }
+    // 3-5) 최종 세팅
+    if (!operatorUserId.isEmpty()) {
+      Info meInfo = memberSvc.getMyInfoByUserId(operatorUserId);
+      operatorWorkerId = meInfo.getUserId();
+      operatorSeq      = meInfo.getMemberSeq();
+    }
+    String userIdToLog = operatorUserId;
 
     // 4) branch/IP 조회
     int    branchSeq   = 0;
-    int    memberSeq   = operatorSeq;
     String companyName = "";
     String pbIp        = "";
     String pvIp        = "";
@@ -100,15 +124,24 @@ public class ActivityLogAspect {
         pbIp        = b.getPbIp();
         pvIp        = b.getPIp();
       }
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) {}
+
+    // 4-1) 테이블에 IP 없으면 로컬 NIC 우선
     if (pbIp == null || pbIp.isBlank()) {
-      String xff    = req.getHeader("X-Forwarded-For");
-      String remote = req.getRemoteAddr();
-      pbIp = (xff != null && !xff.isBlank()) ? xff.split(",")[0].trim() : remote;
-      pvIp = remote;
+      String nicIp = detectBranchIpFromLocalNics();
+      if (nicIp != null) {
+        pbIp = nicIp;
+        pvIp = nicIp;
+      } else {
+        // 4-2) X-Forwarded-For / 원격 주소
+        String xff    = req.getHeader("X-Forwarded-For");
+        String remote = req.getRemoteAddr();
+        pbIp = (xff!=null && !xff.isBlank()) ? xff.split(",")[0].trim() : remote;
+        pvIp = remote;
+      }
     }
 
-    // 5) PathVariable 'id' 추출 (예: getMemberDetail, updateMember)
+    // 5) PathVariable 'memberSeq' 또는 'id' 추출
     MethodSignature sig        = (MethodSignature) jp.getSignature();
     String[]        paramNames = sig.getParameterNames();
     Object[]        args       = jp.getArgs();
@@ -133,51 +166,51 @@ public class ActivityLogAspect {
     }
     // named parameters
     String[] names = pd.getParameterNames(sig.getMethod());
-    if (names != null) {
-      for (int i = 0; i < names.length; i++) {
+    if (names!=null) {
+      for (int i=0; i<names.length; i++) {
         ctx.setVariable(names[i], args[i]);
       }
     }
     // 공통 변수
-    ctx.setVariable("id",        idValue);
-    ctx.setVariable("memberSeq", idValue);
-    ctx.setVariable("userId",    userIdToLog);
-    ctx.setVariable("dto",       args.length > 0 ? args[args.length - 1] : null);
-    ctx.setVariable("return",    result);
-    ctx.setVariable("principal", auth != null ? auth.getPrincipal() : null);
-    ctx.setVariable("recordSvc", recordSvc);
+    ctx.setVariable("id",             idValue);
+    ctx.setVariable("memberSeq",      idValue);
+    ctx.setVariable("userId",         userIdToLog);
+    ctx.setVariable("dto",            args.length>0 ? args[args.length-1] : null);
+    ctx.setVariable("return",         result);
+    ctx.setVariable("principal",      auth!=null?auth.getPrincipal():null);
+    ctx.setVariable("recordSvc",      recordSvc);
     ctx.setVariable("tmemberService", memberSvc);
 
-    // 7) contents 평가 (정석 TemplateParserContext 사용)
-    String expr      = logActivity.contents();
+    // 7) contents 평가
+    String expr     = logActivity.contents();
     String contents;
     try {
-      if (expr != null && expr.contains("#{")) {
+      if (expr!=null && expr.contains("#{")) {
         contents = parser
-            .parseExpression(expr, new TemplateParserContext("#{", "}"))
+            .parseExpression(expr, new TemplateParserContext())
             .getValue(ctx, String.class);
       } else {
-        contents = expr != null ? expr : "";
+        contents = expr!=null ? expr : "";
       }
-    } catch (Exception ex) {
-      log.error("LogActivity contents SpEL evaluation failed: {}", expr, ex);
-      contents = expr != null ? expr : "";
+    } catch(Exception ex) {
+      log.error("LogActivity contents evaluation failed: {}", expr, ex);
+      contents = expr!=null ? expr : "";
     }
 
-    // 8) dir 평가도 동일하게
-    String dirExpr = logActivity.dir();
+    // 8) dir 평가
     String dir     = "";
-    if (dirExpr != null) {
+    String dirExpr = logActivity.dir();
+    if (dirExpr!=null) {
       try {
         if (dirExpr.contains("#{")) {
           dir = parser
-              .parseExpression(dirExpr, new TemplateParserContext("#{", "}"))
+              .parseExpression(dirExpr, new TemplateParserContext())
               .getValue(ctx, String.class);
         } else {
           dir = dirExpr;
         }
-      } catch (Exception ex) {
-        log.warn("LogActivity dir SpEL failed: {}", dirExpr, ex);
+      } catch(Exception ex) {
+        log.warn("LogActivity dir evaluation failed: {}", dirExpr, ex);
         dir = dirExpr;
       }
     }
@@ -190,7 +223,7 @@ public class ActivityLogAspect {
         .dir        (dir)
         .branchSeq  (branchSeq)
         .companyName(companyName)
-        .memberSeq  (memberSeq)
+        .memberSeq  (operatorSeq)
         .userId     (userIdToLog)
         .employeeId (0)
         .pbIp       (pbIp)
@@ -202,5 +235,30 @@ public class ActivityLogAspect {
     logService.createLog(dto);
 
     return result;
+  }
+
+  /**
+   * 로컬 NIC 중 브랜치 IP로 사용할 수 있는 주소(예: 192.168.56.1)를 반환합니다.
+   */
+  private String detectBranchIpFromLocalNics() {
+    try {
+      Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
+      while (nics.hasMoreElements()) {
+        NetworkInterface ni = nics.nextElement();
+        if (ni.isLoopback() || !ni.isUp()) continue;
+        Enumeration<InetAddress> addrs = ni.getInetAddresses();
+        while (addrs.hasMoreElements()) {
+          InetAddress addr = addrs.nextElement();
+          if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) continue;
+          String ip = addr.getHostAddress();
+          if (!ip.contains(".")) continue;
+          // 브랜치 서비스에 매핑되는 IP라면 즉시 리턴
+          if (branchSvc.findBypIp(ip).isPresent() || branchSvc.findByPbIp(ip).isPresent()) {
+            return ip;
+          }
+        }
+      }
+    } catch (SocketException ignored) {}
+    return null;
   }
 }

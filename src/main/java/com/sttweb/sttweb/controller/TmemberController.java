@@ -487,7 +487,7 @@ public class TmemberController {
       type     = "member",
       activity = "수정",
       contents =
-          "사용자 #{#userId}가 사용자 #{#tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 정보 수정"
+          "사용자 #{#userId}이(가) 사용자 #{#tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 정보 수정"
   )
   @PutMapping("/{memberSeq}")
   public ResponseEntity<Info> updateMember(
@@ -537,7 +537,7 @@ public class TmemberController {
       type     = "member",
       activity = "조회",
       contents =
-          "사용자 #{#userId}가 사용자 #{#tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 상세정보를 조회"
+          "사용자 #{#userId}이(가) 사용자 #{#tmemberService.getMyInfoByMemberSeq(#memberSeq).userId}의 상세정보를 조회"
   )
   @GetMapping("/{memberSeq:\\d+}")
   public ResponseEntity<Info> getMemberDetail(
@@ -581,7 +581,7 @@ public class TmemberController {
   @LogActivity(
       type     = "member",
       activity = "재인증",
-      contents = "관리자 페이지 인증"
+      contents = "관리자 페이지 인증: 사용자 #{#userId}"
   )
   @PostMapping("/confirm-password")
   public ResponseEntity<ReauthResponse> confirmPassword(
