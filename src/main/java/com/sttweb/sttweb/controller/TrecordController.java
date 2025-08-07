@@ -2,6 +2,7 @@ package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.crypto.CryptoProperties;
 import com.sttweb.sttweb.crypto.CryptoUtil;
+import com.sttweb.sttweb.dto.ConvertTextResponseSTTDto;
 import com.sttweb.sttweb.dto.TrecordDto;
 import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.entity.TbranchEntity;
@@ -1217,5 +1218,17 @@ public class TrecordController {
       if (r.getNumber2() != null) r.setNumber2(convertToExtensionDisplay(r.getNumber2()));
     });
     return ResponseEntity.ok(result);
+  }
+
+  @LogActivity(
+      type     = "record",
+      activity = "STT 변환",
+      contents = "#{ '사용자 ' + #userId + '이(가) 녹취파일 ' + #recordSvc.getLocalFile(#recordId).filename + ' 텍스트 변환' }"
+  )
+  @PostMapping("/{recordId}/stt-click")
+  public ResponseEntity<Void> logSttClick(
+      @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+      @PathVariable Long recordId) {
+    return ResponseEntity.ok().build();
   }
 }

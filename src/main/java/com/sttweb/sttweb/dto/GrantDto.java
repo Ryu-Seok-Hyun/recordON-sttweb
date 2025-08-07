@@ -19,4 +19,5 @@ public class GrantDto {
   private Integer memberSeq;
   private Integer lineId;
   private Integer permLevel;
+  private String  granteeUsername;
 }
