@@ -72,4 +72,5 @@ public interface TmemberService {
 
     TmemberEntity findById(Integer memberSeq);
 
+
 }

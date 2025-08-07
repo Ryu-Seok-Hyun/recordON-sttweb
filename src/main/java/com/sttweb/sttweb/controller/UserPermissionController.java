@@ -23,17 +23,30 @@ public class UserPermissionController {
   private final PermissionService permissionService;
   private final UserPermissionRepository repo;
   private final TmemberService      memberSvc;
+//
+//  @LogActivity(
+//      type     = "permission",
+//      activity = "권한부여",
+//      contents = "#{ "
+//          +  "'사용자 ' + #userId "
+//          +  " + '이(가) 사용자 ' "
+//          +  " + #tmemberService.getMyInfoByMemberSeq(#grants[0].memberSeq).getUserId() "
+//          +  " + '에게 권한 부여' "
+//          +  "}"
+//  )
+//@PostMapping
+//public ResponseEntity<Void> grant(@RequestBody List<GrantDto> grants) {
+//    grants.forEach(permissionService::grantAndSyncLinePerm);
+//    return ResponseEntity.ok().build();
+//  }
+
 
   @LogActivity(
       type     = "permission",
       activity = "권한부여",
-      contents = "#{ "
-          +  "'사용자 ' + #userId "
-          +  " + '이(가) 사용자 ' "
-          +  " + #tmemberService.getMyInfoByMemberSeq(#grants[0].memberSeq).getUserId() "
-          +  " + '에게 권한 부여' "
-          +  "}"
+      contents = "@logMsgUtil.grant(#userId, #p0[0].memberSeq, #p0[0].permLevel)"
   )
+
   @PostMapping
   public ResponseEntity<Void> grant(@RequestBody List<GrantDto> grants) {
     grants.forEach(permissionService::grantAndSyncLinePerm);
@@ -43,21 +56,22 @@ public class UserPermissionController {
   @LogActivity(
       type     = "permission",
       activity = "권한회수",
-      contents = "#{ '사용자 ' + #userId + '이(가) 사용자 ' + #dtos[0].granteeUsername + '의 권한을 회수' }"
+      contents = "@logMsgUtil.revoke(#userId, #p0[0].memberSeq)"
   )
+
   @DeleteMapping
   public ResponseEntity<Void> revokeAll(@RequestBody List<GrantDto> dtos) {
     dtos.forEach(d -> permissionService.revokeAndSyncLinePerm(d.getMemberSeq(), d.getLineId()));
     return ResponseEntity.noContent().build();
   }
 
+
+
   @GetMapping("/{memberSeq}")
   public ResponseEntity<List<GrantDto>> listPermissions(@PathVariable Integer memberSeq) {
     var result = repo.findByMemberSeq(memberSeq).stream()
         .map(up -> {
-          // MemberSeq로 사용자 ID(또는 이름)를 조회
-          String username = memberSvc.getMyInfoByMemberSeq(up.getMemberSeq())
-              .getUserId();
+          String username = memberSvc.getMyInfoByMemberSeq(up.getMemberSeq()).getUserId();
           return GrantDto.builder()
               .memberSeq(up.getMemberSeq())
               .lineId(up.getLineId())
