@@ -155,10 +155,16 @@ public class ActivityLogAspect {
     String expr = logActivity.contents();
     String contents;
     try {
-      contents = parser.parseExpression(expr).getValue(ctx, String.class);
+      if (expr != null && expr.contains("#{")) {                 // 템플릿 식
+        contents = parser
+            .parseExpression(expr, new TemplateParserContext())// ← Template 모드
+            .getValue(ctx, String.class);
+      } else {                                                   // 순수 SpEL 식
+        contents = parser.parseExpression(expr).getValue(ctx, String.class);
+      }
     } catch (Exception ex) {
       log.error("LogActivity contents evaluation failed: {}", expr, ex);
-      contents = expr;           // 실패 시 원문 저장
+      contents = expr;                                           // 실패 시 원문 저장
     }
 
     /* 8. dir 평가도 동일하게 */

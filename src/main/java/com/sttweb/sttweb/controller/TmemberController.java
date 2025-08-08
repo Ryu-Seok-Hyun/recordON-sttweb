@@ -160,7 +160,7 @@ public class TmemberController {
   @LogActivity(
       type     = "member",
       activity = "로그인",
-      contents = "로그인 ID =#{#req.userId}"
+      contents = "'로그인 ID = ' + #req.userId"
   )
   @PostMapping("/login")
   public ResponseEntity<LoginResponse> login(

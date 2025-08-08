@@ -69,8 +69,7 @@ public class TbranchController {
   @LogActivity(
       type     = "branch",
       activity = "조회",
-      contents =
-          "사용자 #{#userId}이(가) 전체 지점 목록 조회"
+      contents = "'사용자 ' + #userId + '이(가) 전체 지점 목록 조회'"
   )
   @GetMapping
   public ResponseEntity<?> listAll(
@@ -150,7 +149,8 @@ public class TbranchController {
   @LogActivity(
       type     = "branch",
       activity = "조회",
-      contents = "사용자 #{userId}가 지점 상세조회: id=#{id}, name=#{return.body.branchName}"
+      contents =
+          "'사용자 ' + #userId + '이(가) 지점 상세조회: id=' + #id + ', name=' + #return.body.companyName"
   )
   @GetMapping("/{id}")
   public ResponseEntity<?> getById(
@@ -189,8 +189,7 @@ public class TbranchController {
       type     = "branch",
       activity = "등록",
       contents =
-          "사용자 #{#userId}가 지점 등록: " +
-              "name=#{#reqDto.branchName}"
+          "'사용자 ' + #userId + '이(가) 지점 등록: ' + #dto.companyName"
   )
   @PostMapping
   public ResponseEntity<?> createBranch(
@@ -220,7 +219,8 @@ public class TbranchController {
   @LogActivity(
       type     = "branch",
       activity = "수정",
-      contents = "사용자 #{userId}가 지점 수정: id=#{id}, name=#{dto.branchName}"
+      contents =
+          "'사용자 ' + #userId + '이(가) 지점 수정: id=' + #id + ', name=' + #dto.companyName"
   )
   @PutMapping("/{id}")
   public ResponseEntity<?> updateBranch(
@@ -255,8 +255,7 @@ public class TbranchController {
       type     = "branch",
       activity = "비활성화",
       contents =
-          "사용자 #{#userId}가 지점 비활성화: " +
-              "id=#{#id}, name=#{#return.body.branchName}"
+          "'사용자 ' + #userId + '이(가) 지점 비활성화: id=' + #id + ', name=' + #dto.companyName"
   )
   @DeleteMapping("/{id}")
   public ResponseEntity<?> deactivateBranch(
@@ -286,8 +285,7 @@ public class TbranchController {
       type     = "branch",
       activity = "활성화",
       contents =
-          "사용자 #{#userId}가 지점 활성화: " +
-              "id=#{#id}, name=#{#return.body.branchName}"
+          "'사용자 ' + #userId + '이(가) 지점 활성화: id=' + #id + ', name=' + #dto.companyName"
   )
   @PutMapping("/{id}/activate")
   public ResponseEntity<?> activateBranch(
@@ -321,7 +319,8 @@ public class TbranchController {
   @LogActivity(
       type     = "branch",
       activity = "조회",
-      contents = "사용자 #{userId}가 지점 Health 조회: id=#{id}, name=#{return.body.branchName}"
+      contents =
+          "'사용자 ' + #userId + '이(가) 지점 상태 조회: id=' + #id + ', name=' + #dto.companyName"
   )
   @GetMapping("/{id}/health")
   public ResponseEntity<?> getBranchHealthFromDb(
