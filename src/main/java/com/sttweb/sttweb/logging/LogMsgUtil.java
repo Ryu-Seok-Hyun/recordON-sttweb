@@ -15,7 +15,7 @@ public class LogMsgUtil {
   public String grant(String actorUserId, Integer targetSeq, Integer level) {
     Info t = tmemberService.getMyInfoByMemberSeq(targetSeq);
     return String.format(
-        "사용자 %s이(가) 사용자 %s에게 레벨 %d 권한을 부여",
+        "사용자 %s이(가) 사용자 %s에게 다른 사용자에 관한 레벨 %d 권한을 부여",
         actorUserId, t.getUserId(), level
     );
   }
