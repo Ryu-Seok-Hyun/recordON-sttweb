@@ -692,7 +692,7 @@ public class TrecordController {
           paged = recordSvc.searchByMixedNumbers(searchNumbers, direction, numberKind, q, start, end, pr);
         }
       } else {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다. 관리자에게 문의하세요.");
       }
     }
 
@@ -715,10 +715,10 @@ public class TrecordController {
       boolean ok = hasPermissionForNumber(me.getUserId(), dto.getNumber1(), 2)
           || hasPermissionForNumber(me.getUserId(), dto.getNumber2(), 2);
       if (!ok) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "조회 권한이 없습니다.");
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "조회 권한이 없습니다. 관리자에게 문의하세요.");
       }
     } else if (!"0".equals(lvl) && !"1".equals(lvl) && !"3".equals(lvl)) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "접근 권한이 없습니다. 관리자에게 문의하세요.");
     }
 
     if (dto.getNumber1() != null) dto.setNumber1(convertToExtensionDisplay(dto.getNumber1()));
@@ -857,7 +857,7 @@ public class TrecordController {
             || "1".equals(me.getUserLevel())
             || "3".equals(me.getUserLevel());
     if (!canListen) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "녹취 재생 권한이 없습니다.");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "녹취 재생 권한이 없습니다. 관리자에게 문의하세요.");
     }
 
     Resource audio = recordSvc.getFile(id);
@@ -1090,7 +1090,7 @@ public class TrecordController {
             || "1".equals(me.getUserLevel())
             || "3".equals(me.getUserLevel());
     if (!canDownload) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다. 관리자에게 문의하세요.");
     }
 
     Resource audio = recordSvc.getLocalFile(id);

@@ -73,7 +73,7 @@ public class TmemberServiceImpl implements TmemberService {
         .orElseThrow(() -> new ResourceNotFoundException("등록자 정보를 찾을 수 없습니다"));
     String creatorLevel = creator.getUserLevel();
     if (!"0".equals(creatorLevel) && !"1".equals(creatorLevel)) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "가입 권한이 없습니다.");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "가입 권한이 없습니다. 관리자에게 문의하세요.");
     }
 
     // 2) 전역 중복 검사
@@ -90,7 +90,7 @@ public class TmemberServiceImpl implements TmemberService {
     String level = req.getUserLevel();
     if ("0".equals(level)) {
       if (!"0".equals(creatorLevel)) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 생성 가능합니다.");
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 생성 가능합니다. 관리자에게 문의하세요.");
       }
       req.setBranchSeq(null);
     } else {
@@ -98,7 +98,7 @@ public class TmemberServiceImpl implements TmemberService {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "유효한 지사번호를 지정하세요.");
       }
       if ("1".equals(level) && !"0".equals(creatorLevel)) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 지사 관리자 생성 가능합니다.");
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본사 관리자만 지사 관리자 생성 가능합니다. 관리자에게 문의하세요.");
       }
     }
 
@@ -140,7 +140,7 @@ public class TmemberServiceImpl implements TmemberService {
     TmemberEntity user = repo.findByUserId(req.getUserId())
         .orElseThrow(() -> new IllegalArgumentException("아이디 또는 비밀번호가 틀립니다."));
     if (user.getDiscd() != null && user.getDiscd() == 1) {
-      throw new IllegalStateException("비활성 사용자입니다.");
+      throw new IllegalStateException("비활성 사용자입니다. 관리자에게 문의하세요.");
     }
     if (!passwordEncoder.matches(req.getUserPass(), user.getUserPass())) {
       throw new IllegalArgumentException("아이디 또는 비밀번호가 틀립니다.");

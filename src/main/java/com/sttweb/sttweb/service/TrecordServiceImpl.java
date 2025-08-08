@@ -466,7 +466,7 @@ public class TrecordServiceImpl implements TrecordService {
             "사용자를 찾을 수 없습니다: " + targetUserSeq
         ));
     if (!member.getNumber().equals(e.getNumber1())) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다.");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다운로드 권한이 없습니다. 관리자에게 문의하세요.");
     }
     try {
       Path path = Paths.get(e.getAudioFileDir());
