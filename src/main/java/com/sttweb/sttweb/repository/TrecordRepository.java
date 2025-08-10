@@ -44,7 +44,8 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   /**
    * number1이 목록에 포함되거나 number2가 목록에 포함된 녹취 검색
    */
-  Page<TrecordEntity> findByNumber1InOrNumber2In(List<String> number1List, List<String> number2List, Pageable pageable);
+  Page<TrecordEntity> findByNumber1InOrNumber2In(List<String> number1List, List<String> number2List,
+      Pageable pageable);
 
   // ─────────────────────────────────────────────────────────────
   // 지점별 검색 메서드들
@@ -89,13 +90,14 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
 
   /**
    * 복합 조건으로 녹취 검색
-   * @param number1 첫 번째 번호
-   * @param number2 두 번째 번호
-   * @param inbound 수신 여부 (true: 수신, false: 발신, null: 전체)
-   * @param isExt 내선번호 여부 (true: 내선, false: 외부번호, null: 전체)
-   * @param query 검색어
-   * @param start 시작 시간
-   * @param end 종료 시간
+   *
+   * @param number1  첫 번째 번호
+   * @param number2  두 번째 번호
+   * @param inbound  수신 여부 (true: 수신, false: 발신, null: 전체)
+   * @param isExt    내선번호 여부 (true: 내선, false: 외부번호, null: 전체)
+   * @param query    검색어
+   * @param start    시작 시간
+   * @param end      종료 시간
    * @param pageable 페이징 정보
    * @return 검색 결과
    */
@@ -251,14 +253,14 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
        AND (:end      IS NULL    OR t.callStartDateTime <= :end)
   """)
   Page<TrecordEntity> searchByQuery(
-      @Param("number1")  String         number1,
-      @Param("number2")  String         number2,
-      @Param("inbound")  Boolean        inbound,
-      @Param("isExt")    Boolean        isExt,
-      @Param("q")        String         q,
-      @Param("start")    LocalDateTime  start,
-      @Param("end")      LocalDateTime  end,
-      Pageable          pageable
+      @Param("number1") String number1,
+      @Param("number2") String number2,
+      @Param("inbound") Boolean inbound,
+      @Param("isExt") Boolean isExt,
+      @Param("q") String q,
+      @Param("start") LocalDateTime start,
+      @Param("end") LocalDateTime end,
+      Pageable pageable
   );
 
   /**
@@ -283,15 +285,14 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
        AND (:start IS NULL OR t.callStartDateTime >= :start)
        AND (:end   IS NULL OR t.callStartDateTime <= :end)
   """)
-
   Page<TrecordEntity> searchByNumsAndQuery(
-      @Param("nums")        List<String>   nums,
-      @Param("direction")   String         direction,
-      @Param("numberKind")  String         numberKind,
-      @Param("q")           String         q,
-      @Param("start")       LocalDateTime  start,
-      @Param("end")         LocalDateTime  end,
-      Pageable             pageable
+      @Param("nums") List<String> nums,
+      @Param("direction") String direction,
+      @Param("numberKind") String numberKind,
+      @Param("q") String q,
+      @Param("start") LocalDateTime start,
+      @Param("end") LocalDateTime end,
+      Pageable pageable
   );
 
 
@@ -307,7 +308,8 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
   Page<TrecordEntity> findByNumber2Containing(String number2, Pageable pageable);
 
   @Query("""
-    SELECT t.ioDiscdVal AS direction, COUNT(t) AS cnt
+
+      SELECT t.ioDiscdVal AS direction, COUNT(t) AS cnt
       FROM TrecordEntity t
      WHERE (:start IS NULL OR t.callStartDateTime >= :start)
        AND (:end   IS NULL OR t.callStartDateTime <= :end)
@@ -317,7 +319,23 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       @Param("start") LocalDateTime start,
       @Param("end")   LocalDateTime end);
 
-
+  @Query(
+      value = """
+    SELECT *
+      FROM trecord
+     WHERE LOWER(SUBSTRING_INDEX(audio_file_dir,'/',-1)) IN (:basenames)
+       AND (audio_play_time IS NULL OR audio_play_time <> '00:00:00')
+     ORDER BY call_start_date_time DESC
+  """,
+      countQuery = """
+    SELECT COUNT(*)
+      FROM trecord
+     WHERE LOWER(SUBSTRING_INDEX(audio_file_dir,'/',-1)) IN (:basenames)
+       AND (audio_play_time IS NULL OR audio_play_time <> '00:00:00')
+  """,
+      nativeQuery = true
+  )
+  Page<TrecordEntity> findByAudioBasenames
+      (@Param("basenames") java.util.Collection<String> basenames,
+      Pageable pageable);
 }
-
-

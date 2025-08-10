@@ -73,6 +73,11 @@ dependencies {
 
 	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.6'
 
+	implementation 'org.apache.httpcomponents:httpclient:4.5.13'
+
+	implementation 'org.opensearch.client:opensearch-rest-high-level-client:2.11.0'
+	implementation 'org.opensearch:opensearch-core:2.11.0'
+	implementation("jakarta.json:jakarta.json-api")
 }
 
 springBoot {

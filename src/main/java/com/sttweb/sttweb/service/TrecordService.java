@@ -139,5 +139,6 @@ public interface TrecordService {
   Page<TrecordDto> searchByPhoneEnding(String phoneEnding, Pageable pageable);
   Resource getLocalFile(Integer recordSeq);
 
+  Page<TrecordDto> searchByAudioFileBasenames(java.util.Collection<String> basenames, Pageable pageable);
 
 }

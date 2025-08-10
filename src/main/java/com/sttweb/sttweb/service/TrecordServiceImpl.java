@@ -772,25 +772,25 @@ public class TrecordServiceImpl implements TrecordService {
         ));
   }
 
-  @Override
-  @Transactional(readOnly = true)
-  public Page<TrecordDto> searchByAudioFileNames(List<String> fileNames, Pageable pageable) {
-    if (fileNames == null || fileNames.isEmpty()) {
-      return Page.empty(pageable);
-    }
-
-    Specification<TrecordEntity> spec = (root, query, cb) -> {
-      List<Predicate> predicates = new ArrayList<>();
-      for (String fname : fileNames) {
-        String base = fname.trim().replaceAll("\\.wav$", "");  // .wav 제거
-        predicates.add(cb.like(root.get("audioFileDir"), "%" + base + "%"));
-      }
-      return cb.or(predicates.toArray(new Predicate[0]));
-    };
-
-    return repo.findAll(spec, pageable)
-        .map(this::toDto);
-  }
+//  @Override
+//  @Transactional(readOnly = true)
+//  public Page<TrecordDto> searchByAudioFileNames(List<String> fileNames, Pageable pageable) {
+//    if (fileNames == null || fileNames.isEmpty()) {
+//      return Page.empty(pageable);
+//    }
+//
+//    Specification<TrecordEntity> spec = (root, query, cb) -> {
+//      List<Predicate> predicates = new ArrayList<>();
+//      for (String fname : fileNames) {
+//        String base = fname.trim().replaceAll("\\.wav$", "");  // .wav 제거
+//        predicates.add(cb.like(root.get("audioFileDir"), "%" + base + "%"));
+//      }
+//      return cb.or(predicates.toArray(new Predicate[0]));
+//    };
+//
+//    return repo.findAll(spec, pageable)
+//        .map(this::toDto);
+//  }
 
 
   /**
@@ -827,6 +827,77 @@ public class TrecordServiceImpl implements TrecordService {
 
     throw new ResourceNotFoundException(
         String.format("로컬 디스크에서 녹취 파일을 찾을 수 없습니다: %s/%s", dateFolder, fileName));
+  }
+
+  private static String toLowerFileName(String fn) {
+    if (fn == null) return "";
+    String f = fn.replace('\\','/'); int i = f.lastIndexOf('/');
+    if (i >= 0) f = f.substring(i+1);
+    return f.toLowerCase(Locale.ROOT);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByAudioFileBasenames(Collection<String> basenames, Pageable pageable) {
+    if (basenames == null || basenames.isEmpty()) return Page.empty(pageable);
+    Page<TrecordEntity> page = repo.findByAudioBasenames(basenames, pageable);
+    // 이미 여러 곳에서 쓰는 toDto(map) 경로 유지
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap   = branchSeqToNameMap(page.getContent());
+    return page.map(e -> toDto(e, numberMap, branchNameMap));
+  }
+
+  /** 기존 메서드도 안전하게 래핑(호출부 호환) */
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByAudioFileNames(List<String> fileNames, Pageable pageable) {
+    if (fileNames == null || fileNames.isEmpty()) return Page.empty(pageable);
+
+    // ES filename → 소문자 basename
+    List<String> bases = fileNames.stream()
+        .filter(Objects::nonNull)
+        .map(String::trim)
+        .map(s -> s.replace('\\','/'))
+        .map(s -> { int i = s.lastIndexOf('/'); return (i >= 0 ? s.substring(i + 1) : s); })
+        .map(String::toLowerCase)
+        .distinct()
+        .toList();
+
+    Specification<TrecordEntity> spec = (root, query, cb) -> {
+      var path = cb.lower(root.get("audioFileDir"));
+      List<Predicate> orPreds = new ArrayList<>();
+
+      for (String b : bases) {
+        String noExt = b.replaceAll("\\.wav$", "");
+
+        // (A) 그대로 포함
+        orPreds.add(cb.like(path, "%" + noExt + "%"));
+
+        // (B) -i- / -o- → '+' 치환 포함
+        String plus = noExt.replace("-i-", "+").replace("-o-", "+");
+        orPreds.add(cb.like(path, "%" + plus + "%"));
+
+        // (C) 타임스탬프 끝매칭 (구분자 무시)
+        int us = noExt.lastIndexOf('_');
+        if (us > 0 && us < noExt.length() - 1) {
+          String ts = noExt.substring(us + 1);
+          orPreds.add(cb.like(path, "%_" + ts + ".wav"));
+        }
+      }
+
+      // 00:00:00 제외
+      Predicate timeOk = cb.or(
+          cb.isNull(root.get("audioPlayTime")),
+          cb.notEqual(root.get("audioPlayTime"), java.sql.Time.valueOf("00:00:00"))
+      );
+
+      return cb.and(timeOk, cb.or(orPreds.toArray(new Predicate[0])));
+    };
+
+    Page<TrecordEntity> page = repo.findAll(spec, pageable);
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap   = branchSeqToNameMap(page.getContent());
+    return page.map(e -> toDto(e, numberMap, branchNameMap));
   }
 
 
