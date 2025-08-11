@@ -319,23 +319,21 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       @Param("start") LocalDateTime start,
       @Param("end")   LocalDateTime end);
 
-  @Query(
-      value = """
-    SELECT *
-      FROM trecord
-     WHERE LOWER(SUBSTRING_INDEX(audio_file_dir,'/',-1)) IN (:basenames)
-       AND (audio_play_time IS NULL OR audio_play_time <> '00:00:00')
-     ORDER BY call_start_date_time DESC
-  """,
-      countQuery = """
-    SELECT COUNT(*)
-      FROM trecord
-     WHERE LOWER(SUBSTRING_INDEX(audio_file_dir,'/',-1)) IN (:basenames)
-       AND (audio_play_time IS NULL OR audio_play_time <> '00:00:00')
-  """,
-      nativeQuery = true
-  )
-  Page<TrecordEntity> findByAudioBasenames
-      (@Param("basenames") java.util.Collection<String> basenames,
-      Pageable pageable);
+  @Query("""
+  SELECT t
+    FROM TrecordEntity t
+   WHERE LOWER(
+           function(
+             'substring_index',
+             function('replace', t.audioFileDir, '\\', '/'),
+             '/', -1
+           )
+         ) IN (:basenames)
+     AND ( t.audioPlayTime IS NULL
+           OR function('time_to_sec', t.audioPlayTime) <> 0 )
+""")
+  Page<TrecordEntity> findByAudioBasenames(
+      @Param("basenames") java.util.Collection<String> basenames,
+      Pageable pageable
+  );
 }
