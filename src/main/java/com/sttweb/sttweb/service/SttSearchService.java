@@ -107,4 +107,78 @@ public class SttSearchService {
       return Map.of();
     }
   }
+  public Map<String, Object> searchFilenamesArray(List<String> queries, int page, int size) {
+    int from = Math.max(page, 0) * Math.max(size, 1);
+    int sz   = Math.max(size, 1);
+
+    try {
+      BoolQueryBuilder bool = QueryBuilders.boolQuery();
+
+      if (queries == null || queries.isEmpty()) {
+        bool.must(QueryBuilders.matchAllQuery());
+      } else {
+        BoolQueryBuilder orQueries = QueryBuilders.boolQuery();
+
+        for (String q : queries) {
+          if (q == null || q.isBlank()) continue;
+
+          // filename 정확/부분 매치
+          orQueries.should(QueryBuilders.termQuery("filename", q).boost(4.0f));
+          orQueries.should(QueryBuilders.wildcardQuery("filename", "*" + q + "*").boost(1.0f));
+
+          // 본문 nested 접두 매치
+          orQueries.should(QueryBuilders.nestedQuery(
+              "result.merged",
+              QueryBuilders.matchPhrasePrefixQuery("result.merged.text", q),
+              ScoreMode.Avg));
+
+          orQueries.should(QueryBuilders.nestedQuery(
+              "result.rx.hypothesis.sentences",
+              QueryBuilders.matchPhrasePrefixQuery("result.rx.hypothesis.sentences.text", q),
+              ScoreMode.Avg));
+
+          orQueries.should(QueryBuilders.nestedQuery(
+              "result.tx.hypothesis.sentences",
+              QueryBuilders.matchPhrasePrefixQuery("result.tx.hypothesis.sentences.text", q),
+              ScoreMode.Avg));
+        }
+
+        // 하나라도 매치되면 포함
+        orQueries.minimumShouldMatch(1);
+        bool.must(orQueries);
+      }
+
+      SearchSourceBuilder source = new SearchSourceBuilder()
+          .query(bool)
+          .from(from)
+          .size(sz)
+          .trackTotalHits(true)
+          .fetchSource(new String[]{"filename"}, new String[]{})
+          .collapse(new CollapseBuilder("filename"));
+
+      SearchResponse resp = esClient.search(new SearchRequest(INDEX).source(source), RequestOptions.DEFAULT);
+      if (resp.status() != RestStatus.OK) {
+        return Map.of("filenames", List.of(), "total", 0, "page", page, "size", sz);
+      }
+
+      List<String> filenames = Arrays.stream(resp.getHits().getHits())
+          .map(SearchHit::getSourceAsMap)
+          .filter(Objects::nonNull)
+          .map(m -> Objects.toString(m.getOrDefault("filename", ""), ""))
+          .filter(s -> !s.isBlank())
+          .collect(Collectors.toList());
+
+      long total = resp.getHits().getTotalHits().value;
+
+      return Map.of(
+          "page", page,
+          "size", sz,
+          "total", total,
+          "filenames", filenames
+      );
+
+    } catch (Exception e) {
+      return Map.of("filenames", List.of(), "total", 0, "page", page, "size", sz);
+    }
+  }
 }

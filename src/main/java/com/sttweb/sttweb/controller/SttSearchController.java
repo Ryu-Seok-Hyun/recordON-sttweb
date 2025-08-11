@@ -2,6 +2,7 @@
 package com.sttweb.sttweb.controller;
 
 import com.sttweb.sttweb.service.SttSearchService;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,18 @@ public class SttSearchController {
   ) {
     return ResponseEntity.ok(svc.searchFilenames(q, page, size));
   }
+
+  /** q 배열 검색 → filename 유니크만 반환 (mode=OR) */
+  @GetMapping("/search/filenames/array")
+  public ResponseEntity<Map<String, Object>> searchFilenamesArray(
+      @RequestParam(name="q") List<String> queries,
+      @RequestParam(name="page", defaultValue="0") int page,
+      @RequestParam(name="size", defaultValue="10") int size
+  ) {
+    return ResponseEntity.ok(svc.searchFilenamesArray(queries, page, size));
+  }
+
+
 
   // 원본 문서 조회
   @GetMapping("/{id}")
