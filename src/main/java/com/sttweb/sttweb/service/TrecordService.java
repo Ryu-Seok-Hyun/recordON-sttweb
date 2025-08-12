@@ -141,4 +141,13 @@ public interface TrecordService {
 
   Page<TrecordDto> searchByAudioFileBasenames(java.util.Collection<String> basenames, Pageable pageable);
 
+  Page<TrecordDto> searchByAudioBasenamesWithFilters(
+      java.util.Collection<String> basenames,
+      String direction,
+      String numberKind,
+      String number,           // 사용자가 입력한 번호(내선/전화)
+      java.time.LocalDateTime start,
+      java.time.LocalDateTime end,
+      org.springframework.data.domain.Pageable pageable
+  );
 }

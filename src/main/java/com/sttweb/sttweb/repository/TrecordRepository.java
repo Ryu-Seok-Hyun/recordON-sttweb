@@ -336,4 +336,58 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
       @Param("basenames") java.util.Collection<String> basenames,
       Pageable pageable
   );
+
+  // TrecordRepository.java
+
+  @Query("""
+SELECT t
+  FROM TrecordEntity t
+ WHERE LOWER(
+         function(
+           'substring_index',
+           function('replace', t.audioFileDir, '\\', '/'),
+           '/', -1
+         )
+       ) IN (:basenames)
+   AND (t.audioPlayTime IS NULL OR function('time_to_sec', t.audioPlayTime) <> 0)
+
+   AND (
+        :direction = 'ALL'
+     OR (:direction = 'IN'  AND t.ioDiscdVal = '수신')
+     OR (:direction = 'OUT' AND t.ioDiscdVal = '발신')
+   )
+   AND (:start IS NULL OR t.callStartDateTime >= :start)
+   AND (:end   IS NULL OR t.callStartDateTime <= :end)
+
+   AND (
+        :number IS NULL
+     OR (
+          :numberKind = 'EXT'
+       AND (t.number1 = :ext OR t.number2 = :ext)
+        )
+     OR (
+          :numberKind = 'PHONE'
+       AND (t.number1 LIKE CONCAT('%', :phoneEnd) OR t.number2 LIKE CONCAT('%', :phoneEnd))
+        )
+     OR (
+          :numberKind = 'ALL'
+       AND (
+             t.number1 = :ext OR t.number2 = :ext
+          OR t.number1 LIKE CONCAT('%', :phoneEnd) OR t.number2 LIKE CONCAT('%', :phoneEnd)
+       )
+        )
+   )
+""")
+  Page<TrecordEntity> findByBasenamesAndFilters(
+      @Param("basenames") java.util.Collection<String> basenames,
+      @Param("direction") String direction,
+      @Param("numberKind") String numberKind,
+      @Param("number") String number,      // null이면 번호필터 미적용
+      @Param("ext") String ext,            // 4자리 내선 정규화
+      @Param("phoneEnd") String phoneEnd,  // 전화번호 끝자리
+      @Param("start") java.time.LocalDateTime start,
+      @Param("end")   java.time.LocalDateTime end,
+      org.springframework.data.domain.Pageable pageable
+  );
+
 }

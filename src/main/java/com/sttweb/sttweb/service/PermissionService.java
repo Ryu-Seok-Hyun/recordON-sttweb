@@ -29,7 +29,7 @@ public class PermissionService {
 
   @Transactional
   public void grantAndSyncLinePerm(GrantDto req) {
-    // 1. tuser_permission 갱신 또는 생성
+    // 1) tuser_permission upsert
     var upOpt = permRepo.findByMemberSeqAndLineId(req.getMemberSeq(), req.getLineId());
     UserPermission up = upOpt.map(existing -> {
       existing.setPermLevel(req.getPermLevel());
@@ -43,32 +43,39 @@ public class PermissionService {
     });
     permRepo.save(up);
 
-    // 2. tmember_line_perm 동기화
-    // — 조회 권한(2)만 주는 경우: 기존에 sync 되어 있던 청취·다운로드 권한 제거
-    if (req.getPermLevel().equals(2)) {
+    // 2) tmember_line_perm 동기화
+    int roleSeq = permLevelToRoleSeq(req.getPermLevel()); // 1~4 매핑
+
+    // NONE(1) 이면 라인 권한 제거만 수행(별도 회수 API 사용 중이면 이 분기 생략 가능)
+    if (roleSeq == 1) {
       memberLinePermRepo.findByMemberMemberSeqAndLineId(req.getMemberSeq(), req.getLineId())
           .ifPresent(memberLinePermRepo::delete);
       return;
     }
 
-    // — 청취(3) 또는 다운로드(4) 권한인 경우에만 role sync
-    Integer roleSeq = permLevelToRoleSeq(req.getPermLevel());
+    // VIEW(2) / LISTEN(3) / DOWNLOAD(4) 모두 업서트
+    var role = roleRepo.findById(roleSeq)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid roleSeq: " + roleSeq));
+
     memberLinePermRepo.findByMemberMemberSeqAndLineId(req.getMemberSeq(), req.getLineId())
         .ifPresentOrElse(
-            linePerm -> {
-              linePerm.setRole(roleRepo.findById(roleSeq).orElseThrow());
-              memberLinePermRepo.save(linePerm);
+            lp -> {
+              lp.setRole(role);
+              memberLinePermRepo.save(lp);
             },
             () -> {
               TmemberLinePermEntity newPerm = TmemberLinePermEntity.builder()
-                  .member(memberRepo.findById(req.getMemberSeq()).orElseThrow())
-                  .line(lineRepo.findById(req.getLineId()).orElseThrow())
-                  .role(roleRepo.findById(roleSeq).orElseThrow())
+                  .member(memberRepo.findById(req.getMemberSeq())
+                      .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "member not found")))
+                  .line(lineRepo.findById(req.getLineId())
+                      .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "line not found")))
+                  .role(role)
                   .build();
               memberLinePermRepo.save(newPerm);
             }
         );
   }
+
 
 
 

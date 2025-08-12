@@ -900,5 +900,31 @@ public class TrecordServiceImpl implements TrecordService {
     return page.map(e -> toDto(e, numberMap, branchNameMap));
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> searchByAudioBasenamesWithFilters(
+      Collection<String> basenames,
+      String direction,
+      String numberKind,
+      String number,
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  ) {
+    if (basenames == null || basenames.isEmpty()) return Page.empty(pageable);
+
+    String digits = (number == null) ? null : number.replaceAll("[^0-9]", "");
+    String ext = normalizeToFourDigit(digits);   // 4자리 내선(없으면 null)
+    String phoneEnd = digits;                    // 전화번호 끝자리 비교용
+
+    Page<TrecordEntity> page = repo.findByBasenamesAndFilters(
+        basenames, direction, numberKind,
+        number, ext, phoneEnd, start, end, pageable
+    );
+
+    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
+    Map<Integer, String> branchNameMap   = branchSeqToNameMap(page.getContent());
+    return page.map(e -> toDto(e, numberMap, branchNameMap));
+  }
 
 }

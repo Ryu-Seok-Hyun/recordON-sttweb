@@ -13,6 +13,7 @@ import com.sttweb.sttweb.logging.LogActivity;
 import com.sttweb.sttweb.repository.TrecordTelListRepository;
 import com.sttweb.sttweb.repository.UserPermissionRepository;
 import com.sttweb.sttweb.service.RecOnDataService;
+import com.sttweb.sttweb.service.SttSearchService;
 import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
@@ -70,6 +71,7 @@ public class TrecordController {
   private final RestTemplate restTemplate;
   private final CryptoProperties cryptoProps;
   private final RecOnDataService recOnDataService;
+  private final SttSearchService sttSearchService;
 
   // 컨트롤러 필드 바로 아래에 추가
   private static final long TEMP_CLEANUP_THRESHOLD_MS = 60 * 60 * 1000; // 1시간
@@ -295,6 +297,7 @@ public class TrecordController {
       @RequestParam(name = "direction",   defaultValue = "ALL")            String directionParam,
       @RequestParam(name = "numberKind",  defaultValue = "ALL")            String numberKindParam,
       @RequestParam(name = "q",           required = false)                String qParam,
+      @RequestParam(name = "s",           required = false)                 String sParam,
       @RequestParam(name = "start",       required = false)                String startStr,
       @RequestParam(name = "end",         required = false)                String endStr
   ) {
@@ -308,6 +311,88 @@ public class TrecordController {
     Page<TrecordDto> paged;
     long inboundCount = 0;
     long outboundCount = 0;
+
+
+    // ---------- 원샷(STT 키워드) 경로 ----------
+    // ---------- 원샷(STT 키워드) 경로 ----------
+    if (StringUtils.hasText(sParam) &&
+        (request == null || request.getAudioFiles() == null || request.getAudioFiles().isEmpty())) {
+
+      Map<String, Object> fnPage = sttSearchService.searchFilenames(sParam, 0, 1000);
+      @SuppressWarnings("unchecked")
+      List<String> esNames = (List<String>) fnPage.getOrDefault("filenames", Collections.emptyList());
+
+      List<String> basenames = esNames.stream()
+          .filter(Objects::nonNull).map(String::trim).filter(s -> !s.isEmpty())
+          .map(s -> s.replace('\\','/'))
+          .map(s -> { int i = s.lastIndexOf('/'); return (i >= 0 ? s.substring(i+1) : s); })
+          .map(String::toLowerCase)
+          .map(s -> s.endsWith(".wav") ? s : (s + ".wav"))
+          .distinct()
+          .toList();
+
+      if (basenames.isEmpty()) {
+        return ResponseEntity.ok(buildPaginatedResponse(Page.empty(reqPage), 0, 0));
+      }
+
+      // ▶ 번호 파라미터 통합: number가 없으면 q를 사용
+      String numArg = StringUtils.hasText(numberParam) ? numberParam : qParam;
+
+      // ▶ numberKind 자동 보정: 4자리 이하 숫자는 내선(EXT)
+      String nk = numberKindParam;
+      if ("ALL".equalsIgnoreCase(nk) && StringUtils.hasText(numArg)) {
+        String digits = numArg.replaceAll("[^0-9]", "");
+        if (digits.length() <= 4) nk = "EXT";
+      }
+
+      // ▶ 리포지토리 레벨 필터
+      paged = recordSvc.searchByAudioBasenamesWithFilters(
+          basenames,            // STT 매치된 파일들
+          directionParam,       // ALL|IN|OUT
+          nk,                   // EXT|PHONE|ALL (보정값)
+          numArg,               // ← 통합된 번호 파라미터
+          start, end,
+          reqPage
+      );
+
+      // ▶ 최종 방어막: EXT 필터가 확실히 적용되도록 한번 더 거르기
+      if ("EXT".equalsIgnoreCase(nk) && StringUtils.hasText(numArg)) {
+        String ext = numArg.replaceAll("[^0-9]", "");
+        if (ext.length() == 3) ext = "0" + ext;
+        if (ext.length() > 4)  ext = ext.substring(ext.length() - 4);
+        final String fext = ext;
+        List<TrecordDto> safe = paged.getContent().stream()
+            .filter(r -> fext.equals(r.getNumber1()) || fext.equals(r.getNumber2()))
+            .toList();
+        paged = new PageImpl<>(safe, reqPage, safe.size());
+      }
+
+      // 카운트 계산
+      if ("ALL".equalsIgnoreCase(directionParam)) {
+        inboundCount  = paged.stream().filter(r -> "수신".equals(r.getIoDiscdVal())).count();
+        outboundCount = paged.getTotalElements() - inboundCount;
+      } else if ("IN".equalsIgnoreCase(directionParam)) {
+        inboundCount = paged.getTotalElements();
+        outboundCount = 0;
+      } else {
+        inboundCount = 0;
+        outboundCount = paged.getTotalElements();
+      }
+
+      // 기존 후처리 그대로
+      Map<String, Integer> extSttMap = recOnDataService.parseSttStatusFromIni();
+      paged.getContent().forEach(rec -> {
+        String ext = rec.getNumber1() != null ? rec.getNumber1().replaceAll("^0+", "") : null;
+        rec.setSttEnabled(extSttMap.getOrDefault(ext, 0));
+      });
+      if (!"3".equals(me.getUserLevel())) {
+        paged.getContent().forEach(rec -> rec.setJsonExists(null));
+      }
+
+      return ResponseEntity.ok(buildPaginatedResponse(paged, inboundCount, outboundCount));
+    }
+
+
 
     // POST body 로 받은 audioFiles
     List<String> audioFiles = (request != null ? request.getAudioFiles() : null);
