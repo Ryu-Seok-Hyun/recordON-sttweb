@@ -1,17 +1,21 @@
 // src/main/java/com/sttweb/sttweb/controller/SttSearchController.java
 package com.sttweb.sttweb.controller;
 
+import com.sttweb.sttweb.dto.TmemberDto.Info;
 import com.sttweb.sttweb.dto.TrecordDto;
+import com.sttweb.sttweb.jwt.JwtTokenProvider;
+import com.sttweb.sttweb.service.RecOnDataService;
 import com.sttweb.sttweb.service.SttSearchService;
+import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @RestController
@@ -21,14 +25,25 @@ public class SttSearchController {
 
   private final SttSearchService sttSearchService;
   private final TrecordService trecordService;
+  private final RecOnDataService recOnDataService;   // STT/JSON 후처리
+  private final JwtTokenProvider jwtTokenProvider;   // 권한 확인용
+  private final TmemberService memberService;        // 권한 확인용
 
-  /**
-   * ES filenames → DB 조인 결과 반환 (한 번에)
-   * - s: 키워드(들)
-   * - number / q: 내선/번호 (number가 없으면 q를 fallback으로 사용)
-   * - numberKind: EXT | PHONE | ALL (빈 문자열이면 ALL, 3~4자리면 자동 EXT)
-   * - direction: ALL | IN | OUT (빈 문자열이면 ALL)
-   */
+  // 간단한 토큰 파서 (records 컨트롤러와 동일한 방식)
+  private Info requireLogin(String authHeader) {
+    if (authHeader == null || !authHeader.startsWith("Bearer "))
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "토큰이 없습니다.");
+    String token = authHeader.substring(7).trim();
+    if (!jwtTokenProvider.validateToken(token))
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다.");
+    String userId = jwtTokenProvider.getUserId(token);
+    Info me = memberService.getMyInfoByUserId(userId);
+    if (me == null)
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "사용자 정보를 찾을 수 없습니다.");
+    return me;
+  }
+
+  // ES filenames → DB 조인 결과 반환
   @GetMapping("/search/join")
   public ResponseEntity<Map<String, Object>> joinRecordsByQueries(
       @RequestParam(name = "s") List<String> terms,
@@ -38,22 +53,14 @@ public class SttSearchController {
       @RequestParam(name = "fsize", defaultValue = "1000") int fsize,
       @RequestParam(name = "q",            required = false) String q,
       @RequestParam(name = "number",       required = false) String number,
-      @RequestParam(name = "numberKind",   required = false) String numberKind,
-      @RequestParam(name = "direction",    required = false) String direction,
-      @RequestParam(name = "start",        required = false) String startStr,   // yyyy-MM-dd HH:mm
-      @RequestParam(name = "end",          required = false) String endStr
+      @RequestParam(name = "numberKind",   defaultValue = "ALL") String numberKind, // EXT|PHONE|ALL
+      @RequestParam(name = "direction",    defaultValue = "ALL") String direction,  // ALL|IN|OUT
+      @RequestParam(name = "start",        required = false) String startStr,       // yyyy-MM-dd HH:mm
+      @RequestParam(name = "end",          required = false) String endStr,
+      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader
   ) {
-    // 0) 파라미터 정규화
-    String numArg = StringUtils.hasText(number) ? number : (StringUtils.hasText(q) ? q : null);
-    String dir    = StringUtils.hasText(direction)   ? direction   : "ALL";
-    String nk     = StringUtils.hasText(numberKind)  ? numberKind  : "ALL";
-
-    // 4자리 이하라면 내선으로 간주 (nk가 비었거나 ALL인 경우에만 보정)
-    if (("ALL".equalsIgnoreCase(nk) || !StringUtils.hasText(nk)) && StringUtils.hasText(numArg)) {
-      String digits = numArg.replaceAll("[^0-9]", "");
-      if (digits.length() <= 4) nk = "EXT";
-      else nk = "ALL";
-    }
+    // 로그인 사용자
+    Info me = requireLogin(authHeader);
 
     // 1) ES에서 filename 유니크 추출
     Map<String, Object> fnPage = sttSearchService.searchFilenamesArray(terms, fpage, fsize);
@@ -63,8 +70,7 @@ public class SttSearchController {
     // 2) 소문자 basename.wav 로 정규화
     List<String> basenames = esNames.stream()
         .filter(Objects::nonNull)
-        .map(String::trim)
-        .filter(s -> !s.isEmpty())
+        .map(String::trim).filter(s -> !s.isEmpty())
         .map(s -> s.replace('\\','/'))
         .map(s -> { int i = s.lastIndexOf('/'); return (i >= 0 ? s.substring(i + 1) : s); })
         .map(String::toLowerCase)
@@ -73,31 +79,51 @@ public class SttSearchController {
         .toList();
 
     // 3) 기간 파싱
-    DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    LocalDateTime start = (StringUtils.hasText(startStr) ? LocalDateTime.parse(startStr, fmt) : null);
-    LocalDateTime end   = (StringUtils.hasText(endStr)   ? LocalDateTime.parse(endStr,   fmt) : null);
+    var fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    var start = (startStr != null && !startStr.isBlank()) ? java.time.LocalDateTime.parse(startStr, fmt) : null;
+    var end   = (endStr   != null && !endStr.isBlank())   ? java.time.LocalDateTime.parse(endStr,   fmt) : null;
 
-    // 4) 페이지 정보
-    Pageable pageable = PageRequest.of(page, size,
-        Sort.by(Sort.Direction.DESC, "callStartDateTime"));
+    // 4) DB 조인 + 필터 + 정렬
+    Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "callStartDateTime"));
+    @SuppressWarnings("unchecked")
+    Page<TrecordDto> recordPage =
+        (Page<TrecordDto>) trecordService.searchByAudioBasenamesWithFilters(
+            basenames, direction, numberKind, number, start, end, pageable);
 
-    // basenames 없으면 바로 빈 페이지 반환
-    Page<?> recordPage = basenames.isEmpty()
-        ? Page.empty(pageable)
-        : trecordService.searchByAudioBasenamesWithFilters(
-            basenames, dir, nk, numArg, start, end, pageable);
+    // 5) STT 활성화/JSON 생성여부 후처리
+    Map<String, Integer> extSttMap = recOnDataService.parseSttStatusFromIni();
+    recordPage.getContent().forEach(rec -> {
+      // sttEnabled
+      String ext = rec.getNumber1();
+      if (ext != null) ext = ext.replaceAll("^0+", "");
+      rec.setSttEnabled(extSttMap.getOrDefault(ext, 0));
 
-    // 5) 응답
+      // jsonExists
+      String csdt = rec.getCallStartDateTime();
+      if (csdt != null) {
+        String dateDir = csdt.substring(0, 10).replace("-", "");
+        String afd = rec.getAudioFileDir()
+            .replace("\\", "/")
+            .replaceFirst("^\\.\\./+", "");
+        String fname = afd.substring(afd.lastIndexOf('/') + 1);
+        rec.setJsonExists(recOnDataService.isJsonGenerated(dateDir, fname));
+      } else {
+        rec.setJsonExists(false);
+      }
+    });
+
+    // 6) 슈퍼유저가 아니면 jsonExists 감추기 (records API와 동일)
+    if (!"3".equals(me.getUserLevel())) {
+      recordPage.getContent().forEach(r -> r.setJsonExists(null));
+    }
+
+    // 7) 응답
     Map<String, Object> body = buildPageResponse(recordPage);
     body.put("filenames", esNames);
     return ResponseEntity.ok(body);
   }
 
-  /**
-   * 메인 검색:
-   * - ES에서 filename 추출
-   * - DB에서 해당 basenames로 페이징 조회
-   */
+  /** 메인 STT 텍스트 검색 (변경 없음) */
   @GetMapping("/search")
   public ResponseEntity<Map<String, Object>> search(
       @RequestParam(name = "s", required = false, defaultValue = "") String s,
@@ -111,7 +137,6 @@ public class SttSearchController {
     List<String> filenames = (List<String>) fnPage.getOrDefault("filenames", Collections.emptyList());
 
     Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "callStartDateTime"));
-    // 서비스 시그니처에 맞춰 호출 (필요 시 searchByAudioFileNames 로 교체)
     Page<?> recordPage = trecordService.searchByAudioFileBasenames(filenames, pageable);
 
     Map<String, Object> body = buildPageResponse(recordPage);
@@ -119,7 +144,7 @@ public class SttSearchController {
     return ResponseEntity.ok(body);
   }
 
-  /** s=text 검색 → filename 유니크만 페이징 반환 */
+  /** s=text → filename만 */
   @GetMapping("/search/filenames")
   public ResponseEntity<Map<String, Object>> searchFilenames(
       @RequestParam(name = "s", required = false, defaultValue = "") String s,
@@ -129,7 +154,7 @@ public class SttSearchController {
     return ResponseEntity.ok(sttSearchService.searchFilenames(s, page, size));
   }
 
-  /** s 배열(OR) 검색 → filename 유니크만 페이징 반환 */
+  /** s 배열(OR) → filename만 */
   @GetMapping("/search/filenames/array")
   public ResponseEntity<Map<String, Object>> searchFilenamesArray(
       @RequestParam(name = "s") List<String> queries,
@@ -139,7 +164,6 @@ public class SttSearchController {
     return ResponseEntity.ok(sttSearchService.searchFilenamesArray(queries, page, size));
   }
 
-  /** 원본 문서 조회 */
   @GetMapping("/{id}")
   public ResponseEntity<?> getById(@PathVariable String id) {
     return ResponseEntity.ok(sttSearchService.getById(id));
@@ -164,36 +188,21 @@ public class SttSearchController {
     m.put("pageable", Map.of(
         "pageNumber", page.getNumber(),
         "pageSize", page.getSize(),
-        "sort", Map.of(
-            "empty", s.isEmpty(),
-            "unsorted", s.isUnsorted(),
-            "sorted", s.isSorted()
-        ),
+        "sort", Map.of("empty", s.isEmpty(), "unsorted", s.isUnsorted(), "sorted", s.isSorted()),
         "offset", p.getOffset(),
         "unpaged", p.isUnpaged(),
         "paged", p.isPaged()
     ));
-    m.put("sort", Map.of(
-        "empty", s.isEmpty(),
-        "unsorted", s.isUnsorted(),
-        "sorted", s.isSorted()
-    ));
+    m.put("sort", Map.of("empty", s.isEmpty(), "unsorted", s.isUnsorted(), "sorted", s.isSorted()));
 
-    // 안정적인 입/발신 카운트
     long inbound = page.getContent().stream().filter(r -> {
-      if (r instanceof TrecordDto dto) {
-        String v = dto.getIoDiscdVal();
-        return "수신".equals(v) || "I".equalsIgnoreCase(v) || "Inbound".equalsIgnoreCase(v);
-      } else if (r instanceof Map<?, ?> m1) {
+      if (r instanceof Map<?, ?> m1) {
         Object v = m1.get("ioDiscdVal");
-        return v != null && (
-            "수신".equals(v) || "I".equalsIgnoreCase(v.toString()) || "Inbound".equalsIgnoreCase(v.toString())
-        );
+        return v != null && (v.equals("수신") || v.equals("I") || v.equals("Inbound"));
       }
       return false;
     }).count();
     long outbound = page.getNumberOfElements() - inbound;
-
     m.put("inboundCount", inbound);
     m.put("outboundCount", outbound);
     return m;
