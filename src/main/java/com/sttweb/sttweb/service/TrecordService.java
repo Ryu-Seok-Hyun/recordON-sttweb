@@ -150,4 +150,14 @@ public interface TrecordService {
       java.time.LocalDateTime end,
       org.springframework.data.domain.Pageable pageable
   );
+
+  long countByFilters(
+      String direction,
+      String numberKind,
+      String number,
+      java.time.LocalDateTime start,
+      java.time.LocalDateTime end
+  );
+
+
 }

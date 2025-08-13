@@ -313,7 +313,7 @@ public class TrecordController {
     long outboundCount = 0;
 
 
-    // ---------- 원샷(STT 키워드) 경로 ----------
+
     // ---------- 원샷(STT 키워드) 경로 ----------
     if (StringUtils.hasText(sParam) &&
         (request == null || request.getAudioFiles() == null || request.getAudioFiles().isEmpty())) {

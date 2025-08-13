@@ -390,4 +390,44 @@ SELECT t
       org.springframework.data.domain.Pageable pageable
   );
 
+
+  @Query("""
+SELECT COUNT(t)
+  FROM TrecordEntity t
+ WHERE
+      ( :direction = 'ALL'
+        OR (:direction = 'IN'  AND t.ioDiscdVal = '수신')
+        OR (:direction = 'OUT' AND t.ioDiscdVal = '발신')
+      )
+  AND ( :start IS NULL OR t.callStartDateTime >= :start )
+  AND ( :end   IS NULL OR t.callStartDateTime <= :end   )
+  AND (
+       :number IS NULL
+       OR (
+            :numberKind = 'EXT'
+         AND (t.number1 = :ext OR t.number2 = :ext)
+          )
+       OR (
+            :numberKind = 'PHONE'
+         AND (t.number1 LIKE CONCAT('%', :phoneEnd) OR t.number2 LIKE CONCAT('%', :phoneEnd))
+          )
+       OR (
+            :numberKind = 'ALL'
+         AND (
+               t.number1 = :ext OR t.number2 = :ext
+            OR t.number1 LIKE CONCAT('%', :phoneEnd) OR t.number2 LIKE CONCAT('%', :phoneEnd)
+         )
+          )
+  )
+""")
+  long countByFilters(
+      @Param("direction") String direction,
+      @Param("numberKind") String numberKind,
+      @Param("number")     String number,     // null이면 번호필터 미적용
+      @Param("ext")        String ext,        // 4자리 내선 정규화
+      @Param("phoneEnd")   String phoneEnd,   // 전화번호 끝자리
+      @Param("start")      java.time.LocalDateTime start,
+      @Param("end")        java.time.LocalDateTime end
+  );
+
 }

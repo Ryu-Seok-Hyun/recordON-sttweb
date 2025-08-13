@@ -927,4 +927,19 @@ public class TrecordServiceImpl implements TrecordService {
     return page.map(e -> toDto(e, numberMap, branchNameMap));
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public long countByFilters(
+      String direction,
+      String numberKind,
+      String number,
+      LocalDateTime start,
+      LocalDateTime end
+  ) {
+    String digits   = (number == null) ? null : number.replaceAll("[^0-9]", "");
+    String ext      = normalizeToFourDigit(digits);  // 4자리 내선 (없으면 null)
+    String phoneEnd = digits;                        // 전화번호 끝자리 비교용
+    return repo.countByFilters(direction, numberKind, number, ext, phoneEnd, start, end);
+  }
+
 }
