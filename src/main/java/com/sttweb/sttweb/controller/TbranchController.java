@@ -361,15 +361,6 @@ public class TbranchController {
     return ResponseEntity.ok(result);
   }
 
-  /**
-   * 회사 전체 지점 수 반환
-   * GET /api/companies/{companyId}/branches/count
-   */
-//  @GetMapping("/{companyId}/branches/count")
-//  public ResponseEntity<Integer> getBranchCount(@PathVariable Long companyId) {
-//    int count = branchService.countByCompanyId(companyId);
-//    return ResponseEntity.ok(count);
-//  }
 
   /**
    * 회사에 지사가 없고(only HQ) 본사만 있으면 true,

@@ -17,6 +17,8 @@ public class BranchSwitchController {
   private final JwtTokenProvider jwt;
   private final TmemberService memberSvc;
 
+
+  // 지점 이동 스위치api
   @GetMapping("/switch/{branchSeq}")
   public ResponseEntity<Map<String,String>> switchToBranch(
       @RequestHeader("Authorization") String auth,
