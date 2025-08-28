@@ -78,6 +78,12 @@ dependencies {
 	implementation 'org.opensearch.client:opensearch-rest-high-level-client:2.11.0'
 	implementation 'org.opensearch:opensearch-core:2.11.0'
 	implementation("jakarta.json:jakarta.json-api")
+
+	implementation ('com.googlecode.soundlibs:mp3spi:1.9.5-1') {
+		exclude group: 'com.googlecode.soundlibs', module: 'jl'  // jl은 직접 추가
+	}
+	implementation 'com.googlecode.soundlibs:tritonus-share:0.3.7-2'
+	implementation 'javazoom:jlayer:1.0.1'
 }
 
 springBoot {

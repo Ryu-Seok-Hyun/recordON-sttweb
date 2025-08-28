@@ -10,6 +10,7 @@ import com.sttweb.sttweb.service.TbranchService;
 import com.sttweb.sttweb.service.TmemberService;
 import com.sttweb.sttweb.service.TrecordService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
@@ -43,38 +44,38 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @RequiredArgsConstructor
 public class ActivityLogAspect {
 
-  private static final Logger              log = LoggerFactory.getLogger(ActivityLogAspect.class);
-  private static final DateTimeFormatter   FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private static final Logger            log = LoggerFactory.getLogger(ActivityLogAspect.class);
+  private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-  private final SpelExpressionParser       parser   = new SpelExpressionParser();
-  private final ParameterNameDiscoverer    pd       = new DefaultParameterNameDiscoverer();
-  private final TactivitylogService        logSvc;
-  private final TmemberService             memberSvc;
-  private final TbranchService             branchSvc;
-  private final TrecordService             recordSvc;
-  private final JwtTokenProvider           jwt;
-  private final BeanFactory                beanFactory;
+  private final SpelExpressionParser    parser   = new SpelExpressionParser();
+  private final TemplateParserContext   template = new TemplateParserContext();
+  private final ParameterNameDiscoverer pd       = new DefaultParameterNameDiscoverer();
+
+  private final TactivitylogService logSvc;
+  private final TmemberService      memberSvc;
+  private final TbranchService      branchSvc;
+  private final TrecordService      recordSvc;
+  private final JwtTokenProvider    jwt;
+  private final BeanFactory         beanFactory;
 
   @Around("@annotation(logActivity)")
   public Object around(ProceedingJoinPoint jp, LogActivity logActivity) throws Throwable {
 
-    /* 1. 비즈니스 로직 */
     Object result = jp.proceed();
 
-    /* 2. HTTP 요청이 아닌 경우 스킵 */
     ServletRequestAttributes sa = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
     if (sa == null) return result;
     HttpServletRequest req = sa.getRequest();
 
-    /* 3. 오퍼레이터 식별 */
+    // operator 식별
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     String operatorUserId = "";
     if (auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken)) {
       operatorUserId = auth.getName();
     }
     for (Object a : jp.getArgs()) {
-      if (operatorUserId.isEmpty() && a instanceof LoginRequest lr)   operatorUserId = lr.getUserId();
-      if (operatorUserId.isEmpty() && a instanceof SignupRequest sr)  operatorUserId = sr.getUserId();
+      if (operatorUserId.isEmpty() && a instanceof LoginRequest lr)  operatorUserId = lr.getUserId();
+      if (operatorUserId.isEmpty() && a instanceof SignupRequest sr) operatorUserId = sr.getUserId();
     }
     if (operatorUserId.isEmpty()) {
       String rt = req.getHeader("X-ReAuth-Token");
@@ -88,60 +89,59 @@ public class ActivityLogAspect {
       }
     }
 
-    Info   me       = operatorUserId.isBlank() ? null : memberSvc.getMyInfoByUserId(operatorUserId);
+    Info me = operatorUserId.isBlank() ? null : memberSvc.getMyInfoByUserId(operatorUserId);
     int    opSeq    = me != null ? me.getMemberSeq() : 0;
     String opUserId = me != null ? me.getUserId()    : "anonymous";
 
-    /* 4. 브랜치 / IP */
+    // ── 지점/아이피 결정 (공인/사설 확실히 분리) ─────────────────────────────────────────────
     int    brSeq   = 0;
     String company = "";
-    String pbIp    = "";
-    String pvIp    = "";
+    String pubIp  = null;   // 공인 IP
+    String prvIp  = null;   // 사설 IP
+
     try {
-      Info ui = memberSvc.getMyInfoByUserId(operatorUserId);
-      brSeq   = ui.getBranchSeq();
-      var b   = branchSvc.findById(brSeq);
-      if (b != null) {
-        company = b.getCompanyName();
-        pbIp    = b.getPbIp();
-        pvIp    = b.getPIp();
+      if (me != null) {
+        brSeq = me.getBranchSeq();
+        var b = branchSvc.findById(brSeq);
+        if (b != null) {
+          company = b.getCompanyName();
+          pubIp   = normalizeV4(b.getPbIp());
+          prvIp   = normalizeV4(b.getPIp());   // p_ip
+        }
       }
-    } catch (Exception ignored) { }
+    } catch (Exception ignored) {}
 
-    if (pbIp == null || pbIp.isBlank()) {
-      String nicIp = detectBranchIpFromLocalNics();
-      if (nicIp != null) {
-        pbIp = pvIp = nicIp;
-      } else {
-        String xff = req.getHeader("X-Forwarded-For");
-        String rem = req.getRemoteAddr();
-        pbIp = (xff != null && !xff.isBlank()) ? xff.split(",")[0].trim() : rem;
-        pvIp = rem;
-      }
+    // 공인 IP 비어있으면 XFF에서 추정(사설대역이면 버림)
+    if (isBlank(pubIp)) {
+      String xff = firstXff(req);
+      if (!isBlank(xff) && !isPrivateV4(xff)) pubIp = xff;
     }
+    // 사설 IP 비어있으면 NIC에서 site-local IPv4 선택 → 없으면 로컬주소
+    if (isBlank(prvIp)) {
+      prvIp = detectLocalPrivateIPv4();
+      if (isBlank(prvIp)) prvIp = normalizeV4(req.getLocalAddr());
+    }
+    // IPv6 루프백 치환
+    if (isLoopback(pubIp)) pubIp = "127.0.0.1";
+    if (isLoopback(prvIp)) prvIp = "127.0.0.1";
 
-    /* 5. 메서드 파라미터 및 idValue 추출 */
-    MethodSignature sig   = (MethodSignature) jp.getSignature();
-    Object[]        args  = jp.getArgs();
-    String[]        names = pd.getParameterNames(sig.getMethod());
+    // ── SpEL 컨텍스트 ────────────────────────────────────────────────────────────────
+    MethodSignature sig = (MethodSignature) jp.getSignature();
+    Object[] args = jp.getArgs();
+    String[] names = pd.getParameterNames(sig.getMethod());
 
     Integer idValue = null;
     if (names != null) {
       for (int i = 0; i < names.length && i < args.length; i++) {
-        if (("memberSeq".equals(names[i]) || "id".equals(names[i])) && args[i] instanceof Integer v) {
-          idValue = v; break;
-        }
+        if (("memberSeq".equals(names[i]) || "id".equals(names[i])) && args[i] instanceof Integer v) { idValue = v; break; }
       }
     }
 
-    /* 6. SpEL 컨텍스트 */
     StandardEvaluationContext ctx = new StandardEvaluationContext();
     ctx.setBeanResolver(new BeanFactoryResolver(beanFactory));
-
-    for (int i = 0; i < args.length; i++) ctx.setVariable("p" + i, args[i]);  // #p0 …
+    for (int i = 0; i < args.length; i++) ctx.setVariable("p" + i, args[i]);
     if (args.length > 0 && args[0] instanceof java.util.List<?> list) ctx.setVariable("grants", list);
     if (names != null) for (int i = 0; i < names.length && i < args.length; i++) ctx.setVariable(names[i], args[i]);
-
     ctx.setVariable("id", idValue);
     ctx.setVariable("memberSeq", idValue);
     ctx.setVariable("userId", operatorUserId);
@@ -151,36 +151,15 @@ public class ActivityLogAspect {
     ctx.setVariable("recordSvc", recordSvc);
     ctx.setVariable("tmemberService", memberSvc);
 
-    /* 7. contents 평가 */
-    String expr = logActivity.contents();
-    String contents;
-    try {
-      if (expr != null && expr.contains("#{")) {                 // 템플릿 식
-        contents = parser
-            .parseExpression(expr, new TemplateParserContext())// ← Template 모드
-            .getValue(ctx, String.class);
-      } else {                                                   // 순수 SpEL 식
-        contents = parser.parseExpression(expr).getValue(ctx, String.class);
-      }
-    } catch (Exception ex) {
-      log.error("LogActivity contents evaluation failed: {}", expr, ex);
-      contents = expr;                                           // 실패 시 원문 저장
-    }
+    String contents = evalOrLiteral(logActivity.contents(), ctx);
+    String dir      = evalOrLiteral(logActivity.dir(), ctx);
+    String type     = evalOrLiteral(logActivity.type(), ctx);
+    String activity = evalOrLiteral(logActivity.activity(), ctx);
 
-    /* 8. dir 평가도 동일하게 */
-    String dirExpr = logActivity.dir();
-    String dir;
-    try {
-      dir = parser.parseExpression(dirExpr).getValue(ctx, String.class);
-    } catch (Exception ex) {
-      log.warn("LogActivity dir evaluation failed: {}", dirExpr, ex);
-      dir = dirExpr;
-    }
-
-    /* 9. DB 저장 */
+    // 저장
     logSvc.createLog(TactivitylogDto.builder()
-        .type        (logActivity.type())
-        .activity    (logActivity.activity())
+        .type        (type     != null ? type     : logActivity.type())
+        .activity    (activity != null ? activity : logActivity.activity())
         .contents    (contents)
         .dir         (dir)
         .branchSeq   (brSeq)
@@ -188,8 +167,8 @@ public class ActivityLogAspect {
         .memberSeq   (opSeq)
         .userId      (operatorUserId)
         .employeeId  (0)
-        .pbIp        (pbIp)
-        .pvIp        (pvIp)
+        .pbIp        (pubIp)     // 공인 IP
+        .pvIp        (prvIp)     // 사설 IP
         .crtime      (LocalDateTime.now().format(FMT))
         .workerSeq   (opSeq)
         .workerId    (opUserId)
@@ -198,23 +177,66 @@ public class ActivityLogAspect {
     return result;
   }
 
-  /* NIC에서 브랜치 IP 추정 */
-  private String detectBranchIpFromLocalNics() {
+  // ───────────────────────────── helpers ─────────────────────────────
+  private String evalOrLiteral(String expr, StandardEvaluationContext ctx) {
+    if (expr == null) return null;
+    String s = expr.trim();
+    if (s.isEmpty()) return null;
+    try {
+      if (s.contains("#{")) return parser.parseExpression(s, template).getValue(ctx, String.class);
+      boolean seemsSpel = s.startsWith("'") || s.startsWith("\"") || s.startsWith("T(") || s.contains("#");
+      if (seemsSpel) return parser.parseExpression(s).getValue(ctx, String.class);
+      return s;
+    } catch (Exception e) {
+      log.warn("LogActivity evaluation failed, fallback to literal. expr={}", s, e);
+      return s;
+    }
+  }
+
+  private String firstXff(HttpServletRequest req) {
+    String xff = req.getHeader("X-Forwarded-For");
+    if (isBlank(xff)) return null;
+    String ip = xff.split(",")[0].trim();
+    return normalizeV4(ip);
+  }
+
+  private String detectLocalPrivateIPv4() {
     try {
       Enumeration<NetworkInterface> nics = NetworkInterface.getNetworkInterfaces();
       while (nics.hasMoreElements()) {
         NetworkInterface ni = nics.nextElement();
-        if (ni.isLoopback() || !ni.isUp()) continue;
+        if (!ni.isUp() || ni.isLoopback()) continue;
         Enumeration<InetAddress> addrs = ni.getInetAddresses();
         while (addrs.hasMoreElements()) {
-          InetAddress addr = addrs.nextElement();
-          if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) continue;
-          String ip = addr.getHostAddress();
-          if (!ip.contains(".")) continue;
-          if (branchSvc.findBypIp(ip).isPresent() || branchSvc.findByPbIp(ip).isPresent()) return ip;
+          InetAddress a = addrs.nextElement();
+          if (!(a instanceof Inet4Address)) continue;
+          String ip = a.getHostAddress();
+          if (isPrivateV4(ip)) return ip;
         }
       }
-    } catch (SocketException ignored) { }
+    } catch (SocketException ignored) {}
     return null;
   }
+
+  private boolean isPrivateV4(String ip) {
+    if (isBlank(ip)) return false;
+    return ip.startsWith("10.") ||
+        ip.startsWith("192.168.") ||
+        ip.startsWith("172.16.") || ip.startsWith("172.17.") || ip.startsWith("172.18.") ||
+        ip.startsWith("172.19.") || ip.startsWith("172.2")   || ip.startsWith("172.3") ||
+        ip.startsWith("127.");
+  }
+
+  private String normalizeV4(String ip) {
+    if (isBlank(ip)) return null;
+    if ("0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) return "127.0.0.1";
+    if (ip.startsWith("::ffff:")) return ip.substring(7);
+    return ip;
+  }
+
+  private boolean isLoopback(String ip) {
+    return "127.0.0.1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip);
+  }
+
+  private boolean isBlank(String s) { return s == null || s.trim().isEmpty(); }
 }

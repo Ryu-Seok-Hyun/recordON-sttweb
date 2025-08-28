@@ -159,5 +159,13 @@ public interface TrecordService {
       java.time.LocalDateTime end
   );
 
+  // ====== enc.mp3 사전 복호화/마이그레이션 유틸 ======
+  java.nio.file.Path resolveAbsolutePath(String relativePath);
+  String toRelativePath(java.nio.file.Path absolutePath);
+  void updateAudioPath(Integer recordSeq, String newRelativePath);
+  java.util.List<TrecordDto> findLegacyEncMp3();
+
+
 
 }
+

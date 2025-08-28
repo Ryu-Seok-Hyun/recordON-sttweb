@@ -11,7 +11,7 @@ import java.sql.Timestamp;
 @Getter
 @Setter
 @Entity
-@Where(clause = "audioPlayTime <> '00:00:00'")
+@Where(clause = "(audioPlayTime IS NULL OR audioPlayTime <> '00:00:00')")
 @Table(
     name = "trecord",
     uniqueConstraints = @UniqueConstraint(
@@ -26,7 +26,6 @@ public class TrecordEntity {
   @Column(name = "record_seq")
   private Integer recordSeq;
 
-
   @Column(name = "callStartDateTime", columnDefinition = "DATETIME")
   private Timestamp callStartDateTime;
 
@@ -35,7 +34,6 @@ public class TrecordEntity {
 
   @Column(name = "audioPlayTime", columnDefinition = "TIME")
   private Time audioPlayTime;
-
 
   @Column(name = "IO_discd_val", length = 2)
   private String ioDiscdVal;
@@ -55,17 +53,11 @@ public class TrecordEntity {
   @Column(name = "reg_date", columnDefinition = "DATETIME")
   private Timestamp regDate;
 
-
-  /**
-   * 이 녹취를 생성한 사용자(memberSeq)
-   */
   @Column(name = "ownerMemberSeq")
   private Integer ownerMemberSeq;
 
   private Integer lineId;
-  /**
-   * 이 녹취가 발생한 지점(branchSeq)
-   */
+
   @Column(name = "branch_seq")
   private Integer branchSeq;
 }
