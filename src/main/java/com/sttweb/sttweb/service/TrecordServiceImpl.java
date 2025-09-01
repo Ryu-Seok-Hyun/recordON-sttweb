@@ -119,44 +119,63 @@ public class TrecordServiceImpl implements TrecordService {
     if (numbers == null || numbers.isEmpty()) return Page.empty(pageable);
 
     Specification<TrecordEntity> spec = (root, query, cb) -> {
+      List<Predicate> ps = new ArrayList<>();
+
+      // 접근 가능 번호 제한
       List<Predicate> ors = new ArrayList<>();
       for (String n : numbers) {
         ors.add(cb.equal(root.get("number1"), n));
         ors.add(cb.equal(root.get("number2"), n));
       }
-      return cb.or(ors.toArray(new Predicate[0]));
+      ps.add(cb.or(ors.toArray(new Predicate[0])));
+
+      // 0초 통화 제외
+      ps.add(cb.or(cb.isNull(root.get("audioPlayTime")), cb.notEqual(root.get("audioPlayTime"), Time.valueOf("00:00:00"))));
+
+      // 기간
+      if (start != null) ps.add(cb.greaterThanOrEqualTo(root.get("callStartDateTime"), Timestamp.valueOf(start)));
+      if (end   != null) ps.add(cb.lessThanOrEqualTo(root.get("callStartDateTime"),   Timestamp.valueOf(end)));
+
+      // 수/발신
+      if ("IN".equalsIgnoreCase(direction))      ps.add(cb.equal(root.get("ioDiscdVal"), "수신"));
+      else if ("OUT".equalsIgnoreCase(direction)) ps.add(cb.equal(root.get("ioDiscdVal"), "발신"));
+
+      // q 해석
+      String digits = StringUtils.hasText(q) ? q.replaceAll("[^0-9]", "") : null;
+      String ext    = normalizeToFourDigit(digits);
+
+      if ("EXT".equalsIgnoreCase(numberKind)) {
+        if (ext != null) {
+          ps.add(cb.equal(root.get("number1"), ext));
+        } else {
+          ps.add(cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4));
+        }
+      } else if ("PHONE".equalsIgnoreCase(numberKind)) {
+        if (StringUtils.hasText(digits)) {
+          ps.add(cb.like(root.get("number2"), "%" + digits));
+        } else {
+          ps.add(cb.greaterThan(cb.length(root.get("number1")), 4));
+        }
+      } else {
+        if (StringUtils.hasText(q)) {
+          Predicate byExt   = (ext != null)
+              ? cb.or(cb.equal(root.get("number1"), ext), cb.equal(root.get("number2"), ext))
+              : cb.disjunction();
+          Predicate byPhone = (StringUtils.hasText(digits))
+              ? cb.like(root.get("number2"), "%" + digits)
+              : cb.disjunction();
+          Predicate byText  = cb.like(root.get("callStatus"), "%" + q + "%");
+          ps.add(cb.or(byExt, byPhone, byText));
+        }
+      }
+
+      query.orderBy(cb.desc(root.get("callStartDateTime")));
+      return cb.and(ps.toArray(new Predicate[0]));
     };
-
-    if ("IN".equalsIgnoreCase(direction)) {
-      spec = spec.and((r, qy, cb) -> cb.equal(r.get("ioDiscdVal"), "수신"));
-    } else if ("OUT".equalsIgnoreCase(direction)) {
-      spec = spec.and((r, qy, cb) -> cb.equal(r.get("ioDiscdVal"), "발신"));
-    }
-
-    if ("EXT".equalsIgnoreCase(numberKind)) {
-      spec = spec.and((r, qy, cb) -> cb.lessThanOrEqualTo(cb.length(r.get("number1")), 4));
-    } else if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
-      String digits = q.replaceAll("[^0-9]", "");
-      spec = spec.and((r, qy, cb) -> cb.like(r.get("number2"), "%" + digits));
-    } else if (StringUtils.hasText(q)) {
-      String like = "%" + q + "%";
-      spec = spec.and((r, qy, cb) -> cb.or(
-          cb.like(r.get("number1"), like),
-          cb.like(r.get("number2"), like),
-          cb.like(r.get("callStatus"), like),
-          cb.like(r.get("audioFileDir"), like)
-      ));
-    }
-
-    if (start != null) {
-      spec = spec.and((r, qy, cb) -> cb.greaterThanOrEqualTo(r.get("callStartDateTime"), Timestamp.valueOf(start)));
-    }
-    if (end != null) {
-      spec = spec.and((r, qy, cb) -> cb.lessThanOrEqualTo(r.get("callStartDateTime"), Timestamp.valueOf(end)));
-    }
 
     return repo.findAll(spec, pageable).map(this::toDto);
   }
+
 
 
 
@@ -485,33 +504,74 @@ public class TrecordServiceImpl implements TrecordService {
     return repo.findByBranchAndExtensionsOrNumberOnly(branchSeq, numbers, pageable).map(this::toDto);
   }
 
-  @Override @Transactional(readOnly = true)
-  public Page<TrecordDto> search(String number1, String number2, String direction, String numberKind, String q,
-      LocalDateTime start, LocalDateTime end, Pageable pageable) {
-    if ("PHONE".equalsIgnoreCase(numberKind) && StringUtils.hasText(q)) {
-      Specification<TrecordEntity> spec = (root, query, cb) -> cb.like(root.get("number2"), "%" + q);
-      return repo.findAll(spec, pageable).map(this::toDto);
-    }
-
+  @Override
+  @Transactional(readOnly = true)
+  public Page<TrecordDto> search(
+      String number1,
+      String number2,
+      String direction,
+      String numberKind,
+      String q,
+      LocalDateTime start,
+      LocalDateTime end,
+      Pageable pageable
+  ) {
     Specification<TrecordEntity> spec = (root, query, cb) -> {
       List<Predicate> ps = new ArrayList<>();
+
+      // 0초 통화 제외
       ps.add(cb.or(cb.isNull(root.get("audioPlayTime")), cb.notEqual(root.get("audioPlayTime"), Time.valueOf("00:00:00"))));
+
+      // 기간
       if (start != null) ps.add(cb.greaterThanOrEqualTo(root.get("callStartDateTime"), Timestamp.valueOf(start)));
-      if (end   != null) ps.add(cb.lessThanOrEqualTo(root.get("callStartDateTime"), Timestamp.valueOf(end)));
-      if ("IN".equalsIgnoreCase(direction))  ps.add(cb.equal(root.get("ioDiscdVal"), "수신"));
+      if (end   != null) ps.add(cb.lessThanOrEqualTo(root.get("callStartDateTime"),   Timestamp.valueOf(end)));
+
+      // 수/발신
+      if ("IN".equalsIgnoreCase(direction))      ps.add(cb.equal(root.get("ioDiscdVal"), "수신"));
       else if ("OUT".equalsIgnoreCase(direction)) ps.add(cb.equal(root.get("ioDiscdVal"), "발신"));
-      if ("EXT".equalsIgnoreCase(numberKind)) ps.add(cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4));
-      else if ("PHONE".equalsIgnoreCase(numberKind) && !StringUtils.hasText(q)) ps.add(cb.greaterThan(cb.length(root.get("number1")), 4));
-      if (StringUtils.hasText(q) && !"PHONE".equalsIgnoreCase(numberKind)) ps.add(cb.like(root.get("callStatus"), "%" + q + "%"));
+
+      // q 해석
+      String digits = StringUtils.hasText(q) ? q.replaceAll("[^0-9]", "") : null;
+      String ext    = normalizeToFourDigit(digits);
+
+      if ("EXT".equalsIgnoreCase(numberKind)) {
+        // 내선 모드: q가 있으면 정확히 해당 내선만, 없으면 내선(4자리) 전체
+        if (ext != null) {
+          ps.add(cb.equal(root.get("number1"), ext));
+        } else {
+          ps.add(cb.lessThanOrEqualTo(cb.length(root.get("number1")), 4));
+        }
+      } else if ("PHONE".equalsIgnoreCase(numberKind)) {
+        // 전화번호 모드: q가 있으면 number2 뒤자리 like, 없으면 외부번호(=내선 아님)만
+        if (StringUtils.hasText(digits)) {
+          ps.add(cb.like(root.get("number2"), "%" + digits));
+        } else {
+          ps.add(cb.greaterThan(cb.length(root.get("number1")), 4));
+        }
+      } else {
+        // ALL 모드: q가 있으면 [내선 일치 OR 전화번호 뒤자리 like OR 상태문구 like] 중 하나라도 매치
+        if (StringUtils.hasText(q)) {
+          Predicate byExt   = (ext != null)
+              ? cb.or(cb.equal(root.get("number1"), ext), cb.equal(root.get("number2"), ext))
+              : cb.disjunction();
+          Predicate byPhone = (StringUtils.hasText(digits))
+              ? cb.like(root.get("number2"), "%" + digits)
+              : cb.disjunction();
+          Predicate byText  = cb.like(root.get("callStatus"), "%" + q + "%");
+          ps.add(cb.or(byExt, byPhone, byText));
+        }
+      }
+
       query.orderBy(cb.desc(root.get("callStartDateTime")));
       return cb.and(ps.toArray(new Predicate[0]));
     };
 
     Page<TrecordEntity> page = repo.findAll(spec, pageable);
-    Map<String, TmemberEntity> numberMap = numberToMemberMap(page.getContent());
-    Map<Integer, String> branchNames = branchSeqToNameMap(page.getContent());
+    Map<String, TmemberEntity> numberMap   = numberToMemberMap(page.getContent());
+    Map<Integer, String>       branchNames = branchSeqToNameMap(page.getContent());
     return page.map(e -> toDto(e, numberMap, branchNames));
   }
+
 
   @Override
   public Page<TrecordDto> searchByPhoneNumberOnlyLike(String phone, Pageable pageable) {

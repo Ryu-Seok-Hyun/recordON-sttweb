@@ -270,7 +270,7 @@ public class TrecordController {
         if (ext.length() > 4)  ext = ext.substring(ext.length() - 4);
         final String fext = ext;
         List<TrecordDto> safe = paged.getContent().stream()
-            .filter(r -> fext.equals(r.getNumber1()) || fext.equals(r.getNumber2())).toList();
+            .filter(r -> fext.equals(r.getNumber1())).toList();
         paged = new PageImpl<>(safe, reqPage, safe.size());
       }
 

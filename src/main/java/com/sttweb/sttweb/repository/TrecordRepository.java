@@ -151,7 +151,7 @@ public interface TrecordRepository extends JpaRepository<TrecordEntity, Integer>
        AND (:end   IS NULL OR t.callStartDateTime <= :end)
        AND (
             :number IS NULL
-         OR (:numberKind = 'EXT'   AND (t.number1 = :ext OR t.number2 = :ext))
+         OR (:numberKind = 'EXT'   AND t.number1 = :ext)
          OR (:numberKind = 'PHONE' AND (t.number1 LIKE CONCAT('%', :phoneEnd) OR t.number2 LIKE CONCAT('%', :phoneEnd)))
          OR (:numberKind = 'ALL'   AND ((t.number1 = :ext OR t.number2 = :ext) OR (t.number1 LIKE CONCAT('%', :phoneEnd) OR t.number2 LIKE CONCAT('%', :phoneEnd))))
        )
